@@ -1,0 +1,266 @@
+#!/usr/bin/env bats
+# Tests for the shared helpers in scripts/bash/figma-common.sh
+
+load helpers/common
+
+setup() {
+  WORKSPACE="$(make_temp_workspace)"
+  cd "$WORKSPACE"
+  # shellcheck source=/dev/null
+  source "${SCRIPTS_DIR}/figma-common.sh"
+}
+
+teardown() {
+  cd "$REPO_ROOT"
+  [ -n "$WORKSPACE" ] && rm -rf "$WORKSPACE"
+}
+
+@test "figma_env_var_name defaults to FIGMA_PAT without a config" {
+  run figma_env_var_name "${WORKSPACE}/missing-config.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "FIGMA_PAT" ]
+}
+
+@test "figma_env_var_name reads the custom envVar from the config" {
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "credentials": { "envVar": "MY_FIGMA_TOKEN" } } }
+JSON
+  run figma_env_var_name "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "MY_FIGMA_TOKEN" ]
+}
+
+@test "figma_load_token reads the token from the environment" {
+  export FIGMA_PAT="figd_env_token_value"
+  run figma_load_token
+  [ "$status" -eq 0 ]
+  [ "$output" = "figd_env_token_value" ]
+}
+
+@test "figma_load_token reads the token from a git-ignored .env" {
+  unset FIGMA_PAT
+  printf 'FIGMA_PAT="figd_from_dotenv"\n' > "${WORKSPACE}/.env"
+  run figma_load_token
+  [ "$status" -eq 0 ]
+  [ "$output" = "figd_from_dotenv" ]
+}
+
+@test "figma_load_token strips an inline comment after a quoted value" {
+  unset FIGMA_PAT
+  printf 'FIGMA_PAT="figd_quoted_token" # my local PAT\n' > "${WORKSPACE}/.env"
+  run figma_load_token
+  [ "$status" -eq 0 ]
+  [ "$output" = "figd_quoted_token" ]
+}
+
+@test "figma_load_token strips an inline comment after an unquoted value" {
+  unset FIGMA_PAT
+  printf 'FIGMA_PAT=figd_unquoted_token # trailing comment\n' > "${WORKSPACE}/.env"
+  run figma_load_token
+  [ "$status" -eq 0 ]
+  [ "$output" = "figd_unquoted_token" ]
+}
+
+@test "figma_load_token trims surrounding whitespace on an unquoted value" {
+  unset FIGMA_PAT
+  printf 'FIGMA_PAT=   figd_spaced_token   \n' > "${WORKSPACE}/.env"
+  run figma_load_token
+  [ "$status" -eq 0 ]
+  [ "$output" = "figd_spaced_token" ]
+}
+
+@test "figma_load_token keeps a hash inside a quoted value" {
+  unset FIGMA_PAT
+  printf 'FIGMA_PAT="figd_tok#en_with_hash"\n' > "${WORKSPACE}/.env"
+  run figma_load_token
+  [ "$status" -eq 0 ]
+  [ "$output" = "figd_tok#en_with_hash" ]
+}
+
+@test "figma_load_token ignores an unresolved REPLACE_WITH_ placeholder" {
+  unset FIGMA_PAT
+  printf 'FIGMA_PAT=REPLACE_WITH_YOUR_TOKEN\n' > "${WORKSPACE}/.env"
+  run figma_load_token
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not found"* ]]
+}
+
+@test "figma_load_token fails when the token is missing everywhere" {
+  unset FIGMA_PAT
+  run figma_load_token
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not found"* ]]
+}
+
+@test "figma_cache_path points at the snapshot file in the workspace root" {
+  run figma_cache_path
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"/.figma-context-snapshot.json" ]]
+}
+
+@test "figma_context_source defaults to rest without a config" {
+  run figma_context_source "${WORKSPACE}/missing-config.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "rest" ]
+}
+
+@test "figma_context_source reads mcp from the config" {
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "contextSource": "mcp" } }
+JSON
+  run figma_context_source "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "mcp" ]
+}
+
+@test "figma_mcp_url defaults to the local Dev Mode server" {
+  run figma_mcp_url "${WORKSPACE}/missing-config.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "http://127.0.0.1:3845/mcp" ]
+}
+
+@test "figma_mcp_fallback_enabled defaults to true" {
+  run figma_mcp_fallback_enabled "${WORKSPACE}/missing-config.json"
+  [ "$status" -eq 0 ]
+}
+
+@test "figma_mcp_fallback_enabled honors fallbackToRest=false" {
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "mcp": { "fallbackToRest": false } } }
+JSON
+  run figma_mcp_fallback_enabled "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -ne 0 ]
+}
+
+@test "figma_resolve_context_source returns rest by default" {
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "contextSource": "rest" } }
+JSON
+  run figma_resolve_context_source "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "rest" ]
+}
+
+@test "figma_resolve_context_source falls back to rest when MCP is unreachable" {
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "contextSource": "mcp", "mcp": { "url": "http://127.0.0.1:9/mcp" } } }
+JSON
+  run figma_resolve_context_source "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"rest"* ]]
+  [[ "$output" == *"falling back"* ]]
+}
+
+@test "figma_env_var_name prefers envVar over secretName in ci-secret mode" {
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "credentials": { "source": "ci-secret", "secretName": "ORG_FIGMA_TOKEN", "envVar": "FIGMA_PAT_RUNTIME" } } }
+JSON
+  run figma_env_var_name "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "FIGMA_PAT_RUNTIME" ]
+}
+
+@test "figma_env_var_name falls back to secretName in ci-secret mode without envVar" {
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "credentials": { "source": "ci-secret", "secretName": "ORG_FIGMA_TOKEN" } } }
+JSON
+  run figma_env_var_name "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "ORG_FIGMA_TOKEN" ]
+}
+
+@test "figma_load_token honors FIGMA_CONFIG for a custom config path" {
+  unset FIGMA_PAT
+  mkdir -p "${WORKSPACE}/custom"
+  cat > "${WORKSPACE}/custom/figma.json" <<'JSON'
+{ "figma": { "credentials": { "source": "env", "envVar": "MY_CUSTOM_FIGMA_TOKEN" } } }
+JSON
+  export FIGMA_CONFIG="${WORKSPACE}/custom/figma.json"
+  export MY_CUSTOM_FIGMA_TOKEN="figd_custom_token"
+  run figma_load_token
+  [ "$status" -eq 0 ]
+  [ "$output" = "figd_custom_token" ]
+}
+
+@test "figma_api retries transport failures instead of failing on a garbled code" {
+  export FIGMA_PAT="figd_dummy"
+  export FIGMA_API_BASE="http://127.0.0.1:9"
+  export FIGMA_API_MAX_ATTEMPTS="2"
+  export FIGMA_API_RETRY_DELAY="0"
+  run figma_api "/files/test"
+  [ "$status" -ne 0 ]
+  [[ "$output" != *"000000"* ]]
+  [[ "$output" == *"retries exhausted"* ]]
+}
+
+@test "figma_api_base rejects a non-figma.com host from the config" {
+  unset FIGMA_API_BASE
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "apiBaseUrl": "https://attacker.example.com/v1" } }
+JSON
+  run figma_api_base "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"refusing apiBaseUrl"* ]]
+}
+
+@test "figma_api_base rejects a non-https apiBaseUrl from the config" {
+  unset FIGMA_API_BASE
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "apiBaseUrl": "http://api.figma.com/v1" } }
+JSON
+  run figma_api_base "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"refusing apiBaseUrl"* ]]
+}
+
+@test "figma_api_base rejects a figma.com lookalike host" {
+  unset FIGMA_API_BASE
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "apiBaseUrl": "https://api.figma.com.evil.example/v1" } }
+JSON
+  run figma_api_base "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"refusing apiBaseUrl"* ]]
+}
+
+@test "figma_api_base rejects a host smuggled behind a query string" {
+  unset FIGMA_API_BASE
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "apiBaseUrl": "https://evil.example?x=.figma.com" } }
+JSON
+  run figma_api_base "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"refusing apiBaseUrl"* ]]
+}
+
+@test "figma_api_base accepts the official figma.com host from the config" {
+  unset FIGMA_API_BASE
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "apiBaseUrl": "https://api.figma.com/v1" } }
+JSON
+  run figma_api_base "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "https://api.figma.com/v1" ]
+}
+
+@test "figma_api refuses to send the token to a config-provided non-figma host" {
+  unset FIGMA_API_BASE
+  export FIGMA_PAT="figd_dummy"
+  export FIGMA_API_MAX_ATTEMPTS="1"
+  export FIGMA_API_RETRY_DELAY="0"
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "apiBaseUrl": "https://attacker.example.com/v1" } }
+JSON
+  run figma_api "/files/test"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"refusing apiBaseUrl"* ]]
+}
+
+@test "figma_resolve_context_source errors when MCP unreachable and fallback disabled" {
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "contextSource": "mcp", "mcp": { "url": "http://127.0.0.1:9/mcp", "fallbackToRest": false } } }
+JSON
+  run figma_resolve_context_source "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unreachable"* ]]
+}

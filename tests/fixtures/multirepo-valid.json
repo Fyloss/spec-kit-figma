@@ -1,0 +1,32 @@
+{
+  "version": "1.0",
+  "mode": "multi-repo",
+  "figma": {
+    "apiBaseUrl": "https://api.figma.com/v1",
+    "credentials": {
+      "source": "env",
+      "envVar": "FIGMA_PAT"
+    }
+  },
+  "excluded": ["back-bff"],
+  "submodules": {
+    "design-system": {
+      "enabled": true,
+      "role": "design-system",
+      "figmaFileId": "abc123DESIGN",
+      "submodulePath": "submodules/design-system"
+    },
+    "storefront": {
+      "enabled": false,
+      "role": "app-host",
+      "figmaFileId": "def456APP",
+      "figmaProjectId": "99887766",
+      "submodulePath": "submodules/storefront",
+      "monorepo": {
+        "type": "nx",
+        "apps": ["app-catalog"],
+        "libs": ["lib-ui"]
+      }
+    }
+  }
+}

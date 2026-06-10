@@ -1,1 +1,140 @@
 # spec-kit-figma
+
+An **agent-agnostic** extension for [GitHub SpecKit](https://github.com/github/spec-kit)
+that grounds spec / plan / task / implementation generation in **Figma** design
+context. It works on any project that follows the same architecture. It defaults
+to a **single-repo** (one repository, one front-end app) and also supports
+**mono-repo** (Nx / Turborepo / pnpm / yarn / Lerna) and **multi-repo** (git
+submodules) layouts.
+
+## What it does
+- Activates Figma integration only for **front-end** targets, driven by a single
+  `figma.projects.config.json` (back-end / infra / BFF are excluded silently).
+- Lets the agent **autonomously introspect** the mapped Figma design context from
+  any level of the hierarchy — a single **file**, a whole **project**, or an entire
+  **team** (organization > team > projects > files) — without per-page approval.
+  The REST snapshot indexes pages, top-level frames and the file's
+  component/style metadata; deeper node detail (nested layers, variants, layout
+  constraints) is fetched on demand via `--depth` / `--node`.
+- Ships two design-context engines: a portable **REST** engine (default — curl +
+  jq, CI-friendly) and an **optional MCP** engine (`figma.contextSource: "mcp"`)
+  for richer context when a Figma MCP server is available, with **automatic REST
+  fallback** when the server is absent.
+- Enforces a **3-level component resolution** (reuse → create-in-DS → create-in-app)
+  with the Design System kept **purely presentational** (no business logic).
+- Honors review remarks: direct Figma links in the input, shared mockups across
+  apps, mobile-first **tablet responsiveness** without a tablet mockup, **creative
+  confirmation** checkpoints, **token-gap** detection (DS update via CI), and
+  mandatory **tests + Storybook** on UI changes.
+
+## Layout
+```
+.
+├── extension.yml                        # SpecKit extension manifest (read by `specify extension add`)
+├── install.sh                          # optional manual installer (single/mono/multi-repo)
+├── commands/                           # agent-agnostic command templates
+│   ├── speckit.figma.setup.md
+│   └── speckit.figma.introspect.md
+├── config/
+│   ├── figma.projects.config.schema.json
+│   ├── figma.projects.config.singlerepo.example.json
+│   ├── figma.projects.config.multirepo.example.json
+│   ├── figma.projects.config.monorepo.example.json
+│   ├── figma.projects.config.organization.example.json
+│   └── .env.example
+├── scripts/
+│   └── bash/                           # curl + jq, 429 backoff, .env parsing
+├── tests/                              # bats test suite + fixtures
+├── templates/
+│   ├── spec-figma-section.template.md
+│   └── tasks-figma-section.template.md
+├── memory/
+│   └── figma-design-rules.md           # non-negotiable agent rules
+└── docs/
+    └── INSTALL.md  CREDENTIALS.md  MONOREPO.md
+```
+
+## Quick start
+
+### Install as a SpecKit extension (recommended)
+```bash
+# from a release/source ZIP
+specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/archive/refs/heads/main.zip
+
+# or from a local checkout
+specify extension add --dev /path/to/spec-kit-figma
+```
+This registers the `/speckit.figma.setup` and `/speckit.figma.introspect`
+commands with your agent. Then run `/speckit.figma.setup` once.
+
+**Figma context is refreshed automatically:** `install.sh` appends a managed
+auto-context block to your workspace's `/speckit.specify` and `/speckit.tasks`
+prompts, which runs `./scripts/bash/figma-ensure-context.sh` before generation.
+The script is a safe no-op when the extension is unconfigured, the target is
+excluded, or the snapshot is fresh — and it never blocks spec/tasks generation.
+Running `/speckit.figma.introspect` manually remains available for deep dives
+(specific nodes, custom depth). Opt out with `./install.sh --no-hooks`.
+
+### Manual install (alternative)
+```bash
+# run from the target workspace root (or pass --target /path/to/workspace-root)
+# single-repo (default)
+./install.sh
+
+# mono-repo
+./install.sh --mode mono-repo
+
+# multi-repo (git submodules)
+./install.sh --mode multi-repo
+
+# then edit figma.projects.config.json, add credentials, and:
+./scripts/bash/figma-validate-config.sh
+```
+See [docs/INSTALL.md](docs/INSTALL.md), [docs/CREDENTIALS.md](docs/CREDENTIALS.md)
+and [docs/MONOREPO.md](docs/MONOREPO.md).
+
+## Requirements
+- `bash` 4+, `curl`, `jq`, `git`.
+- A **read-only** Figma PAT (local) or a CI/Cloud secret (pipelines). For
+  team-level introspection (`figmaTeamId` / `figmaTeamIds`), the token must belong
+  to a member of those teams so the organization > team > projects > files
+  hierarchy can be enumerated.
+
+## Design-context engines (REST / MCP)
+The engine is selected per workspace via `figma.contextSource`:
+
+| Value | Engine | When |
+| --- | --- | --- |
+| `"rest"` *(default)* | curl + jq against the Figma REST API | Always portable; the only engine guaranteed in CI. |
+| `"mcp"` | A Figma MCP (Model Context Protocol) server | Richer context for users who run the server locally. |
+
+With `"mcp"`, configure `figma.mcp` (`url`, optional `serverName`,
+`fallbackToRest`). The extension probes the server and, when it is unreachable,
+**transparently falls back to REST** — unless `fallbackToRest: false`, which makes
+an absent server a hard error. Resolve the effective engine at any time:
+```bash
+./scripts/bash/figma-resolve-source.sh
+# -> {"requested":"mcp","effective":"rest","fellBack":true, ...}
+```
+You keep full portability (REST) while offering MCP richness to those who have it.
+
+## Testing
+The bash scripts are covered by a [bats](https://github.com/bats-core/bats-core)
+test suite and linted with `shellcheck`.
+```bash
+# install tooling (macOS)
+brew install bats-core shellcheck
+
+# run the linter and the tests
+shellcheck -x scripts/bash/*.sh install.sh
+bats tests/
+```
+The same checks run automatically on every pull request via GitHub Actions
+([.github/workflows/ci.yml](.github/workflows/ci.yml)).
+
+## Single-repo vs mono-repo vs multi-repo
+Same routing rules, component resolution, token handling, responsive and
+credential policies. Only the topology wrapper differs: a **single-repo** and a
+**mono-repo** use a single `repo` object (the mono-repo additionally declares its
+internal `apps`/`libs`), while a **multi-repo** uses a `submodules` map. Details
+in [docs/MONOREPO.md](docs/MONOREPO.md).

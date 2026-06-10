@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "mode": "single-repo",
+  "figma": {
+    "apiBaseUrl": "https://api.figma.com/v1",
+    "contextSource": "rest",
+    "credentials": {
+      "source": "env",
+      "envVar": "FIGMA_PAT"
+    }
+  },
+  "repo": {
+    "enabled": true,
+    "role": "app",
+    "figmaFileId": "REPLACE_WITH_MAIN_FILE_ID",
+    "figmaProjectId": "REPLACE_WITH_FIGMA_PROJECT_ID",
+    "submodulePath": ".",
+    "designSystem": {
+      "submodulePath": "src/design-system",
+      "tokenSource": "src/design-system/tokens/**/*.json"
+    },
+    "pageToPackageMapping": {
+      "Foundations / Tokens": { "targetPackage": "design-system" },
+      "Components": { "targetPackage": "design-system" },
+      "Storefront & Product Detail": { "targetPackage": "app" },
+      "Checkout": { "targetPackage": "app" }
+    },
+    "routingRules": [
+      { "when": "pure-ui", "place": "design-system", "reason": "Reusable presentational components live in the local design-system folder" },
+      { "when": "has-business-logic", "place": "app", "reason": "Business logic stays in the app, never in the design-system" },
+      { "when": "ambiguous", "place": "ask", "reason": "Ask the developer to clarify placement" }
+    ]
+  },
+  "excluded": []
+}

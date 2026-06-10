@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "mode": "single-repo",
+  "figma": {
+    "credentials": {
+      "source": "env",
+      "envVar": "FIGMA_PAT"
+    }
+  },
+  "repo": {
+    "figmaFileId": "abc123FILE"
+  }
+}

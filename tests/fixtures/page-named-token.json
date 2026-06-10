@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "mode": "single-repo",
+  "figma": {
+    "credentials": {
+      "source": "env",
+      "envVar": "FIGMA_PAT"
+    }
+  },
+  "repo": {
+    "enabled": true,
+    "role": "app",
+    "figmaFileId": "single123FILE",
+    "submodulePath": ".",
+    "pageToPackageMapping": {
+      "token": { "targetPackage": "design-system" },
+      "pat": { "targetPackage": null }
+    }
+  }
+}

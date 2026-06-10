@@ -1,0 +1,57 @@
+{
+  "version": "1.0",
+  "mode": "mono-repo",
+  "figma": {
+    "apiBaseUrl": "https://api.figma.com/v1",
+    "contextSource": "mcp",
+    "mcp": {
+      "url": "http://127.0.0.1:3845/mcp",
+      "serverName": "figma-dev-mode",
+      "fallbackToRest": true
+    },
+    "credentials": {
+      "source": "env",
+      "envVar": "FIGMA_PAT"
+    }
+  },
+  "repo": {
+    "enabled": true,
+    "role": "app-host",
+    "figmaFileId": "REPLACE_WITH_MAIN_FILE_ID",
+    "figmaProjectId": "REPLACE_WITH_FIGMA_PROJECT_ID",
+    "submodulePath": ".",
+    "monorepo": {
+      "type": "nx",
+      "apps": ["app-storefront", "app-account", "app-checkout"],
+      "libs": ["design-system", "lib-cart-domain", "lib-ui-shared"]
+    },
+    "designSystem": {
+      "ref": "design-system",
+      "submodulePath": "libs/design-system",
+      "tokenSource": "libs/design-system/src/tokens/**/*.json"
+    },
+    "pageToPackageMapping": {
+      "Foundations / Tokens": { "targetPackage": "design-system" },
+      "Design System / Components": { "targetPackage": "design-system" },
+      "Storefront & Product Detail": { "targetPackage": "app-storefront" },
+      "Checkout": { "targetPackage": "app-checkout" },
+      "User Account": { "targetPackage": "app-account" },
+      "Shared / Header & Cart": {
+        "targetPackage": null,
+        "shared": true,
+        "sharedAcross": ["app-storefront", "app-account", "app-checkout"]
+      }
+    },
+    "routingRules": [
+      { "when": "shared-frame", "place": "lib", "reason": "Frames shared across apps go to lib-ui-shared (or design-system lib if pure UI)" },
+      { "when": "pure-ui && used-by-multiple-apps", "place": "design-system", "reason": "Reusable presentational components belong to the design-system lib" },
+      { "when": "has-business-logic", "place": "lib", "reason": "Business logic never lives in the design-system lib" },
+      { "when": "single-app", "place": "app", "reason": "App-specific components stay in their app" },
+      { "when": "ambiguous", "place": "ask", "reason": "Ask the developer to clarify placement" }
+    ]
+  },
+  "excluded": [
+    "app-bff",
+    "tools-scripts"
+  ]
+}

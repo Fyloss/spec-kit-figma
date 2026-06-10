@@ -1,0 +1,75 @@
+{
+  "version": "1.0",
+  "mode": "multi-repo",
+  "figma": {
+    "apiBaseUrl": "https://api.figma.com/v1",
+    "contextSource": "rest",
+    "credentials": {
+      "source": "env",
+      "envVar": "FIGMA_PAT"
+    }
+  },
+  "submodules": {
+    "design-system": {
+      "enabled": true,
+      "role": "design-system",
+      "figmaFileId": "REPLACE_WITH_DESIGN_SYSTEM_FILE_ID",
+      "submodulePath": "submodules/design-system",
+      "monorepo": {
+        "type": "nx",
+        "apps": ["storybook"],
+        "libs": ["tokens", "components", "primitives"]
+      },
+      "designSystem": {
+        "tokenSource": "submodules/design-system/libs/tokens/src/**/*.json"
+      },
+      "pageToPackageMapping": {
+        "Foundations / Tokens": { "targetPackage": "tokens" },
+        "Components": { "targetPackage": "components" }
+      },
+      "routingRules": [
+        { "when": "pure-ui", "place": "design-system", "reason": "Design System hosts presentational components only" },
+        { "when": "has-business-logic", "place": "ask", "reason": "Business logic is forbidden in the Design System" }
+      ]
+    },
+    "storefront": {
+      "enabled": true,
+      "role": "app-host",
+      "figmaFileId": "REPLACE_WITH_STOREFRONT_FILE_ID",
+      "figmaProjectId": "REPLACE_WITH_STOREFRONT_PROJECT_ID",
+      "submodulePath": "submodules/storefront",
+      "monorepo": {
+        "type": "nx",
+        "apps": ["app-catalog", "app-checkout", "app-account"],
+        "libs": ["lib-cart-domain", "lib-account-domain", "lib-ui-shared"]
+      },
+      "designSystem": {
+        "ref": "design-system",
+        "submodulePath": "submodules/design-system",
+        "tokenSource": "submodules/design-system/libs/tokens/src/**/*.json"
+      },
+      "pageToPackageMapping": {
+        "Catalog & Product Detail": { "targetPackage": "app-catalog" },
+        "Checkout": { "targetPackage": "app-checkout" },
+        "My Account": { "targetPackage": "app-account" },
+        "Shared / Header & Cart": {
+          "targetPackage": null,
+          "shared": true,
+          "sharedAcross": ["app-catalog", "app-checkout", "app-account"]
+        }
+      },
+      "routingRules": [
+        { "when": "shared-frame", "place": "lib", "reason": "Frames shared across apps go to lib-ui-shared (or Design System if pure UI)" },
+        { "when": "pure-ui && used-by-multiple-apps", "place": "design-system", "reason": "Reusable presentational components belong to the Design System" },
+        { "when": "has-business-logic && used-by-multiple-apps", "place": "lib", "reason": "Shared logic goes to a domain lib, never the Design System" },
+        { "when": "single-app", "place": "app", "reason": "App-specific components stay in the app package" },
+        { "when": "ambiguous", "place": "ask", "reason": "Ask the developer to clarify placement" }
+      ]
+    }
+  },
+  "excluded": [
+    "bff-storefront",
+    "infra-terraform",
+    "lib-shared-utils-node"
+  ]
+}

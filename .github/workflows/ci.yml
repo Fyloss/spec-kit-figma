@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    name: ShellCheck (lint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        run: shellcheck -x scripts/bash/*.sh install.sh
+
+  test:
+    name: Bash tests (bats)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install bats and jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats jq
+
+      - name: Verify dependencies
+        run: |
+          bats --version
+          jq --version
+
+      - name: Run test suite
+        run: bats --print-output-on-failure tests/
+
+  config-examples:
+    name: Validate example configs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Validate example configs and fixtures against the JSON schema
+        run: |
+          npx --yes ajv-cli@5 validate --spec=draft7 \
+            -s config/figma.projects.config.schema.json \
+            -d "config/figma.projects.config.*.example.json" \
+            -d "tests/fixtures/*-valid.json"
+
+      - name: Run the runtime validator on the shipped examples
+        run: |
+          set -euo pipefail
+          for example in config/figma.projects.config.*.example.json; do
+            echo "Checking ${example}"
+            # Exit 2 (unresolved REPLACE_WITH_ placeholders) is expected for
+            # shipped examples; only structural errors (exit 1) must fail CI.
+            rc=0
+            ./scripts/bash/figma-validate-config.sh "${example}" || rc=$?
+            if [[ "${rc}" -ne 0 && "${rc}" -ne 2 ]]; then
+              echo "FAIL: ${example} (exit ${rc})"
+              exit 1
+            fi
+          done

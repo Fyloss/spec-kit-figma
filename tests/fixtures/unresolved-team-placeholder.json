@@ -1,0 +1,18 @@
+{
+  "version": "1.0",
+  "mode": "multi-repo",
+  "figma": {
+    "credentials": {
+      "source": "env",
+      "envVar": "FIGMA_PAT"
+    }
+  },
+  "submodules": {
+    "front-app": {
+      "enabled": true,
+      "role": "app-host",
+      "figmaTeamIds": ["123456", "REPLACE_WITH_CHECKOUT_TEAM_ID"],
+      "submodulePath": "submodules/front-app"
+    }
+  }
+}

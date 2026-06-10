@@ -1,0 +1,19 @@
+{
+  "version": "1.0",
+  "mode": "multi-repo",
+  "figma": {
+    "credentials": {
+      "source": "env",
+      "envVar": "FIGMA_PAT",
+      "token": "figd_should_not_be_here"
+    }
+  },
+  "submodules": {
+    "front-app": {
+      "enabled": true,
+      "role": "app-host",
+      "figmaFileId": "abc123",
+      "submodulePath": "submodules/front-app"
+    }
+  }
+}
