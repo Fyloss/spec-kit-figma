@@ -4,6 +4,7 @@
 # =============================================================================
 # Usage:
 #   ./install.sh [--target <workspace-root>] [--mode single-repo|mono-repo|multi-repo]
+#                [--prompt-hooks | --no-hooks]
 # What it does (idempotent):
 #   - copies the figma.projects.config example to <root>/figma.projects.config.json
 #   - copies the helper scripts to <root>/scripts/bash/ (docs and commands
@@ -11,9 +12,12 @@
 #   - copies .env.example to <root>/.env.example
 #   - ensures .env and .figma-context-snapshot.json are git-ignored
 #   - creates .specify/memory/ and installs the design-rules memory
-#   - appends an auto-context block to the workspace's /speckit.specify and
-#     /speckit.tasks command prompts so Figma introspection runs automatically
-#     (skip with --no-hooks)
+#   - by default LEAVES the /speckit.specify and /speckit.tasks prompts
+#     untouched (automatic Figma context runs via the extension.yml hooks
+#     before_specify/before_tasks -> /speckit.figma.ensure) and removes any
+#     auto-context block a previous version injected. --prompt-hooks opts back
+#     into prompt injection for agents without SpecKit extension-hook support;
+#     --no-hooks touches nothing (not even cleanup).
 #   - prints the next steps (it does NOT replace placeholders or write tokens)
 # =============================================================================
 set -euo pipefail
@@ -23,12 +27,13 @@ EXT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # NOT the extension's own repo. --target still overrides this.
 TARGET="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 MODE="single-repo"
-HOOKS="true"
+HOOKS="clean"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --target) TARGET="$2"; shift 2 ;;
     --mode) MODE="$2"; shift 2 ;;
-    --no-hooks) HOOKS="false"; shift ;;
+    --prompt-hooks) HOOKS="inject"; shift ;;
+    --no-hooks) HOOKS="off"; shift ;;
     *) echo "ERROR: unknown arg '$1'" >&2; exit 1 ;;
   esac
 done
@@ -83,27 +88,44 @@ cp "$EXT_DIR/memory/figma-design-rules.md" "$TARGET/.specify/memory/figma-design
 echo "ADDED: .specify/memory/figma-design-rules.md"
 
 # -----------------------------------------------------------------------------
-# Auto-context hooks: append a managed block to the workspace's existing
-# /speckit.specify and /speckit.tasks command prompts so the agent refreshes
-# the Figma snapshot automatically — no manual /speckit.figma.introspect run.
+# Prompt auto-context block. DEFAULT ("clean"): the prompts are NOT modified —
+# automatic Figma context is provided by the extension.yml hooks
+# (before_specify/before_tasks -> /speckit.figma.ensure) — and any block a
+# previous extension version injected is removed. "--prompt-hooks" ("inject")
+# appends/refreshes the managed block for agents without SpecKit
+# extension-hook support. "--no-hooks" ("off") touches nothing.
 # -----------------------------------------------------------------------------
 HOOK_MARKER_BEGIN="BEGIN SPECKIT-FIGMA AUTO-CONTEXT"
 HOOK_MARKER_END="END SPECKIT-FIGMA AUTO-CONTEXT"
+
+# Strip the managed block (markers included) from a prompt file, collapsing
+# the trailing blank lines so repeated runs do not accumulate whitespace
+# ($(cat) strips them, printf restores one newline).
+strip_hook_block() {
+  local file="$1"
+  local tmp; tmp="$(mktemp)"
+  awk -v b="$HOOK_MARKER_BEGIN" -v e="$HOOK_MARKER_END" '
+    index($0, b) { skip = 1; next }
+    index($0, e) { skip = 0; next }
+    !skip { print }
+  ' "$file" > "$tmp"
+  printf '%s\n' "$(cat "$tmp")" > "$file"
+  rm -f "$tmp"
+}
+
+remove_hook() {
+  local file="$1"
+  grep -qF "$HOOK_MARKER_BEGIN" "$file" || return 0
+  strip_hook_block "$file"
+  echo "CLEANED: ${file#"$TARGET"/} (auto-context now runs via the extension hooks; use --prompt-hooks to reinstate prompt injection)"
+}
+
 inject_hook() {
   local file="$1" action="HOOKED"
   if grep -qF "$HOOK_MARKER_BEGIN" "$file"; then
-    # Managed block: strip the previous copy (markers included) and re-append
-    # the current one, so re-running install.sh upgrades existing workspaces.
-    local tmp; tmp="$(mktemp)"
-    awk -v b="$HOOK_MARKER_BEGIN" -v e="$HOOK_MARKER_END" '
-      index($0, b) { skip = 1; next }
-      index($0, e) { skip = 0; next }
-      !skip { print }
-    ' "$file" > "$tmp"
-    # Collapse the trailing blank lines left by the removal so re-runs do not
-    # accumulate whitespace ($(cat) strips them, printf restores one newline).
-    printf '%s\n' "$(cat "$tmp")" > "$file"
-    rm -f "$tmp"
+    # Managed block: strip the previous copy and re-append the current one,
+    # so re-running install.sh upgrades existing workspaces.
+    strip_hook_block "$file"
     action="UPDATED"
   fi
   cat >> "$file" <<'HOOK'
@@ -144,20 +166,27 @@ HOOK
   echo "${action}: ${file#"$TARGET"/}"
 }
 
-if [[ "$HOOKS" == "true" ]]; then
+if [[ "$HOOKS" != "off" ]]; then
   HOOKED_ANY="false"
   # Per-agent command locations created by `specify init` (markdown-based agents).
   for dir in .claude/commands .github/prompts .cursor/commands .windsurf/workflows .opencode/command; do
     for stem in specify tasks; do
       for f in "$TARGET/$dir/speckit.${stem}.md" "$TARGET/$dir/speckit.${stem}.prompt.md"; do
         [[ -f "$f" ]] || continue
-        inject_hook "$f"
+        if [[ "$HOOKS" == "inject" ]]; then
+          inject_hook "$f"
+        else
+          remove_hook "$f"
+        fi
         HOOKED_ANY="true"
       done
     done
   done
-  if [[ "$HOOKED_ANY" == "false" ]]; then
-    echo "NOTE: no /speckit.specify or /speckit.tasks command files found — run 'specify init' first, then re-run install.sh to enable automatic Figma context."
+  if [[ "$HOOKS" == "inject" && "$HOOKED_ANY" == "false" ]]; then
+    echo "NOTE: no /speckit.specify or /speckit.tasks command files found — run 'specify init' first, then re-run install.sh --prompt-hooks to enable prompt injection."
+  fi
+  if [[ "$HOOKS" == "clean" ]]; then
+    echo "INFO: speckit command prompts left untouched — automatic Figma context runs via the extension hooks (before_specify/before_tasks -> /speckit.figma.ensure). Use --prompt-hooks if your agent does not support SpecKit extension hooks."
   fi
 fi
 

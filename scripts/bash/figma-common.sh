@@ -168,8 +168,17 @@ figma_resolve_context_source() {
   figma_decide_context_source "$requested" "$reachable" "$fallback" "$(figma_mcp_url "$config")"
 }
 
-# Load the token from the environment first, then from a git-ignored .env at the root.
+# Load the token: environment variable first, then FIGMA_PAT_COMMAND (a secret
+# manager such as the macOS keychain), then a git-ignored .env at the root.
 # The .env is parsed (NOT sourced) so arbitrary shell content cannot be executed.
+#
+# FIGMA_PAT_COMMAND is a trusted LOCAL env var (same trust model as
+# FIGMA_API_BASE — never read from the committed config, which could smuggle a
+# command in via a PR): it lets the token live in the OS keychain instead of a
+# plaintext .env, e.g.
+#   export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"
+# It is executed WITHOUT a shell (tokenized exec), so pipes/substitutions in
+# the value are inert arguments, not shell syntax.
 # shellcheck disable=SC2120  # optional $1 (config path) is intentional for testability
 figma_load_token() {
   local config="${1:-$(figma_default_config)}"
@@ -177,6 +186,16 @@ figma_load_token() {
   if [[ -n "${!var:-}" ]]; then
     printf '%s' "${!var}"
     return 0
+  fi
+  if [[ -n "${FIGMA_PAT_COMMAND:-}" ]]; then
+    local -a pat_cmd
+    read -r -a pat_cmd <<< "$FIGMA_PAT_COMMAND"
+    local pat_out
+    if pat_out="$("${pat_cmd[@]}" 2>/dev/null)" && [[ -n "$pat_out" ]]; then
+      printf '%s' "$pat_out"
+      return 0
+    fi
+    echo "WARN: FIGMA_PAT_COMMAND failed or returned an empty token; falling back to .env." >&2
   fi
   local env_file; env_file="$(figma_repo_root)/.env"
   if [[ -f "$env_file" ]]; then

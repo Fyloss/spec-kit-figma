@@ -71,6 +71,8 @@ your PAT. CI/Cloud Agent: inject a platform secret.
 
 For a manual install, the extension ships **agent-agnostic** command templates:
 - `commands/speckit.figma.setup.md`
+- `commands/speckit.figma.ensure.md` (auto-context; wired to the
+  `before_specify`/`before_tasks` hooks when installed via Option A)
 - `commands/speckit.figma.introspect.md`
 
 Map them to your agent's command location, e.g.:
@@ -94,8 +96,9 @@ manually only if you skipped `install.sh`.
 
 ## 6. Use in the SpecKit flow
 Run `/speckit.figma.setup` once. From then on, Figma context is **automatic**:
-the auto-context block installed in `/speckit.specify` and `/speckit.tasks`
-runs `./scripts/bash/figma-ensure-context.sh` before generation, piping in the
+the extension hooks (`before_specify` / `before_tasks` in `extension.yml`)
+invoke `/speckit.figma.ensure`, which runs
+`./scripts/bash/figma-ensure-context.sh` before generation, piping in the
 user's raw feature input (`--input -`). It re-introspects only when
 `.figma-context-snapshot.json` is missing or stale (older than 60 minutes, or
 older than the config — override with `FIGMA_SNAPSHOT_MAX_AGE_MINUTES` or
@@ -103,6 +106,13 @@ older than the config — override with `FIGMA_SNAPSHOT_MAX_AGE_MINUTES` or
 for front-end targets and skipped for excluded ones; any skip (no config,
 placeholders, excluded target, failed introspection) is surfaced as a note and
 never blocks generation.
+
+Your `/speckit.specify` and `/speckit.tasks` prompt files are **not modified**
+by default. If your agent does not support SpecKit extension hooks, run
+`./install.sh --prompt-hooks` to append a managed auto-context block to those
+prompts instead (refreshed in place on re-runs). A default `install.sh` run
+removes any block injected by a previous extension version; `--no-hooks`
+leaves the prompts strictly untouched (no injection, no cleanup).
 
 **Direct Figma links are handled automatically.** When the feature description
 contains Figma links (`figma.com/design|file|proto/...`, with or without

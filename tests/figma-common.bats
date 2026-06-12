@@ -92,6 +92,50 @@ JSON
   [[ "$output" == *"not found"* ]]
 }
 
+@test "figma_load_token fetches the token via FIGMA_PAT_COMMAND when the env var is unset" {
+  unset FIGMA_PAT
+  export FIGMA_PAT_COMMAND="printf figd_from_command"
+  run figma_load_token
+  [ "$status" -eq 0 ]
+  [ "$output" = "figd_from_command" ]
+}
+
+@test "the environment variable wins over FIGMA_PAT_COMMAND" {
+  export FIGMA_PAT="figd_env_token"
+  export FIGMA_PAT_COMMAND="printf figd_from_command"
+  run figma_load_token
+  [ "$status" -eq 0 ]
+  [ "$output" = "figd_env_token" ]
+}
+
+@test "FIGMA_PAT_COMMAND wins over a plaintext .env" {
+  unset FIGMA_PAT
+  printf 'FIGMA_PAT=figd_dotenv\n' > "${WORKSPACE}/.env"
+  export FIGMA_PAT_COMMAND="printf figd_from_command"
+  run figma_load_token
+  [ "$status" -eq 0 ]
+  [ "$output" = "figd_from_command" ]
+}
+
+@test "a failing FIGMA_PAT_COMMAND falls back to .env with a warning" {
+  unset FIGMA_PAT
+  printf 'FIGMA_PAT=figd_dotenv\n' > "${WORKSPACE}/.env"
+  export FIGMA_PAT_COMMAND="false"
+  run figma_load_token
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARN"* ]]
+  [[ "$output" == *"figd_dotenv"* ]]
+}
+
+@test "FIGMA_PAT_COMMAND is executed without a shell (no pipe smuggling)" {
+  unset FIGMA_PAT
+  export FIGMA_PAT_COMMAND="printf figd_a | tr a b"
+  run figma_load_token
+  [ "$status" -eq 0 ]
+  # Tokenized exec: '|', 'tr', 'a', 'b' are plain printf arguments, not a pipeline.
+  [[ "$output" != "figd_b" ]]
+}
+
 @test "figma_cache_path points at the snapshot file in the workspace root" {
   run figma_cache_path
   [ "$status" -eq 0 ]

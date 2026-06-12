@@ -9,11 +9,13 @@ but respect the explicit human-confirmation checkpoints below. Always load and
 obey `./.specify/memory/figma-design-rules.md` (or `./memory/figma-design-rules.md`
 when running from the extension checkout).
 
-> **Automatic invocation:** `install.sh` wires `figma-ensure-context.sh` into
-> the workspace's `/speckit.specify` and `/speckit.tasks` prompts (the feature
-> input is piped in via `--input -`), so a fresh snapshot is usually already
-> present — **including node-level detail for any direct Figma links pasted
-> in the feature input**, which the hook parses and introspects on its own.
+> **Automatic invocation:** the extension hooks (`before_specify` /
+> `before_tasks`) invoke `/speckit.figma.ensure`, which runs
+> `figma-ensure-context.sh` with the feature input piped in via `--input -`,
+> so a fresh snapshot is usually already present — **including node-level
+> detail for any direct Figma links pasted in the feature input**, which the
+> hook parses and introspects on its own. (Agents without extension-hook
+> support can opt into prompt injection with `install.sh --prompt-hooks`.)
 > Run this command manually for deep dives (specific nodes, custom depth,
 > team/project exploration) or to force a refresh.
 
