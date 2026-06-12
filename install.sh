@@ -87,34 +87,61 @@ echo "ADDED: .specify/memory/figma-design-rules.md"
 # /speckit.specify and /speckit.tasks command prompts so the agent refreshes
 # the Figma snapshot automatically — no manual /speckit.figma.introspect run.
 # -----------------------------------------------------------------------------
-HOOK_MARKER="BEGIN SPECKIT-FIGMA AUTO-CONTEXT"
+HOOK_MARKER_BEGIN="BEGIN SPECKIT-FIGMA AUTO-CONTEXT"
+HOOK_MARKER_END="END SPECKIT-FIGMA AUTO-CONTEXT"
 inject_hook() {
-  local file="$1"
-  if grep -qF "$HOOK_MARKER" "$file"; then
-    echo "SKIP: auto-context hook already present in ${file#"$TARGET"/}"
-    return 0
+  local file="$1" action="HOOKED"
+  if grep -qF "$HOOK_MARKER_BEGIN" "$file"; then
+    # Managed block: strip the previous copy (markers included) and re-append
+    # the current one, so re-running install.sh upgrades existing workspaces.
+    local tmp; tmp="$(mktemp)"
+    awk -v b="$HOOK_MARKER_BEGIN" -v e="$HOOK_MARKER_END" '
+      index($0, b) { skip = 1; next }
+      index($0, e) { skip = 0; next }
+      !skip { print }
+    ' "$file" > "$tmp"
+    # Collapse the trailing blank lines left by the removal so re-runs do not
+    # accumulate whitespace ($(cat) strips them, printf restores one newline).
+    printf '%s\n' "$(cat "$tmp")" > "$file"
+    rm -f "$tmp"
+    action="UPDATED"
   fi
   cat >> "$file" <<'HOOK'
 
-<!-- BEGIN SPECKIT-FIGMA AUTO-CONTEXT (managed by spec-kit-figma; re-running install.sh keeps a single copy) -->
+<!-- BEGIN SPECKIT-FIGMA AUTO-CONTEXT (managed by spec-kit-figma; re-running install.sh refreshes this block) -->
 ## Figma design context (automatic)
 
 Before generating, refresh the Figma design context:
 
-1. From the workspace root, run `./scripts/bash/figma-ensure-context.sh`
-   (pass the target package name as the first argument in mono-/multi-repo
-   workspaces). It is a safe no-op when the extension is not configured, the
-   target is excluded, or `.figma-context-snapshot.json` is already fresh.
+1. From the workspace root, run `./scripts/bash/figma-ensure-context.sh`,
+   piping the user's RAW feature input (description, arguments, any pasted
+   links — verbatim) via `--input -` (pass the target package name as the
+   first argument in mono-/multi-repo workspaces):
+
+   ```bash
+   ./scripts/bash/figma-ensure-context.sh --input - <<'SPECKIT_FIGMA_INPUT'
+   <the user's verbatim feature input>
+   SPECKIT_FIGMA_INPUT
+   ```
+
+   Any direct Figma link in the input is detected and introspected
+   automatically — the linked file/frames become the authoritative design
+   targets (node-level detail included), so no manual
+   /speckit.figma.introspect run is needed. The script is a safe no-op when
+   the extension is not configured, the target is excluded, or
+   `.figma-context-snapshot.json` is already fresh and covers the linked
+   nodes.
 2. When it prints `"ran": true` or `"reason": "fresh"`, load
    `.figma-context-snapshot.json` and apply the rules of
    `/speckit.figma.introspect` (sections 3-7: frame confirmation, component
    placement, token gaps, tests + Storybook sub-tasks) to the Figma-relevant
-   parts of your output.
+   parts of your output. Treat any `links` reported in the status JSON as
+   authoritative design targets for the affected components.
 3. For any other skip reason, proceed without Figma context and add a short
    note mentioning the reason.
 <!-- END SPECKIT-FIGMA AUTO-CONTEXT -->
 HOOK
-  echo "HOOKED: ${file#"$TARGET"/}"
+  echo "${action}: ${file#"$TARGET"/}"
 }
 
 if [[ "$HOOKS" == "true" ]]; then

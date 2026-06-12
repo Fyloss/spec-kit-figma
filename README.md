@@ -69,11 +69,17 @@ commands with your agent. Then run `/speckit.figma.setup` once.
 
 **Figma context is refreshed automatically:** `install.sh` appends a managed
 auto-context block to your workspace's `/speckit.specify` and `/speckit.tasks`
-prompts, which runs `./scripts/bash/figma-ensure-context.sh` before generation.
-The script is a safe no-op when the extension is unconfigured, the target is
-excluded, or the snapshot is fresh — and it never blocks spec/tasks generation.
+prompts, which runs `./scripts/bash/figma-ensure-context.sh` before generation,
+piping in the user's raw feature input (`--input -`). **Direct Figma links
+pasted in the feature description are detected automatically**: the linked
+file and frames become authoritative design targets and are introspected at
+node level — no manual command needed. The script is a safe no-op when the
+extension is unconfigured, the target is excluded, or the snapshot is fresh
+(and covers the linked nodes) — and it never blocks spec/tasks generation.
 Running `/speckit.figma.introspect` manually remains available for deep dives
 (specific nodes, custom depth). Opt out with `./install.sh --no-hooks`.
+Re-running `install.sh` refreshes the managed block in place, so existing
+workspaces pick up hook improvements on upgrade.
 
 ### Manual install (alternative)
 ```bash

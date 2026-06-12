@@ -120,3 +120,75 @@ JSON
   [ "$status" -eq 1 ]
   [[ "$output" == *"--max-age-minutes must be a positive integer"* ]]
 }
+
+# --- Direct Figma links in the feature input (--input) -----------------------
+
+@test "--input with a direct Figma link plans introspection of the linked file and node" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --dry-run --input \
+    "Build the checkout page https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "dry-run" ]]
+  [[ "$(status_json | jq -r '.introspectArgs | join(" ")')" == "--file LinkFILE999 --node 12:345" ]]
+  [[ "$(status_json | jq -r '.links | length')" == "1" ]]
+  [[ "$(status_json | jq -r '.links[0].nodeId')" == "12:345" ]]
+}
+
+@test "--input - reads the feature description from stdin" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run bash -c "printf '%s' 'See https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345' \
+    | \"$SCRIPT\" --dry-run --input -"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.introspectArgs | join(" ")')" == "--file LinkFILE999 --node 12:345" ]]
+}
+
+@test "a link without node-id introspects the linked file only" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --dry-run --input "https://www.figma.com/design/LinkFILE999/Checkout"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.introspectArgs | join(" ")')" == "--file LinkFILE999" ]]
+}
+
+@test "several links to the same file dedupe into one file and multiple nodes" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --dry-run --input \
+    "https://www.figma.com/design/LinkFILE999/A?node-id=1-2 and https://www.figma.com/design/LinkFILE999/A?node-id=3-4"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.introspectArgs | join(" ")')" == "--file LinkFILE999 --node 1:2 --node 3:4" ]]
+}
+
+@test "links to several files use the first and surface a warning" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --dry-run --input \
+    "https://www.figma.com/design/FirstFILE/A?node-id=1-2 https://www.figma.com/design/SecondFILE/B?node-id=3-4"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"distinct Figma files"* ]]
+  [[ "$(status_json | jq -r '.introspectArgs | join(" ")')" == "--file FirstFILE --node 1:2" ]]
+}
+
+@test "input without links keeps the config-derived scope" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --dry-run --input "No design links in this feature."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.introspectArgs | join(" ")')" == "--file single123FILE" ]]
+  [[ "$(status_json | jq -r '.links | length')" == "0" ]]
+}
+
+@test "a direct link bypasses a fresh snapshot that does not cover its node" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  echo '{}' > "${WORKSPACE}/.figma-context-snapshot.json"
+  run "$SCRIPT" --dry-run --input \
+    "https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "dry-run" ]]
+}
+
+@test "a fresh snapshot already covering the linked node stays fresh" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  echo '{"fileId":"LinkFILE999","nodes":{"nodes":{"12:345":{}}}}' \
+    > "${WORKSPACE}/.figma-context-snapshot.json"
+  run "$SCRIPT" --dry-run --input \
+    "https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
+}

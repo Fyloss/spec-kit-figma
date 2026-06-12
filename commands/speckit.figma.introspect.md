@@ -10,10 +10,12 @@ obey `./.specify/memory/figma-design-rules.md` (or `./memory/figma-design-rules.
 when running from the extension checkout).
 
 > **Automatic invocation:** `install.sh` wires `figma-ensure-context.sh` into
-> the workspace's `/speckit.specify` and `/speckit.tasks` prompts, so a fresh
-> snapshot is usually already present. Run this command manually for deep
-> dives (specific nodes, custom depth, team/project exploration) or to force
-> a refresh.
+> the workspace's `/speckit.specify` and `/speckit.tasks` prompts (the feature
+> input is piped in via `--input -`), so a fresh snapshot is usually already
+> present — **including node-level detail for any direct Figma links pasted
+> in the feature input**, which the hook parses and introspects on its own.
+> Run this command manually for deep dives (specific nodes, custom depth,
+> team/project exploration) or to force a refresh.
 
 ## Scripts
 

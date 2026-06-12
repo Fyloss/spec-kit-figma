@@ -95,13 +95,24 @@ manually only if you skipped `install.sh`.
 ## 6. Use in the SpecKit flow
 Run `/speckit.figma.setup` once. From then on, Figma context is **automatic**:
 the auto-context block installed in `/speckit.specify` and `/speckit.tasks`
-runs `./scripts/bash/figma-ensure-context.sh` before generation, which
-re-introspects only when `.figma-context-snapshot.json` is missing or stale
-(older than 60 minutes, or older than the config — override with
-`FIGMA_SNAPSHOT_MAX_AGE_MINUTES` or `--max-age-minutes`). Figma context is
-injected into `spec.md` and `tasks.md` for front-end targets and skipped for
-excluded ones; any skip (no config, placeholders, excluded target, failed
-introspection) is surfaced as a note and never blocks generation.
+runs `./scripts/bash/figma-ensure-context.sh` before generation, piping in the
+user's raw feature input (`--input -`). It re-introspects only when
+`.figma-context-snapshot.json` is missing or stale (older than 60 minutes, or
+older than the config — override with `FIGMA_SNAPSHOT_MAX_AGE_MINUTES` or
+`--max-age-minutes`). Figma context is injected into `spec.md` and `tasks.md`
+for front-end targets and skipped for excluded ones; any skip (no config,
+placeholders, excluded target, failed introspection) is surfaced as a note and
+never blocks generation.
+
+**Direct Figma links are handled automatically.** When the feature description
+contains Figma links (`figma.com/design|file|proto/...`, with or without
+`node-id`), `figma-ensure-context.sh` parses them and introspects the linked
+file with node-level detail; the linked frames become the authoritative design
+targets, overriding the config mapping for that run. A snapshot that does not
+cover the linked nodes is treated as stale and refreshed. The user never needs
+to run a manual command for this — pasting the link in the spec input is
+enough. (Links to several distinct files: the first is auto-introspected and a
+warning lists the others.)
 
 Run `/speckit.figma.introspect` manually only for deep dives: specific nodes
 (`--node`), deeper trees (`--depth`), or team/project exploration.

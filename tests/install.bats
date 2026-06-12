@@ -67,9 +67,35 @@ teardown() {
   [ "$status" -eq 0 ]
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"hook already present"* ]]
   count="$(grep -c "BEGIN SPECKIT-FIGMA AUTO-CONTEXT" "${WORKSPACE}/.claude/commands/speckit.specify.md")"
   [ "$count" -eq 1 ]
+}
+
+@test "the auto-context hook instructs piping the feature input into ensure-context" {
+  mkdir -p "${WORKSPACE}/.claude/commands"
+  echo "# specify" > "${WORKSPACE}/.claude/commands/speckit.specify.md"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  grep -q -- "--input -" "${WORKSPACE}/.claude/commands/speckit.specify.md"
+}
+
+@test "re-running install refreshes an outdated auto-context hook in place" {
+  mkdir -p "${WORKSPACE}/.claude/commands"
+  cat > "${WORKSPACE}/.claude/commands/speckit.specify.md" <<'OLD'
+# specify
+
+<!-- BEGIN SPECKIT-FIGMA AUTO-CONTEXT (managed by spec-kit-figma; re-running install.sh keeps a single copy) -->
+old hook body without input forwarding
+<!-- END SPECKIT-FIGMA AUTO-CONTEXT -->
+OLD
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"UPDATED:"* ]]
+  count="$(grep -c "BEGIN SPECKIT-FIGMA AUTO-CONTEXT" "${WORKSPACE}/.claude/commands/speckit.specify.md")"
+  [ "$count" -eq 1 ]
+  ! grep -q "old hook body" "${WORKSPACE}/.claude/commands/speckit.specify.md"
+  grep -q -- "--input -" "${WORKSPACE}/.claude/commands/speckit.specify.md"
+  grep -q "^# specify" "${WORKSPACE}/.claude/commands/speckit.specify.md"
 }
 
 @test "--no-hooks leaves the speckit command prompts untouched" {
