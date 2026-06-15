@@ -23,11 +23,11 @@ when running from the extension checkout).
 
 Run these from the workspace root. The short names used below map to:
 
-- `detect` → `./scripts/bash/figma-detect-target.sh`
-- `parse` → `./scripts/bash/figma-parse-links.sh`
-- `resolve` → `./scripts/bash/figma-resolve-source.sh`
-- `introspect` → `./scripts/bash/figma-introspect.sh`
-- `ensure` → `./scripts/bash/figma-ensure-context.sh` (auto pre-specify/tasks
+- `detect` → `./.specify/scripts/bash/figma-detect-target.sh`
+- `parse` → `./.specify/scripts/bash/figma-parse-links.sh`
+- `resolve` → `./.specify/scripts/bash/figma-resolve-source.sh`
+- `introspect` → `./.specify/scripts/bash/figma-introspect.sh`
+- `ensure` → `./.specify/scripts/bash/figma-ensure-context.sh` (auto pre-specify/tasks
   hook: introspects only when the snapshot is missing or stale; safe no-op
   otherwise)
 

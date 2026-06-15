@@ -26,9 +26,10 @@ agent. Verify with `specify extension list`. With this option you can skip the
 manual command registration in step 4.
 
 > Option A registers the **commands** only. Also run the manual installer
-> (Option B) once so the helper scripts (`scripts/bash/`), the config example,
-> `.env.example` and the design-rules memory are copied into the workspace —
-> the commands invoke `./scripts/bash/*.sh` from the workspace root.
+> (Option B) once so the helper scripts (`.specify/scripts/bash/`), the config
+> example, `.env.example` and the design-rules memory are copied into the
+> workspace — the commands invoke `./.specify/scripts/bash/*.sh` from the
+> workspace root (the SpecKit convention, alongside `.specify/memory/`).
 
 ### Option B — Manual installer (alternative)
 ```bash
@@ -43,7 +44,7 @@ manual command registration in step 4.
 ./install.sh --mode multi-repo
 ```
 The installer copies the config example to `figma.projects.config.json`, copies
-the helper scripts to `scripts/bash/`, adds `.env.example`, git-ignores `.env` +
+the helper scripts to `.specify/scripts/bash/`, adds `.env.example`, git-ignores `.env` +
 `.figma-context-snapshot.json`, installs the design-rules memory into
 `.specify/memory/`, and appends an **auto-context block** to the workspace's
 existing `/speckit.specify` and `/speckit.tasks` command prompts (skip with
@@ -89,16 +90,16 @@ manually only if you skipped `install.sh`.
 
 ## 5. Validate the setup
 ```bash
-./scripts/bash/figma-validate-config.sh
-./scripts/bash/figma-detect-target.sh <a-front-end-target>
-./scripts/bash/figma-detect-target.sh <an-excluded-target>
+./.specify/scripts/bash/figma-validate-config.sh
+./.specify/scripts/bash/figma-detect-target.sh <a-front-end-target>
+./.specify/scripts/bash/figma-detect-target.sh <an-excluded-target>
 ```
 
 ## 6. Use in the SpecKit flow
 Run `/speckit.figma.setup` once. From then on, Figma context is **automatic**:
 the extension hooks (`before_specify` / `before_tasks` in `extension.yml`)
 invoke `/speckit.figma.ensure`, which runs
-`./scripts/bash/figma-ensure-context.sh` before generation, piping in the
+`./.specify/scripts/bash/figma-ensure-context.sh` before generation, piping in the
 user's raw feature input (`--input -`). It re-introspects only when
 `.figma-context-snapshot.json` is missing or stale (older than 60 minutes, or
 older than the config — override with `FIGMA_SNAPSHOT_MAX_AGE_MINUTES` or

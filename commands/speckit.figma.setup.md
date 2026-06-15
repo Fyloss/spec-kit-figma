@@ -11,9 +11,9 @@ print or echo the access token.
 
 Run these from the workspace root. The short names used below map to:
 
-- `validate` → `./scripts/bash/figma-validate-config.sh`
-- `detect` → `./scripts/bash/figma-detect-target.sh`
-- `resolve` → `./scripts/bash/figma-resolve-source.sh`
+- `validate` → `./.specify/scripts/bash/figma-validate-config.sh`
+- `detect` → `./.specify/scripts/bash/figma-detect-target.sh`
+- `resolve` → `./.specify/scripts/bash/figma-resolve-source.sh`
 
 ## Steps
 

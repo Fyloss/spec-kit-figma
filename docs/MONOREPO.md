@@ -36,8 +36,8 @@ in every mode. Only the topology wrapper differs.
      `routingRules`.
 3. Validate and detect:
    ```bash
-   ./scripts/bash/figma-validate-config.sh
-   ./scripts/bash/figma-detect-target.sh repo
+   ./.specify/scripts/bash/figma-validate-config.sh
+   ./.specify/scripts/bash/figma-detect-target.sh repo
    ```
 
 ## Mono-repo setup
@@ -56,9 +56,9 @@ in every mode. Only the topology wrapper differs.
    - list non-front packages (BFF, tools) under `excluded`.
 3. Validate and detect:
    ```bash
-   ./scripts/bash/figma-validate-config.sh
-   ./scripts/bash/figma-detect-target.sh app-storefront
-   ./scripts/bash/figma-detect-target.sh app-bff   # → excluded
+   ./.specify/scripts/bash/figma-validate-config.sh
+   ./.specify/scripts/bash/figma-detect-target.sh app-storefront
+   ./.specify/scripts/bash/figma-detect-target.sh app-bff   # → excluded
    ```
 
 ## Component placement in a mono-repo

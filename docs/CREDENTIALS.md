@@ -111,7 +111,7 @@ jobs:
       FIGMA_PAT: ${{ secrets.FIGMA_PAT }}   # stored in repo/org secrets
     steps:
       - uses: actions/checkout@v4
-      - run: ./scripts/bash/figma-validate-config.sh
+      - run: ./.specify/scripts/bash/figma-validate-config.sh
 ```
 
 At runtime the scripts read the token from the **environment variable named by

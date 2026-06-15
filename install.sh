@@ -7,8 +7,9 @@
 #                [--prompt-hooks | --no-hooks]
 # What it does (idempotent):
 #   - copies the figma.projects.config example to <root>/figma.projects.config.json
-#   - copies the helper scripts to <root>/scripts/bash/ (docs and commands
-#     invoke ./scripts/bash/*.sh from the workspace root)
+#   - copies the helper scripts to <root>/.specify/scripts/bash/ (docs and
+#     commands invoke ./.specify/scripts/bash/*.sh from the workspace root, the
+#     SpecKit convention — alongside .specify/memory/)
 #   - copies .env.example to <root>/.env.example
 #   - ensures .env and .figma-context-snapshot.json are git-ignored
 #   - creates .specify/memory/ and installs the design-rules memory
@@ -55,15 +56,16 @@ else
   echo "ADDED: $CONFIG_DEST (from $MODE example) — edit it and replace REPLACE_WITH_* ids."
 fi
 
-# The docs and slash-commands run ./scripts/bash/*.sh from the workspace root,
-# so the helper scripts must live in the workspace, not only in this checkout.
+# The docs and slash-commands run ./.specify/scripts/bash/*.sh from the workspace
+# root (the SpecKit convention, alongside .specify/memory/), so the helper scripts
+# must live in the workspace, not only in this checkout.
 # Always refreshed: they are extension-owned code, not user-edited files.
 if [[ "$(cd "$TARGET" && pwd -P)" == "$EXT_DIR" ]]; then
-  echo "SKIP: scripts/bash/ (target is the extension checkout itself)."
+  echo "SKIP: .specify/scripts/bash/ (target is the extension checkout itself; scripts already at scripts/bash/)."
 else
-  mkdir -p "$TARGET/scripts/bash"
-  cp "$EXT_DIR/scripts/bash/"*.sh "$TARGET/scripts/bash/"
-  echo "ADDED: scripts/bash/ (figma-*.sh helpers)"
+  mkdir -p "$TARGET/.specify/scripts/bash"
+  cp "$EXT_DIR/scripts/bash/"*.sh "$TARGET/.specify/scripts/bash/"
+  echo "ADDED: .specify/scripts/bash/ (figma-*.sh helpers)"
 fi
 
 # Explicit existence check: cp -n's exit status is not portable (GNU coreutils
@@ -135,13 +137,13 @@ inject_hook() {
 
 Before generating, refresh the Figma design context:
 
-1. From the workspace root, run `./scripts/bash/figma-ensure-context.sh`,
+1. From the workspace root, run `./.specify/scripts/bash/figma-ensure-context.sh`,
    piping the user's RAW feature input (description, arguments, any pasted
    links — verbatim) via `--input -` (pass the target package name as the
    first argument in mono-/multi-repo workspaces):
 
    ```bash
-   ./scripts/bash/figma-ensure-context.sh --input - <<'SPECKIT_FIGMA_INPUT'
+   ./.specify/scripts/bash/figma-ensure-context.sh --input - <<'SPECKIT_FIGMA_INPUT'
    <the user's verbatim feature input>
    SPECKIT_FIGMA_INPUT
    ```
@@ -196,7 +198,7 @@ Next steps:
   1. Edit figma.projects.config.json — list targets, fill excluded[], replace REPLACE_WITH_* ids.
   2. Local dev: cp .env.example .env and add your READ-ONLY Figma PAT (see docs/CREDENTIALS.md).
      CI / Cloud Agent: set credentials.source = "ci-secret" and inject a platform secret.
-  3. Validate (from the workspace root):  ./scripts/bash/figma-validate-config.sh
+  3. Validate (from the workspace root):  ./.specify/scripts/bash/figma-validate-config.sh
   4. Register the commands (commands/speckit.figma.setup.md, commands/speckit.figma.introspect.md)
      with your SpecKit agent of choice — or install natively with
      'specify extension add' (see extension.yml / docs/INSTALL.md), which registers

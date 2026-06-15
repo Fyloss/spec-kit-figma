@@ -70,7 +70,7 @@ commands with your agent. Then run `/speckit.figma.setup` once.
 
 **Figma context is refreshed automatically:** the manifest's
 `before_specify` / `before_tasks` hooks invoke `/speckit.figma.ensure`, which
-runs `./scripts/bash/figma-ensure-context.sh` before generation, piping in the
+runs `./.specify/scripts/bash/figma-ensure-context.sh` before generation, piping in the
 user's raw feature input (`--input -`). **Direct Figma links pasted in the
 feature description are detected automatically**: the linked file and frames
 become authoritative design targets and are introspected at node level — no
@@ -99,7 +99,7 @@ removes any block injected by a previous extension version.
 ./install.sh --mode multi-repo
 
 # then edit figma.projects.config.json, add credentials, and:
-./scripts/bash/figma-validate-config.sh
+./.specify/scripts/bash/figma-validate-config.sh
 ```
 See [docs/INSTALL.md](docs/INSTALL.md), [docs/CREDENTIALS.md](docs/CREDENTIALS.md)
 and [docs/MONOREPO.md](docs/MONOREPO.md).
@@ -124,7 +124,7 @@ With `"mcp"`, configure `figma.mcp` (`url`, optional `serverName`,
 **transparently falls back to REST** — unless `fallbackToRest: false`, which makes
 an absent server a hard error. Resolve the effective engine at any time:
 ```bash
-./scripts/bash/figma-resolve-source.sh
+./.specify/scripts/bash/figma-resolve-source.sh
 # -> {"requested":"mcp","effective":"rest","fellBack":true, ...}
 ```
 You keep full portability (REST) while offering MCP richness to those who have it.

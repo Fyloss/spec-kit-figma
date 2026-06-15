@@ -11,13 +11,13 @@ does not apply, and it never blocks spec/tasks generation.
 
 ## 1. Refresh the snapshot
 
-From the workspace root, run `./scripts/bash/figma-ensure-context.sh`, piping
-the user's RAW feature input (description, arguments, any pasted links —
+From the workspace root, run `./.specify/scripts/bash/figma-ensure-context.sh`,
+piping the user's RAW feature input (description, arguments, any pasted links —
 verbatim) via `--input -`. Pass the target package name as the first argument
 in mono-/multi-repo workspaces:
 
 ```bash
-./scripts/bash/figma-ensure-context.sh --input - <<'SPECKIT_FIGMA_INPUT'
+./.specify/scripts/bash/figma-ensure-context.sh --input - <<'SPECKIT_FIGMA_INPUT'
 <the user's verbatim feature input>
 SPECKIT_FIGMA_INPUT
 ```
