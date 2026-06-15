@@ -1,5 +1,5 @@
 ---
-description: Configure the SpecKit Figma extension for this workspace (single-repo by default, mono-repo or multi-repo) and validate connectivity before any spec/plan/tasks run.
+description: Configure the SpecKit Figma extension for this workspace (single-repo by default, mono-repo or multi-repo) and validate connectivity before any spec/plan/tasks run. Choose the REST engine (portable, CI-friendly) or the MCP engine, which delivers more faithful mockup implementation.
 ---
 
 # /speckit.figma.setup — Configure the Figma extension
@@ -48,10 +48,14 @@ Run these from the workspace root. The short names used below map to:
 3b. **Design-context engine.** Set `figma.contextSource`:
    - `rest` (default) → fully portable, CI-friendly; nothing else to configure.
    - `mcp` → for users running a Figma MCP server (e.g. the local Figma Dev Mode
-     MCP server). Set `figma.mcp.url` (default `http://127.0.0.1:3845/mcp`) and
-     optionally `serverName`. Keep `mcp.fallbackToRest: true` (default) so the
-     extension degrades gracefully to REST when the server is absent. Only set it
-     to `false` when MCP is mandatory for the run. Recommend keeping `rest` in CI.
+     MCP server). **Recommended when mockup fidelity matters**: the MCP engine
+     exposes the design's structured node data (exact spacing, layout constraints,
+     tokens, variants and component bindings), so the agent reproduces mockups far
+     more precisely than from the REST snapshot alone. Set `figma.mcp.url` (default
+     `http://127.0.0.1:3845/mcp`) and optionally `serverName`. Keep
+     `mcp.fallbackToRest: true` (default) so the extension degrades gracefully to
+     REST when the server is absent. Only set it to `false` when MCP is mandatory
+     for the run. Recommend keeping `rest` in CI.
 
 4. **Replace placeholders.** Substitute every `REPLACE_WITH_*` value with a real
    Figma id. Pick the level that matches how the team's design is organized:

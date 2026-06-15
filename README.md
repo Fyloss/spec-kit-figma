@@ -18,8 +18,9 @@ submodules) layouts.
   constraints) is fetched on demand via `--depth` / `--node`.
 - Ships two design-context engines: a portable **REST** engine (default — curl +
   jq, CI-friendly) and an **optional MCP** engine (`figma.contextSource: "mcp"`)
-  for richer context when a Figma MCP server is available, with **automatic REST
-  fallback** when the server is absent.
+  that delivers richer context and **more faithful mockup implementation** when a
+  Figma MCP server is available, with **automatic REST fallback** when the server
+  is absent.
 - Enforces a **3-level component resolution** (reuse → create-in-DS → create-in-app)
   with the Design System kept **purely presentational** (no business logic).
 - Honors review remarks: direct Figma links in the input, shared mockups across
@@ -116,7 +117,13 @@ The engine is selected per workspace via `figma.contextSource`:
 | Value | Engine | When |
 | --- | --- | --- |
 | `"rest"` *(default)* | curl + jq against the Figma REST API | Always portable; the only engine guaranteed in CI. |
-| `"mcp"` | A Figma MCP (Model Context Protocol) server | Richer context for users who run the server locally. |
+| `"mcp"` | A Figma MCP (Model Context Protocol) server | Richer context, and **more faithful mockup implementation**, for users who run the server locally. |
+
+> **MCP yields more accurate implementations.** Because the MCP engine exposes
+> the design's structured node data — exact spacing, layout constraints, tokens,
+> variants and component bindings — the agent reproduces mockups far more
+> precisely than from the REST snapshot alone. When fidelity to the original
+> Figma design matters, prefer `figma.contextSource: "mcp"`.
 
 With `"mcp"`, configure `figma.mcp` (`url`, optional `serverName`,
 `fallbackToRest`). The extension probes the server and, when it is unreachable,

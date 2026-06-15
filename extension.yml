@@ -4,7 +4,7 @@ extension:
   id: figma
   name: "Spec Kit Figma"
   version: "1.0.0"
-  description: "Agent-agnostic Figma design-context extension for SpecKit. Grounds spec/plan/tasks/implement in Figma. Supports single-repo (default), mono-repo and multi-repo layouts, with REST (default) and optional MCP engines."
+  description: "Agent-agnostic Figma design-context extension for SpecKit. Grounds spec/plan/tasks/implement in Figma. Supports single-repo (default), mono-repo and multi-repo layouts, with a portable REST engine (default) and an optional MCP engine for more faithful mockup implementation."
   author: "Fyloss"
   repository: "https://github.com/Fyloss/spec-kit-figma"
   license: MIT
@@ -25,7 +25,7 @@ provides:
   commands:
     - name: speckit.figma.setup
       file: commands/speckit.figma.setup.md
-      description: "Configure the SpecKit Figma extension for this workspace and validate connectivity before any spec/plan/tasks run."
+      description: "Configure the SpecKit Figma extension for this workspace and validate connectivity before any spec/plan/tasks run. Selects the REST engine (portable, CI-friendly) or the MCP engine, which yields more faithful mockup implementation."
 
     - name: speckit.figma.ensure
       file: commands/speckit.figma.ensure.md
