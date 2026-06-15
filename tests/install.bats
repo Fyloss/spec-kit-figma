@@ -16,11 +16,11 @@ teardown() {
 @test "install copies the helper scripts into the target workspace" {
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
-  [ -x "${WORKSPACE}/scripts/bash/figma-validate-config.sh" ]
-  [ -x "${WORKSPACE}/scripts/bash/figma-detect-target.sh" ]
-  [ -x "${WORKSPACE}/scripts/bash/figma-resolve-source.sh" ]
-  [ -x "${WORKSPACE}/scripts/bash/figma-introspect.sh" ]
-  [ -f "${WORKSPACE}/scripts/bash/figma-common.sh" ]
+  [ -x "${WORKSPACE}/.specify/scripts/bash/figma-validate-config.sh" ]
+  [ -x "${WORKSPACE}/.specify/scripts/bash/figma-detect-target.sh" ]
+  [ -x "${WORKSPACE}/.specify/scripts/bash/figma-resolve-source.sh" ]
+  [ -x "${WORKSPACE}/.specify/scripts/bash/figma-introspect.sh" ]
+  [ -f "${WORKSPACE}/.specify/scripts/bash/figma-common.sh" ]
 }
 
 @test "install creates .specify/memory and installs the design rules" {
@@ -150,5 +150,5 @@ OLD
 @test "install copies the ensure-context helper script" {
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
-  [ -x "${WORKSPACE}/scripts/bash/figma-ensure-context.sh" ]
+  [ -x "${WORKSPACE}/.specify/scripts/bash/figma-ensure-context.sh" ]
 }
