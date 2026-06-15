@@ -31,10 +31,15 @@ Run these from the workspace root. The short names used below map to:
    and fill `pageToPackageMapping` and `routingRules`.
 
 3. **Credentials.** Ensure `credentials.source` is set:
-   - `env` for local development → instruct the user to copy `.env.example`
-     (placed at the workspace root by the installer) to `.env` and add their own
-     **read-only** Figma PAT. Confirm `.env` and `.figma-context-snapshot.json`
-     are git-ignored.
+   - `env` for local development → instruct the user to store their own
+     **read-only** Figma PAT in the OS keychain and export `FIGMA_PAT_COMMAND`
+     from their shell profile (NOT in the workspace — there is no `.env`), e.g.:
+     ```bash
+     security add-generic-password -s figma-pat -a "$USER" -w 'figd_xxxxxxxx'
+     echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"' >> ~/.zshrc
+     ```
+     Confirm `.figma-context-snapshot.json` is git-ignored. Never write a token
+     to any workspace file (see `docs/CREDENTIALS.md`).
    - `ci-secret` for CI / GitHub Cloud Agent → set `secretName` (and `envVar`
      when the variable injected at runtime differs from the secret name) and
      document the secret in the pipeline (see `docs/CREDENTIALS.md`). Never

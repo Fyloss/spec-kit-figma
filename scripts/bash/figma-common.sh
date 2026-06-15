@@ -6,7 +6,7 @@
 #
 # Provides:
 #   figma_repo_root            -> prints the workspace root
-#   figma_load_token           -> prints the Figma PAT (env > .env), never echoes it elsewhere
+#   figma_load_token           -> prints the Figma PAT (env > keychain), never echoes it elsewhere
 #   figma_api <PATH>           -> GET against the Figma API with 429/5xx exponential backoff
 #   figma_cache_path           -> prints the snapshot cache path
 # Dependencies: bash 4+, curl, jq
@@ -169,13 +169,14 @@ figma_resolve_context_source() {
 }
 
 # Load the token: environment variable first, then FIGMA_PAT_COMMAND (a secret
-# manager such as the macOS keychain), then a git-ignored .env at the root.
-# The .env is parsed (NOT sourced) so arbitrary shell content cannot be executed.
+# manager such as the macOS keychain). There is deliberately NO plaintext .env
+# fallback — locally the token MUST be stored in the OS keychain and fetched via
+# FIGMA_PAT_COMMAND, never written to a file in the workspace.
 #
 # FIGMA_PAT_COMMAND is a trusted LOCAL env var (same trust model as
 # FIGMA_API_BASE — never read from the committed config, which could smuggle a
-# command in via a PR): it lets the token live in the OS keychain instead of a
-# plaintext .env, e.g.
+# command in via a PR): it keeps the token in the OS keychain instead of any
+# file on disk, e.g. in ~/.zshrc:
 #   export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"
 # It is executed WITHOUT a shell (tokenized exec), so pipes/substitutions in
 # the value are inert arguments, not shell syntax.
@@ -195,38 +196,9 @@ figma_load_token() {
       printf '%s' "$pat_out"
       return 0
     fi
-    echo "WARN: FIGMA_PAT_COMMAND failed or returned an empty token; falling back to .env." >&2
+    echo "WARN: FIGMA_PAT_COMMAND failed or returned an empty token." >&2
   fi
-  local env_file; env_file="$(figma_repo_root)/.env"
-  if [[ -f "$env_file" ]]; then
-    # Escape regex metacharacters: envVar is user-controlled config.
-    local escaped_var; escaped_var="$(printf '%s' "$var" | sed -e 's/[][(){}.^$*+?|\\/]/\\&/g')"
-    local line; line="$(grep -E "^[[:space:]]*${escaped_var}[[:space:]]*=" "$env_file" | tail -n1 || true)"
-    if [[ -n "$line" ]]; then
-      local val="${line#*=}"
-      val="${val%$'\r'}"
-      # Trim leading whitespace before inspecting quotes.
-      val="${val#"${val%%[![:space:]]*}"}"
-      if [[ "$val" == \"* ]]; then
-        # Double-quoted value: keep everything up to the closing quote (inline
-        # comments after it are ignored).
-        val="${val#\"}"; val="${val%%\"*}"
-      elif [[ "$val" == \'* ]]; then
-        # Single-quoted value: keep everything up to the closing quote.
-        val="${val#\'}"; val="${val%%\'*}"
-      else
-        # Unquoted value: a ' #' sequence starts an inline comment; drop it.
-        val="${val%%[[:space:]]#*}"
-        # Then strip surrounding whitespace.
-        val="$(printf '%s' "$val" | awk '{$1=$1;print}')"
-      fi
-      if [[ -n "$val" && "$val" != *REPLACE_WITH_* ]]; then
-        printf '%s' "$val"
-        return 0
-      fi
-    fi
-  fi
-  echo "ERROR: ${var} not found. Set it in your environment or in a git-ignored .env (see docs/CREDENTIALS.md)." >&2
+  echo "ERROR: ${var} not found. Set it in your environment (CI secret) or store the PAT in your OS keychain and export FIGMA_PAT_COMMAND locally (see docs/CREDENTIALS.md)." >&2
   return 1
 }
 

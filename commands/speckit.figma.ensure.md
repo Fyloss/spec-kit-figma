@@ -43,5 +43,5 @@ linked nodes.
 
 ## 3. Credentials hygiene
 
-Never read, print or echo the Figma token (`.env`, `FIGMA_PAT`, keychain).
+Never read, print or echo the Figma token (`FIGMA_PAT`, keychain).
 The scripts load it internally; you only ever need their JSON output.

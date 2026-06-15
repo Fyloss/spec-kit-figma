@@ -1,76 +1,70 @@
 # Credentials — Figma access token
 
-This document answers the open question raised during review:
-**"Why not use a `.env` for the Figma Personal Access Token (PAT)?"** — and
-defines the policy for local, CI and GitHub Cloud Agent contexts.
+This document defines the policy for storing and loading the Figma Personal
+Access Token (PAT) across local, CI and GitHub Cloud Agent contexts.
 
 ## TL;DR
-- **Local development → YES, use a `.env`.** It is the right tool: per-developer,
-  git-ignored, least-privilege, zero shared secret.
-- **CI / GitHub Cloud Agent → NO `.env`.** Use the platform secret store
-  (`credentials.source: "ci-secret"`). A `.env` committed or baked into an image
-  is a leak waiting to happen.
+- **Local development → use the OS keychain.** Store the PAT in your OS keychain
+  (macOS `security`, 1Password, `pass`, …) and export `FIGMA_PAT_COMMAND` in your
+  shell profile so the scripts fetch it at call time. **No `.env` file** — the
+  token never touches a file in the workspace.
+- **CI / GitHub Cloud Agent → use the platform secret store**
+  (`credentials.source: "ci-secret"`). The secret is injected as an environment
+  variable at runtime.
 
 The token is **never** stored in `figma.projects.config.json`. The config only
 declares *where* to read the token from (`credentials.source` + `envVar` /
 `secretName`), never the value.
 
-## Challenge: why `.env` is appropriate locally
-Arguments **for** `.env` (the recommended local approach):
-- **Per-developer token**: each developer uses their own PAT → least privilege,
-  easy revocation, clear audit trail.
-- **Git-ignored by construction**: `.env` and `.figma-context-snapshot.json` are
-  added to `.gitignore` by the installer; the token never reaches version control.
-- **No shared secret**: nothing to rotate centrally for local work.
-- **Parsed, not sourced**: the scripts read `FIGMA_PAT` from `.env` by line
-  extraction (no `source`/`dotenv` execution), so a malicious `.env` cannot run
-  arbitrary shell code.
-- **Standard & frictionless**: matches the team's existing convention of using
-  environment variables for sensitive configuration.
-
-Arguments **against** `.env` (and the mitigations):
-- *Risk of accidental commit* → mitigated by enforced `.gitignore` + a secret
-  scanner in CI. Consider a pre-commit hook that blocks `figd_` token patterns.
-- *Plaintext on disk* → acceptable for a read-only PAT scoped to file reads; for
-  stricter needs, use the OS keychain via `FIGMA_PAT_COMMAND` (see
-  [Keychain instead of .env](#keychain-instead-of-env-figma_pat_command)).
-- *Not suitable for shared/automated runners* → that is exactly why CI uses a
-  secret store instead (below).
-
-**Conclusion:** keep `.env` for local development, but make `credentials.source`
-explicit so the same config works unchanged in CI by switching to `ci-secret`.
+## Why the keychain (and not a `.env`)
+A plaintext `.env` keeps the token in a file on disk that an agent — or an
+accidental `git add -A` — could read or commit. Storing the PAT in the OS
+keychain and resolving it through `FIGMA_PAT_COMMAND` removes that surface
+entirely:
+- **No plaintext on disk**: the token lives in the OS secret store, encrypted at
+  rest, gated by the OS session.
+- **Nothing to git-ignore**: there is no token file in the workspace to leak.
+- **Per-developer token**: each developer uses their own read-only PAT → least
+  privilege, easy revocation, clear audit trail.
+- **Out of the agent's reach**: combined with a harness deny rule (below) the
+  token never exists anywhere the agent can read.
 
 ## Local development (`credentials.source: "env"`)
+
+Store the PAT in the OS keychain, then export the retrieval command from your
+shell profile (NOT from the workspace):
+
 ```bash
-# .env.example is placed at the workspace root by install.sh
-# (its source lives at config/.env.example in the extension checkout)
-cp .env.example .env
-# edit .env → FIGMA_PAT=figd_xxxxxxxx  (READ-ONLY scopes only)
+# 1. one-time: store the READ-ONLY PAT in the macOS keychain
+security add-generic-password -s figma-pat -a "$USER" -w 'figd_xxxxxxxx'
+
+# 2. add the retrieval command to ~/.zshrc (paste it directly, no editor needed)
+echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"' >> ~/.zshrc
+
+# 3. reload the shell so FIGMA_PAT_COMMAND is set
+source ~/.zshrc
 ```
+
 Generate the PAT at <https://www.figma.com/developers/api#access-tokens> with the
 minimal scopes: `file_content:read`, `file_metadata:read`.
 
-## Keychain instead of .env (`FIGMA_PAT_COMMAND`)
+The scripts run `FIGMA_PAT_COMMAND` at call time and read the token from its
+stdout. It is executed **without a shell** (tokenized exec), so pipes or
+substitutions in its value are inert; and like `FIGMA_API_BASE`, it is only ever
+read from the trusted local environment, never from the committed config — a
+malicious PR cannot smuggle a command in. Works with any CLI secret manager as
+long as the token is printed on stdout, e.g.:
 
-To avoid any plaintext token on disk — and keep it out of files an agent could
-read — store the PAT in a secret manager and declare the retrieval command in
-your shell profile (NOT in the workspace):
-
-```bash
-# one-time: store the PAT in the macOS keychain
-security add-generic-password -s figma-pat -a "$USER" -w 'figd_xxxxxxxx'
-
-# in ~/.zshrc — the scripts fetch the token at call time
-export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"
-```
+| Secret manager | `FIGMA_PAT_COMMAND` value |
+|---|---|
+| macOS keychain | `security find-generic-password -s figma-pat -w` |
+| 1Password CLI  | `op read op://Private/figma-pat/credential` |
+| `pass`         | `pass show figma/pat` |
+| `secret-tool`  | `secret-tool lookup service figma-pat` |
 
 Resolution order in the scripts: environment variable (`FIGMA_PAT`) >
-`FIGMA_PAT_COMMAND` > `.env`. The command is executed **without a shell**
-(tokenized exec), so pipes or substitutions in its value are inert; and like
-`FIGMA_API_BASE`, it is only ever read from the trusted local environment,
-never from the committed config — a malicious PR cannot smuggle a command in.
-Works with any CLI secret manager (`security`, 1Password `op read`, `pass`,
-`secret-tool`, …) as long as the token is printed on stdout.
+`FIGMA_PAT_COMMAND`. There is **no `.env` fallback** — if neither is set the
+scripts fail with an explicit error pointing back here.
 
 ## Keeping the token away from the agent
 
@@ -78,29 +72,28 @@ The agent **never needs the token**: the scripts load it internally, send it
 only as an `X-Figma-Token` header to `https://*.figma.com` (enforced), and
 never echo it. The design-rules memory and the commands instruct the agent to
 rely exclusively on the scripts' JSON output. To enforce this at the harness
-level, deny the agent read access to the token sources, e.g. for Claude Code
-in `.claude/settings.json`:
+level, deny the agent access to the token sources, e.g. for Claude Code in
+`.claude/settings.json`:
 
 ```json
 {
   "permissions": {
     "deny": [
-      "Read(./.env)",
       "Bash(security find-generic-password*)"
     ]
   }
 }
 ```
 
-Combined with `FIGMA_PAT_COMMAND` + keychain (no `.env` at all), the token
-never exists in any file of the workspace.
+With the PAT in the keychain (no `.env` at all), the token never exists in any
+file of the workspace.
 
 ## CI / GitHub Cloud Agent (`credentials.source: "ci-secret"`)
 Set in `figma.projects.config.json`:
 ```json
 "credentials": { "source": "ci-secret", "secretName": "FIGMA_PAT" }
 ```
-Then inject the secret at runtime (never a committed `.env`):
+Then inject the secret at runtime (never a committed file):
 
 ```yaml
 # GitHub Actions example
@@ -132,7 +125,7 @@ For a **GitHub Cloud Agent** accessing Figma (future-proofing):
   scoped read-only, owned by a service account — not a person.
 - Store it as an **organization/environment secret**; the agent reads it as an
   environment variable. The extension scripts already prefer the environment
-  variable over any `.env`, so no code change is needed.
+  variable, so no code change is needed.
 - Apply **least privilege** and rotate on a schedule; restrict the secret to the
   environments that actually run SpecKit.
 - Never write the token to `.figma-context-snapshot.json` (the snapshot stores
@@ -141,6 +134,9 @@ For a **GitHub Cloud Agent** accessing Figma (future-proofing):
 ## Hard rules
 - The token MUST NOT appear in any committed file (`figma.projects.config.json`,
   scripts, snapshots, logs).
+- The token MUST NOT be written to any file in the workspace — locally it lives
+  in the OS keychain, fetched via `FIGMA_PAT_COMMAND`; in CI it comes from the
+  platform secret store.
 - Scripts MUST NOT echo the token. Validation rejects any `token`/`pat`/
   `accessToken` field found in the config.
-- `.env` and `.figma-context-snapshot.json` MUST stay git-ignored.
+- `.figma-context-snapshot.json` MUST stay git-ignored.

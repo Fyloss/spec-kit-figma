@@ -29,13 +29,18 @@ teardown() {
   [ -f "${WORKSPACE}/.specify/memory/figma-design-rules.md" ]
 }
 
-@test "a failed .env.example copy is not reported as SKIP" {
-  cp "${REPO_ROOT}/config/figma.projects.config.singlerepo.example.json" \
-     "${WORKSPACE}/figma.projects.config.json"
-  chmod 555 "$WORKSPACE"
+@test "install never creates a .env or .env.example file" {
   run "$INSTALL" --target "$WORKSPACE"
-  [ "$status" -ne 0 ]
-  [[ "$output" != *"SKIP: .env.example"* ]]
+  [ "$status" -eq 0 ]
+  [ ! -e "${WORKSPACE}/.env" ]
+  [ ! -e "${WORKSPACE}/.env.example" ]
+}
+
+@test "install git-ignores the snapshot but not .env" {
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  grep -qxF ".figma-context-snapshot.json" "${WORKSPACE}/.gitignore"
+  ! grep -qxF ".env" "${WORKSPACE}/.gitignore"
 }
 
 @test "re-running install reports SKIP for files already present" {
@@ -44,7 +49,6 @@ teardown() {
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
   [[ "$output" == *"already exists"* ]]
-  [[ "$output" == *"SKIP: .env.example already present."* ]]
 }
 
 @test "install leaves the speckit command prompts untouched by default" {

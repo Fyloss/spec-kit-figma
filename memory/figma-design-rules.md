@@ -49,12 +49,12 @@ complement the project constitution; on conflict, the stricter rule wins.
 
 ## 8. Credentials & secrets
 - The Figma access token is NEVER stored in `figma.projects.config.json` or any
-  committed file. Local: read-only PAT in a git-ignored `.env` or, better, in
-  the OS keychain via `FIGMA_PAT_COMMAND` (see docs/CREDENTIALS.md). CI /
-  GitHub Cloud Agent: platform secret store (`credentials.source: "ci-secret"`).
-- The agent MUST NOT read, print or echo the token from ANY source (`.env`,
-  environment variables, keychain commands). The `figma-*.sh` scripts load it
-  internally and never output it; the agent only ever consumes their JSON.
+  committed file, nor in any workspace file. Local: read-only PAT in the OS
+  keychain, fetched via `FIGMA_PAT_COMMAND` (no `.env`; see docs/CREDENTIALS.md).
+  CI / GitHub Cloud Agent: platform secret store (`credentials.source: "ci-secret"`).
+- The agent MUST NOT read, print or echo the token from ANY source (environment
+  variables, keychain commands). The `figma-*.sh` scripts load it internally and
+  never output it; the agent only ever consumes their JSON.
 - Apply least privilege: read-only Figma scopes only.
 
 ## 9. Autonomy boundaries

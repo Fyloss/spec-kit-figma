@@ -41,10 +41,9 @@ submodules) layouts.
 │   ├── figma.projects.config.singlerepo.example.json
 │   ├── figma.projects.config.multirepo.example.json
 │   ├── figma.projects.config.monorepo.example.json
-│   ├── figma.projects.config.organization.example.json
-│   └── .env.example
+│   └── figma.projects.config.organization.example.json
 ├── scripts/
-│   └── bash/                           # curl + jq, 429 backoff, .env parsing
+│   └── bash/                           # curl + jq, 429 backoff, keychain token loading
 ├── tests/                              # bats test suite + fixtures
 ├── templates/
 │   ├── spec-figma-section.template.md

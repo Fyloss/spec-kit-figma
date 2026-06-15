@@ -10,8 +10,7 @@
 #   - copies the helper scripts to <root>/.specify/scripts/bash/ (docs and
 #     commands invoke ./.specify/scripts/bash/*.sh from the workspace root, the
 #     SpecKit convention — alongside .specify/memory/)
-#   - copies .env.example to <root>/.env.example
-#   - ensures .env and .figma-context-snapshot.json are git-ignored
+#   - ensures .figma-context-snapshot.json is git-ignored
 #   - creates .specify/memory/ and installs the design-rules memory
 #   - by default LEAVES the /speckit.specify and /speckit.tasks prompts
 #     untouched (automatic Figma context runs via the extension.yml hooks
@@ -68,20 +67,10 @@ else
   echo "ADDED: .specify/scripts/bash/ (figma-*.sh helpers)"
 fi
 
-# Explicit existence check: cp -n's exit status is not portable (GNU coreutils
-# <9.2 exits 0 on skip), and silencing stderr would report real failures as SKIP.
-if [[ -e "$TARGET/.env.example" ]]; then
-  echo "SKIP: .env.example already present."
-else
-  cp "$EXT_DIR/config/.env.example" "$TARGET/.env.example"
-  echo "ADDED: $TARGET/.env.example"
-fi
-
 GI="$TARGET/.gitignore"
 touch "$GI"
-for entry in ".env" ".figma-context-snapshot.json"; do
-  grep -qxF "$entry" "$GI" || { echo "$entry" >> "$GI"; echo "GITIGNORE: added $entry"; }
-done
+SNAPSHOT_ENTRY=".figma-context-snapshot.json"
+grep -qxF "$SNAPSHOT_ENTRY" "$GI" || { echo "$SNAPSHOT_ENTRY" >> "$GI"; echo "GITIGNORE: added $SNAPSHOT_ENTRY"; }
 
 # The introspect command mandates loading this memory file, so it must always
 # be installed — create .specify/memory rather than silently skipping.
@@ -196,7 +185,10 @@ cat <<EOF
 
 Next steps:
   1. Edit figma.projects.config.json — list targets, fill excluded[], replace REPLACE_WITH_* ids.
-  2. Local dev: cp .env.example .env and add your READ-ONLY Figma PAT (see docs/CREDENTIALS.md).
+  2. Local dev: store your READ-ONLY Figma PAT in the OS keychain and export FIGMA_PAT_COMMAND
+     in your shell profile, e.g. in ~/.zshrc (see docs/CREDENTIALS.md):
+       security add-generic-password -s figma-pat -a "\$USER" -w 'figd_xxxxxxxx'
+       echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"' >> ~/.zshrc
      CI / Cloud Agent: set credentials.source = "ci-secret" and inject a platform secret.
   3. Validate (from the workspace root):  ./.specify/scripts/bash/figma-validate-config.sh
   4. Register the commands (commands/speckit.figma.setup.md, commands/speckit.figma.introspect.md)

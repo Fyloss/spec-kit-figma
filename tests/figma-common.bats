@@ -37,59 +37,21 @@ JSON
   [ "$output" = "figd_env_token_value" ]
 }
 
-@test "figma_load_token reads the token from a git-ignored .env" {
+@test "figma_load_token fails when no env var and no keychain command are set" {
   unset FIGMA_PAT
-  printf 'FIGMA_PAT="figd_from_dotenv"\n' > "${WORKSPACE}/.env"
-  run figma_load_token
-  [ "$status" -eq 0 ]
-  [ "$output" = "figd_from_dotenv" ]
-}
-
-@test "figma_load_token strips an inline comment after a quoted value" {
-  unset FIGMA_PAT
-  printf 'FIGMA_PAT="figd_quoted_token" # my local PAT\n' > "${WORKSPACE}/.env"
-  run figma_load_token
-  [ "$status" -eq 0 ]
-  [ "$output" = "figd_quoted_token" ]
-}
-
-@test "figma_load_token strips an inline comment after an unquoted value" {
-  unset FIGMA_PAT
-  printf 'FIGMA_PAT=figd_unquoted_token # trailing comment\n' > "${WORKSPACE}/.env"
-  run figma_load_token
-  [ "$status" -eq 0 ]
-  [ "$output" = "figd_unquoted_token" ]
-}
-
-@test "figma_load_token trims surrounding whitespace on an unquoted value" {
-  unset FIGMA_PAT
-  printf 'FIGMA_PAT=   figd_spaced_token   \n' > "${WORKSPACE}/.env"
-  run figma_load_token
-  [ "$status" -eq 0 ]
-  [ "$output" = "figd_spaced_token" ]
-}
-
-@test "figma_load_token keeps a hash inside a quoted value" {
-  unset FIGMA_PAT
-  printf 'FIGMA_PAT="figd_tok#en_with_hash"\n' > "${WORKSPACE}/.env"
-  run figma_load_token
-  [ "$status" -eq 0 ]
-  [ "$output" = "figd_tok#en_with_hash" ]
-}
-
-@test "figma_load_token ignores an unresolved REPLACE_WITH_ placeholder" {
-  unset FIGMA_PAT
-  printf 'FIGMA_PAT=REPLACE_WITH_YOUR_TOKEN\n' > "${WORKSPACE}/.env"
+  unset FIGMA_PAT_COMMAND
   run figma_load_token
   [ "$status" -ne 0 ]
   [[ "$output" == *"not found"* ]]
 }
 
-@test "figma_load_token fails when the token is missing everywhere" {
+@test "figma_load_token never reads a plaintext .env file" {
   unset FIGMA_PAT
+  unset FIGMA_PAT_COMMAND
+  printf 'FIGMA_PAT=figd_from_dotenv\n' > "${WORKSPACE}/.env"
   run figma_load_token
   [ "$status" -ne 0 ]
-  [[ "$output" == *"not found"* ]]
+  [[ "$output" != *"figd_from_dotenv"* ]]
 }
 
 @test "figma_load_token fetches the token via FIGMA_PAT_COMMAND when the env var is unset" {
@@ -108,23 +70,15 @@ JSON
   [ "$output" = "figd_env_token" ]
 }
 
-@test "FIGMA_PAT_COMMAND wins over a plaintext .env" {
-  unset FIGMA_PAT
-  printf 'FIGMA_PAT=figd_dotenv\n' > "${WORKSPACE}/.env"
-  export FIGMA_PAT_COMMAND="printf figd_from_command"
-  run figma_load_token
-  [ "$status" -eq 0 ]
-  [ "$output" = "figd_from_command" ]
-}
-
-@test "a failing FIGMA_PAT_COMMAND falls back to .env with a warning" {
+@test "a failing FIGMA_PAT_COMMAND errors (no .env fallback)" {
   unset FIGMA_PAT
   printf 'FIGMA_PAT=figd_dotenv\n' > "${WORKSPACE}/.env"
   export FIGMA_PAT_COMMAND="false"
   run figma_load_token
-  [ "$status" -eq 0 ]
+  [ "$status" -ne 0 ]
   [[ "$output" == *"WARN"* ]]
-  [[ "$output" == *"figd_dotenv"* ]]
+  [[ "$output" == *"not found"* ]]
+  [[ "$output" != *"figd_dotenv"* ]]
 }
 
 @test "FIGMA_PAT_COMMAND is executed without a shell (no pipe smuggling)" {

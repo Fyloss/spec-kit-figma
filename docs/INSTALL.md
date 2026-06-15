@@ -27,9 +27,9 @@ manual command registration in step 4.
 
 > Option A registers the **commands** only. Also run the manual installer
 > (Option B) once so the helper scripts (`.specify/scripts/bash/`), the config
-> example, `.env.example` and the design-rules memory are copied into the
-> workspace — the commands invoke `./.specify/scripts/bash/*.sh` from the
-> workspace root (the SpecKit convention, alongside `.specify/memory/`).
+> example and the design-rules memory are copied into the workspace — the
+> commands invoke `./.specify/scripts/bash/*.sh` from the workspace root (the
+> SpecKit convention, alongside `.specify/memory/`).
 
 ### Option B — Manual installer (alternative)
 ```bash
@@ -44,7 +44,7 @@ manual command registration in step 4.
 ./install.sh --mode multi-repo
 ```
 The installer copies the config example to `figma.projects.config.json`, copies
-the helper scripts to `.specify/scripts/bash/`, adds `.env.example`, git-ignores `.env` +
+the helper scripts to `.specify/scripts/bash/`, git-ignores
 `.figma-context-snapshot.json`, installs the design-rules memory into
 `.specify/memory/`, and appends an **auto-context block** to the workspace's
 existing `/speckit.specify` and `/speckit.tasks` command prompts (skip with
@@ -63,8 +63,9 @@ Validate with the JSON Schema in your editor:
 `config/figma.projects.config.schema.json`.
 
 ## 3. Credentials
-See [CREDENTIALS.md](CREDENTIALS.md). Local: copy `.env.example` to `.env` and add
-your PAT. CI/Cloud Agent: inject a platform secret.
+See [CREDENTIALS.md](CREDENTIALS.md). Local: store your read-only PAT in the OS
+keychain and export `FIGMA_PAT_COMMAND` (no `.env`). CI/Cloud Agent: inject a
+platform secret.
 
 ## 4. Register the commands with your agent
 > Skip this step if you installed via `specify extension add` (Option A) — SpecKit

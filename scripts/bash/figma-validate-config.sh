@@ -77,7 +77,7 @@ SRC="$(jq -r '.figma.credentials.source // empty' "$CONFIG")"
 # legitimate user-chosen keys (e.g. a Figma page named 'token' in
 # pageToPackageMapping or a submodule named 'pat').
 if jq -e '.figma.credentials | objects | has("token") or has("pat") or has("accessToken")' "$CONFIG" >/dev/null 2>&1; then
-  echo "ERROR: a secret-looking field was found in the config. Tokens MUST live in env/.env or a CI secret, never in this file." >&2
+  echo "ERROR: a secret-looking field was found in the config. Tokens MUST live in the OS keychain (FIGMA_PAT_COMMAND), an environment variable, or a CI secret, never in this file." >&2
   exit 1
 fi
 
