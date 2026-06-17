@@ -1,0 +1,218 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://speckit.dev/schemas/figma.projects.config.schema.json",
+  "title": "Figma Projects Config",
+  "description": "Workspace-level configuration that maps repositories (or packages) to Figma files and drives the SpecKit Figma extension. Supports single-repo (default), mono-repo (Nx / Turborepo / pnpm / yarn / Lerna) and multi-repo (git submodules) layouts.",
+  "type": "object",
+  "required": ["version", "mode", "figma"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema/config version (semver)."
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["single-repo", "mono-repo", "multi-repo"],
+      "default": "single-repo",
+      "description": "Repository topology. 'single-repo' (default) and 'mono-repo' both use the single 'repo' object; 'multi-repo' uses the 'submodules' map. A 'single-repo' holds one front-end target; a 'mono-repo' hosts several internal packages (apps/libs)."
+    },
+    "figma": {
+      "type": "object",
+      "required": ["credentials"],
+      "additionalProperties": false,
+      "properties": {
+        "apiBaseUrl": {
+          "type": "string",
+          "default": "https://api.figma.com/v1",
+          "pattern": "^https://([A-Za-z0-9-]+\\.)*figma\\.com(/.*)?$",
+          "description": "Base URL of the Figma REST API. Restricted to https://*.figma.com: this file is committed/shared, and any other host would receive the access token. Use the FIGMA_API_BASE environment variable for a local (trusted) override, e.g. an enterprise proxy."
+        },
+        "contextSource": {
+          "type": "string",
+          "enum": ["rest", "mcp"],
+          "default": "rest",
+          "description": "Design-context engine. 'rest' (default) is fully portable and CI-friendly (curl + jq against the Figma REST API). 'mcp' uses a Model Context Protocol Figma server for richer context when available, and automatically falls back to 'rest' when the MCP server is unreachable (unless mcp.fallbackToRest is false)."
+        },
+        "mcp": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Optional MCP server settings, used only when contextSource = 'mcp'. The extension probes the server and falls back to the REST engine when it is absent, preserving portability.",
+          "properties": {
+            "url": {
+              "type": "string",
+              "default": "http://127.0.0.1:3845/mcp",
+              "description": "HTTP(S) endpoint of the Figma MCP server (e.g. the local Figma Dev Mode MCP server)."
+            },
+            "serverName": {
+              "type": "string",
+              "description": "Logical name of the MCP server as registered with the agent (informational; helps the agent pick the right MCP tools)."
+            },
+            "fallbackToRest": {
+              "type": "boolean",
+              "default": true,
+              "description": "When true (default), the extension transparently falls back to the REST engine if the MCP server is unreachable. When false, an unreachable MCP server is treated as a hard error."
+            }
+          }
+        },
+        "credentials": {
+          "type": "object",
+          "required": ["source"],
+          "additionalProperties": false,
+          "properties": {
+            "source": {
+              "type": "string",
+              "enum": ["env", "ci-secret"],
+              "description": "'env' reads the token from an environment variable (or .env locally). 'ci-secret' reads it from a CI/Cloud-Agent secret store. The token MUST NEVER be stored in this file."
+            },
+            "envVar": {
+              "type": "string",
+              "default": "FIGMA_PAT",
+              "description": "Name of the environment variable holding the Figma Personal Access Token. Also used with source = 'ci-secret': it names the variable the CI injects the secret into (e.g. env: FIGMA_PAT: ${{ secrets.<secretName> }})."
+            },
+            "secretName": {
+              "type": "string",
+              "description": "Name of the CI/Cloud-Agent secret in the secret store when source = 'ci-secret' (e.g. a GitHub Actions secret). The token itself is read from the environment variable named by envVar; secretName is only used as the variable name when envVar is unset."
+            }
+          }
+        }
+      }
+    },
+    "submodules": {
+      "type": "object",
+      "description": "Multi-repo only. Keyed by git submodule / repository name.",
+      "additionalProperties": { "$ref": "#/definitions/target" }
+    },
+    "repo": {
+      "description": "Single-repo and mono-repo only. Describes the single repository (and, for a mono-repo, its internal packages).",
+      "$ref": "#/definitions/target"
+    },
+    "excluded": {
+      "type": "array",
+      "description": "Repositories or packages for which Figma integration MUST be bypassed silently (back-end, infra, BFF, etc.).",
+      "items": { "type": "string" }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "mode": { "const": "multi-repo" } } },
+      "then": { "required": ["submodules"] }
+    },
+    {
+      "if": { "properties": { "mode": { "const": "mono-repo" } } },
+      "then": { "required": ["repo"] }
+    },
+    {
+      "if": { "properties": { "mode": { "const": "single-repo" } } },
+      "then": { "required": ["repo"] }
+    }
+  ],
+  "definitions": {
+    "target": {
+      "type": "object",
+      "required": ["enabled", "role"],
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["figmaFileId"] },
+        { "required": ["figmaProjectId"] },
+        { "required": ["figmaTeamId"] },
+        { "required": ["figmaTeamIds"] }
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether Figma integration is active for this target."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["design-system", "app-host", "app", "lib"],
+          "description": "Architectural role. 'design-system' is the shared UI inventory; 'app-host' is a mono-repo containing multiple apps; 'app'/'lib' are leaf packages."
+        },
+        "figmaFileId": {
+          "type": "string",
+          "description": "Figma file key. MUST be a real key; placeholders starting with 'REPLACE_WITH_' are rejected by validation. Optional when a project or team id is provided for autonomous discovery."
+        },
+        "figmaProjectId": {
+          "type": "string",
+          "description": "Optional Figma project id. When set, the agent can autonomously enumerate all files/pages of the project."
+        },
+        "figmaTeamId": {
+          "type": "string",
+          "description": "Optional Figma team id. When set, the agent can autonomously enumerate every project of the team, then every file/page of each project — covering a full Figma organization > team > projects > files hierarchy."
+        },
+        "figmaTeamIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Optional list of Figma team ids when a single target spans several teams of the same organization. Each team is enumerated for its projects and files."
+        },
+        "submodulePath": {
+          "type": "string",
+          "description": "Filesystem path of the target within the workspace (submodule path or package path)."
+        },
+        "monorepo": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Internal layout of the target when it hosts multiple packages.",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["nx", "turborepo", "lerna", "pnpm-workspaces", "yarn-workspaces", "none"]
+            },
+            "apps": { "type": "array", "items": { "type": "string" } },
+            "libs": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "designSystem": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Cross-reference to the Design System used for component-reuse resolution and token mapping.",
+          "properties": {
+            "ref": { "type": "string", "description": "Key of the Design System target (multi-repo) it refers to." },
+            "submodulePath": { "type": "string" },
+            "figmaFileId": { "type": "string" },
+            "tokenSource": { "type": "string", "description": "Path/glob to the DS token definitions (e.g. design tokens JSON, theme files)." }
+          }
+        },
+        "pageToPackageMapping": {
+          "type": "object",
+          "description": "Maps Figma page names to a target package. 'targetPackage: null' forces routing-rule resolution. 'shared: true' marks frames common to several apps.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "targetPackage": { "type": ["string", "null"] },
+              "shared": { "type": "boolean" },
+              "sharedAcross": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "List of packages that share this page's frames (e.g. product detail page add-to-cart + user account header shared across several apps)."
+              }
+            }
+          }
+        },
+        "routingRules": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/routingRule" }
+        }
+      }
+    },
+    "routingRule": {
+      "type": "object",
+      "required": ["when", "place"],
+      "additionalProperties": false,
+      "properties": {
+        "when": {
+          "type": "string",
+          "description": "Condition expression, e.g. 'pure-ui && used-by-multiple-apps', 'has-business-logic', 'shared-frame'."
+        },
+        "place": {
+          "type": "string",
+          "enum": ["design-system", "app", "lib", "ask"],
+          "description": "Resolution target. 'ask' pauses and asks the developer when the rule is ambiguous."
+        },
+        "reason": { "type": "string" }
+      }
+    }
+  }
+}

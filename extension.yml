@@ -1,0 +1,54 @@
+schema_version: "1.0"
+
+extension:
+  id: figma
+  name: "Spec Kit Figma"
+  version: "1.0.0"
+  description: "Agent-agnostic Figma design-context extension for SpecKit. Grounds spec/plan/tasks/implement in Figma. Supports single-repo (default), mono-repo and multi-repo layouts, with a portable REST engine (default) and an optional MCP engine for more faithful mockup implementation."
+  author: "Fyloss"
+  repository: "https://github.com/Fyloss/spec-kit-figma"
+  license: MIT
+
+requires:
+  speckit_version: ">=0.1.0"
+  tools:
+    - name: bash
+      required: true
+    - name: curl
+      required: true
+    - name: jq
+      required: true
+    - name: git
+      required: true
+
+provides:
+  commands:
+    - name: speckit.figma.setup
+      file: commands/speckit.figma.setup.md
+      description: "Configure the SpecKit Figma extension for this workspace and validate connectivity before any spec/plan/tasks run. Selects the REST engine (portable, CI-friendly) or the MCP engine, which yields more faithful mockup implementation."
+
+    - name: speckit.figma.ensure
+      file: commands/speckit.figma.ensure.md
+      description: "Automatically refresh the Figma design context (incl. direct Figma links pasted in the feature input) before spec/tasks generation. Safe no-op when Figma does not apply; invoked by the before_specify/before_tasks hooks."
+
+    - name: speckit.figma.introspect
+      file: commands/speckit.figma.introspect.md
+      description: "Autonomously introspect the mapped Figma pages for the target package and produce design-grounded context for spec/plan/tasks."
+
+hooks:
+  before_specify:
+    command: speckit.figma.ensure
+    optional: false
+    description: "Automatically refresh and inject Figma design context (incl. direct links in the feature input) before specification generation; safe no-op when Figma does not apply"
+
+  before_tasks:
+    command: speckit.figma.ensure
+    optional: false
+    description: "Automatically refresh and inject Figma design context (incl. direct links in the feature input) before task generation; safe no-op when Figma does not apply"
+
+tags:
+  - figma
+  - design
+  - frontend
+  - ui
+  - design-system

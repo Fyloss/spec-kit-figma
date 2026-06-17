@@ -1,0 +1,4 @@
+# ShellCheck configuration for the SpecKit Figma extension.
+# SC1091: scripts intentionally `source` figma-common.sh via a runtime-relative
+# path that ShellCheck cannot statically resolve. This is by design.
+disable=SC1091
