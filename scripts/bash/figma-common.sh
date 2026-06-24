@@ -202,6 +202,20 @@ figma_load_token() {
   return 1
 }
 
+# Map a 403/404 API path to the most likely cause, so org-level setups fail with
+# an actionable hint. Team/project enumeration needs the `projects:read` scope AND
+# team membership; a file read needs `file_content:read`. Prints to stdout (the
+# caller redirects to stderr); always exits 0.
+figma_scope_hint() {
+  local path="$1"
+  case "$path" in
+    /teams/*|/projects/*)
+      echo "HINT: listing team projects or project files requires a PAT with the 'projects:read' scope, and the token owner must be a member of that team. See docs/CREDENTIALS.md." ;;
+    /files/*)
+      echo "HINT: reading a file requires a PAT with the 'file_content:read' scope (and 'file_metadata:read' for metadata), and access to the file. See docs/CREDENTIALS.md." ;;
+  esac
+}
+
 # GET helper with retry. Usage: figma_api "/files/<key>?depth=1" [config-path]
 # Retries 429/5xx AND transport failures (code 000) with exponential backoff.
 # FIGMA_API_MAX_ATTEMPTS / FIGMA_API_RETRY_DELAY override the retry policy (tests).
@@ -232,6 +246,10 @@ figma_api() {
         rm -f "$tmp"
         echo "WARN: Figma API ${code} (attempt $((attempt+1))/${max_attempts}); backing off ${delay}s..." >&2
         sleep "$delay"; delay=$(( delay * 2 )); attempt=$(( attempt + 1 )) ;;
+      403|404)
+        echo "ERROR: Figma API ${code} for ${path}" >&2
+        figma_scope_hint "$path" >&2
+        cat "$tmp" >&2; rm -f "$tmp"; return 1 ;;
       *)
         echo "ERROR: Figma API ${code} for ${path}" >&2
         cat "$tmp" >&2; rm -f "$tmp"; return 1 ;;

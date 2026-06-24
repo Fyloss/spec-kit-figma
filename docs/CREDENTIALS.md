@@ -45,8 +45,22 @@ echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"'
 source ~/.zshrc
 ```
 
-Generate the PAT at <https://www.figma.com/developers/api#access-tokens> with the
-minimal scopes: `file_content:read`, `file_metadata:read`.
+Generate the PAT at <https://www.figma.com/developers/api#access-tokens>. **The
+scopes depend on the introspection level declared in `figma.projects.config.json`**
+— the documented minimum (`file_content:read`, `file_metadata:read`) only covers a
+**single file**. Team / project enumeration additionally needs **`projects:read`**:
+
+| Config level | Endpoints used | Required read-only scopes |
+|---|---|---|
+| `figmaFileId` (single file) | `GET /files/:key`, `GET /files/:key/nodes` | `file_content:read`, `file_metadata:read` |
+| `figmaProjectId` (whole project) | `+ GET /projects/:project_id/files` | `+ projects:read` |
+| `figmaTeamId` / `figmaTeamIds` (whole team / org) | `+ GET /teams/:team_id/projects` | `+ projects:read` |
+
+> **Org-level setups (the `figmaTeamId(s)` maille):** select **all three** scopes —
+> `file_content:read`, `file_metadata:read`, `projects:read`. Without `projects:read`
+> the team/project enumeration returns `403`/`404` (the introspection then fails with a
+> `projects:read`-scope hint) even though individual files would read fine. The PAT
+> owner must also be a **member of every team** being enumerated.
 
 The scripts run `FIGMA_PAT_COMMAND` at call time and read the token from its
 stdout. It is executed **without a shell** (tokenized exec), so pipes or

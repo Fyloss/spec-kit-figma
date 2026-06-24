@@ -74,7 +74,7 @@ platform secret.
 For a manual install, the extension ships **agent-agnostic** command templates:
 - `commands/speckit.figma.setup.md`
 - `commands/speckit.figma.ensure.md` (auto-context; wired to the
-  `before_specify`/`before_tasks` hooks when installed via Option A)
+  `before_specify`/`before_plan`/`before_tasks` hooks when installed via Option A)
 - `commands/speckit.figma.introspect.md`
 
 Map them to your agent's command location, e.g.:
@@ -98,7 +98,7 @@ manually only if you skipped `install.sh`.
 
 ## 6. Use in the SpecKit flow
 Run `/speckit.figma.setup` once. From then on, Figma context is **automatic**:
-the extension hooks (`before_specify` / `before_tasks` in `extension.yml`)
+the extension hooks (`before_specify` / `before_plan` / `before_tasks` in `extension.yml`)
 invoke `/speckit.figma.ensure`, which runs
 `./.specify/scripts/bash/figma-ensure-context.sh` before generation, piping in the
 user's raw feature input (`--input -`). It re-introspects only when

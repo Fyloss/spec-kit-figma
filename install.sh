@@ -69,14 +69,24 @@ fi
 
 GI="$TARGET/.gitignore"
 touch "$GI"
-SNAPSHOT_ENTRY=".figma-context-snapshot.json"
-grep -qxF "$SNAPSHOT_ENTRY" "$GI" || { echo "$SNAPSHOT_ENTRY" >> "$GI"; echo "GITIGNORE: added $SNAPSHOT_ENTRY"; }
+for SNAPSHOT_ENTRY in ".figma-context-snapshot.json" ".figma-section.*.md"; do
+  grep -qxF "$SNAPSHOT_ENTRY" "$GI" || { echo "$SNAPSHOT_ENTRY" >> "$GI"; echo "GITIGNORE: added $SNAPSHOT_ENTRY"; }
+done
 
 # The introspect command mandates loading this memory file, so it must always
 # be installed — create .specify/memory rather than silently skipping.
 mkdir -p "$TARGET/.specify/memory"
 cp "$EXT_DIR/memory/figma-design-rules.md" "$TARGET/.specify/memory/figma-design-rules.md"
 echo "ADDED: .specify/memory/figma-design-rules.md"
+
+# The section templates MUST be installed so figma-render-section.sh can produce
+# the ready-to-paste spec/plan/tasks blocks in the workspace (not only from the
+# extension checkout). Extension-owned, always refreshed.
+if [[ "$(cd "$TARGET" && pwd -P)" != "$EXT_DIR" ]]; then
+  mkdir -p "$TARGET/.specify/templates"
+  cp "$EXT_DIR/templates/"*figma-section.template.md "$TARGET/.specify/templates/"
+  echo "ADDED: .specify/templates/ (spec/plan/tasks figma-section templates)"
+fi
 
 # -----------------------------------------------------------------------------
 # Prompt auto-context block. DEFAULT ("clean"): the prompts are NOT modified —
@@ -144,11 +154,15 @@ Before generating, refresh the Figma design context:
    the extension is not configured, the target is excluded, or
    `.figma-context-snapshot.json` is already fresh and covers the linked
    nodes.
-2. When it prints `"ran": true` or `"reason": "fresh"`, load
-   `.figma-context-snapshot.json` and apply the rules of
-   `/speckit.figma.introspect` (sections 3-7: frame confirmation, component
-   placement, token gaps, tests + Storybook sub-tasks) to the Figma-relevant
-   parts of your output. Treat any `links` reported in the status JSON as
+2. When it prints `"ran": true` or `"reason": "fresh"` with `"mustInject": true`,
+   the Figma design section is MANDATORY in this document — never omit it,
+   whatever the agent model. The script renders a ready-to-paste section to the
+   path reported in `specSection` / `planSection` / `tasksSection` (the one
+   matching this command): insert that rendered block VERBATIM into the
+   generated document, then load `.figma-context-snapshot.json` and complete the
+   judgement placeholders by applying the rules of `/speckit.figma.introspect`
+   (sections 3-7: frame confirmation, component placement, token gaps, tests +
+   Storybook sub-tasks). Treat any `links` reported in the status JSON as
    authoritative design targets for the affected components.
 3. For any other skip reason, proceed without Figma context and add a short
    note mentioning the reason.
@@ -161,7 +175,7 @@ if [[ "$HOOKS" != "off" ]]; then
   HOOKED_ANY="false"
   # Per-agent command locations created by `specify init` (markdown-based agents).
   for dir in .claude/commands .github/prompts .cursor/commands .windsurf/workflows .opencode/command; do
-    for stem in specify tasks; do
+    for stem in specify plan tasks; do
       for f in "$TARGET/$dir/speckit.${stem}.md" "$TARGET/$dir/speckit.${stem}.prompt.md"; do
         [[ -f "$f" ]] || continue
         if [[ "$HOOKS" == "inject" ]]; then

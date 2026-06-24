@@ -35,7 +35,7 @@ submodules) layouts.
 ├── install.sh                          # optional manual installer (single/mono/multi-repo)
 ├── commands/                           # agent-agnostic command templates
 │   ├── speckit.figma.setup.md
-│   ├── speckit.figma.ensure.md         # auto-context (before_specify/before_tasks hooks)
+│   ├── speckit.figma.ensure.md         # auto-context (before_specify/before_plan/before_tasks hooks)
 │   └── speckit.figma.introspect.md
 ├── config/
 │   ├── figma.projects.config.schema.json
@@ -69,9 +69,12 @@ This registers the `/speckit.figma.setup` and `/speckit.figma.introspect`
 commands with your agent. Then run `/speckit.figma.setup` once.
 
 **Figma context is refreshed automatically:** the manifest's
-`before_specify` / `before_tasks` hooks invoke `/speckit.figma.ensure`, which
-runs `./.specify/scripts/bash/figma-ensure-context.sh` before generation, piping in the
-user's raw feature input (`--input -`). **Direct Figma links pasted in the
+`before_specify` / `before_plan` / `before_tasks` hooks invoke
+`/speckit.figma.ensure`, which runs
+`./.specify/scripts/bash/figma-ensure-context.sh` before generation, piping in the
+user's raw feature input (`--input -`). When Figma applies, the script renders a
+ready-to-paste design section per phase and reports `mustInject: true` so the
+agent integrates it **regardless of model** — never silently omitting it. **Direct Figma links pasted in the
 feature description are detected automatically**: the linked file and frames
 become authoritative design targets and are introspected at node level — no
 manual command needed. The script is a safe no-op when the extension is
@@ -106,10 +109,13 @@ and [docs/MONOREPO.md](docs/MONOREPO.md).
 
 ## Requirements
 - `bash` 4+, `curl`, `jq`, `git`.
-- A **read-only** Figma PAT (local) or a CI/Cloud secret (pipelines). For
-  team-level introspection (`figmaTeamId` / `figmaTeamIds`), the token must belong
-  to a member of those teams so the organization > team > projects > files
-  hierarchy can be enumerated.
+- A **read-only** Figma PAT (local) or a CI/Cloud secret (pipelines). Scopes scale
+  with the introspection level: a single file needs `file_content:read` +
+  `file_metadata:read`; **project- or team-level introspection
+  (`figmaProjectId` / `figmaTeamId` / `figmaTeamIds`) additionally requires
+  `projects:read`** (and the token must belong to a member of those teams) so the
+  organization > team > projects > files hierarchy can be enumerated. See
+  [docs/CREDENTIALS.md](docs/CREDENTIALS.md) for the full scope matrix.
 
 ## Design-context engines (REST / MCP)
 The engine is selected per workspace via `figma.contextSource`:

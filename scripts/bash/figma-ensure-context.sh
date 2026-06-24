@@ -29,7 +29,13 @@
 #
 # Prints a JSON status object on stdout:
 #   { "ran": true|false, "reason": "...", "target": "...",
-#     "snapshot": "...", "links": [...], "introspectArgs": [...] }
+#     "snapshot": "...", "links": [...], "introspectArgs": [...],
+#     "mustInject": true|false,        # section is mandatory in spec/plan/tasks
+#     "linkScope": "none|frame|broad", # "broad" => confirm a frame before tasks
+#     "candidateFrames": [...],        # frames to confirm when linkScope=broad
+#     "specSection": "...", "planSection": "...", "tasksSection": "..." }
+# When mustInject=true the agent MUST paste the rendered <phase>Section file
+# verbatim into the generated document, then complete the judgement fields.
 # Reasons: introspected | fresh | dry-run | no-config | invalid-config |
 #   unresolved-placeholders | ambiguous-target | target-excluded |
 #   target-not-mapped | target-disabled | introspect-failed
@@ -70,16 +76,79 @@ INTROSPECT_ARGS=()
 LINKS_JSON="[]"
 LINK_FILE=""
 LINK_NODES=()
+# Injection contract: filled once a usable snapshot exists (introspected|fresh).
+MUST_INJECT="false"
+LINK_SCOPE="none"          # none | frame | broad
+CANDIDATE_FRAMES_JSON="[]" # top-level frames to confirm when LINK_SCOPE=broad
+SPEC_SECTION=""
+PLAN_SECTION=""
+TASKS_SECTION=""
 
 emit() { # $1 = ran (true|false), $2 = reason
   jq -n --argjson ran "$1" --arg reason "$2" --arg target "${TARGET:-}" --arg snapshot "$SNAPSHOT" \
     --argjson links "$LINKS_JSON" \
+    --argjson mustInject "$MUST_INJECT" \
+    --arg linkScope "$LINK_SCOPE" \
+    --argjson candidateFrames "$CANDIDATE_FRAMES_JSON" \
+    --arg specSection "$SPEC_SECTION" \
+    --arg planSection "$PLAN_SECTION" \
+    --arg tasksSection "$TASKS_SECTION" \
     '{ran: $ran, reason: $reason,
       target: (if $target == "" then null else $target end),
       snapshot: $snapshot,
       links: $links,
+      mustInject: $mustInject,
+      linkScope: $linkScope,
+      candidateFrames: $candidateFrames,
+      specSection: (if $specSection == "" then null else $specSection end),
+      planSection: (if $planSection == "" then null else $planSection end),
+      tasksSection: (if $tasksSection == "" then null else $tasksSection end),
       introspectArgs: $ARGS.positional}' \
     --args -- ${INTROSPECT_ARGS[@]+"${INTROSPECT_ARGS[@]}"}
+}
+
+# Classify the directly-linked nodes against the snapshot and, for broad links
+# (file/page level, no specific FRAME), collect the candidate top-level frames so
+# the agent enumerates them for creative confirmation instead of bailing out.
+compute_link_scope() {
+  LINK_SCOPE="none"
+  CANDIDATE_FRAMES_JSON="[]"
+  [[ -z "$LINK_FILE" ]] && return 0
+  [[ -f "$SNAPSHOT" ]] || { LINK_SCOPE="broad"; return 0; }
+  if [[ ${#LINK_NODES[@]} -eq 0 ]]; then
+    LINK_SCOPE="broad"
+  else
+    LINK_SCOPE="frame"
+    local n
+    for n in "${LINK_NODES[@]}"; do
+      # A link node that is not a top-level FRAME (i.e. a page/canvas or a
+      # missing id) means the target creative is not pinned down → broad.
+      if ! jq -e --arg n "$n" '[ .pages[]?.frames[]? | select(.id == $n) ] | length > 0' "$SNAPSHOT" >/dev/null 2>&1; then
+        LINK_SCOPE="broad"; break
+      fi
+    done
+  fi
+  if [[ "$LINK_SCOPE" == "broad" ]]; then
+    CANDIDATE_FRAMES_JSON="$(jq -c '[ .pages[]? as $p | ($p.frames[]? | {id, name, page: $p.name}) ]' "$SNAPSHOT" 2>/dev/null || echo '[]')"
+  fi
+}
+
+# Render the ready-to-paste spec/plan/tasks sections from the fresh snapshot so
+# the agent only has to paste them — the section can no longer be silently
+# omitted. Render failures are non-fatal (the agent falls back to the template).
+prepare_injection() {
+  MUST_INJECT="true"
+  compute_link_scope
+  local phase out
+  for phase in spec plan tasks; do
+    out="$("${SCRIPT_DIR}/figma-render-section.sh" --phase "$phase" --config "$CONFIG" \
+      --snapshot "$SNAPSHOT" --links "$LINKS_JSON" --candidate-frames "$CANDIDATE_FRAMES_JSON" 2>/dev/null || true)"
+    case "$phase" in
+      spec) SPEC_SECTION="$out" ;;
+      plan) PLAN_SECTION="$out" ;;
+      tasks) TASKS_SECTION="$out" ;;
+    esac
+  done
 }
 
 # True when the current snapshot already targets the linked file and contains
@@ -165,6 +234,8 @@ fi
 if [[ -f "$SNAPSHOT" && ! "$CONFIG" -nt "$SNAPSHOT" ]] \
    && [[ -n "$(find "$SNAPSHOT" -mmin "-${MAX_AGE_MIN}" 2>/dev/null)" ]] \
    && snapshot_covers_links; then
+  # Figma applies and the snapshot is usable → the section is mandatory; render it.
+  prepare_injection
   emit false "fresh"
   exit 0
 fi
@@ -202,6 +273,7 @@ fi
 # Introspection output (index) goes to stderr: this script's stdout is the
 # machine-readable status contract.
 if "${SCRIPT_DIR}/figma-introspect.sh" "${INTROSPECT_ARGS[@]}" --config "$CONFIG" >&2; then
+  prepare_injection
   emit true "introspected"
 else
   echo "WARN: Figma introspection failed for target '${TARGET}'; proceeding without fresh design context (see errors above)." >&2

@@ -262,3 +262,19 @@ JSON
   [ "$status" -ne 0 ]
   [[ "$output" == *"unreachable"* ]]
 }
+
+@test "figma_scope_hint points project/team 403s at the projects:read scope" {
+  run figma_scope_hint "/projects/123/files"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"projects:read"* ]]
+  run figma_scope_hint "/teams/456/projects"
+  [[ "$output" == *"projects:read"* ]]
+  [[ "$output" == *"member of that team"* ]]
+}
+
+@test "figma_scope_hint points file 403s at the file_content:read scope" {
+  run figma_scope_hint "/files/AbC123?depth=2"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"file_content:read"* ]]
+  [[ "$output" != *"projects:read"* ]]
+}

@@ -33,6 +33,11 @@ complement the project constitution; on conflict, the stricter rule wins.
   **desktop** frames for a component, it MUST send the developer the Figma deep
   links and obtain confirmation it targeted the correct creative before generating
   tasks from them.
+- **Broad/ambiguous design links** (a file or page link covering several frames,
+  with no specific frame pinned) MUST trigger frame **enumeration + confirmation**,
+  never a silent skip: list the candidate top-level frames and ask which the
+  feature targets. Writing "the creative was not explicitly indicated" and moving
+  on is forbidden while candidate frames exist and the developer has not answered.
 
 ## 6. Design token mapping & gaps
 - Map extracted Figma values to existing Design System tokens when a match exists;
@@ -55,7 +60,12 @@ complement the project constitution; on conflict, the stricter rule wins.
 - The agent MUST NOT read, print or echo the token from ANY source (environment
   variables, keychain commands). The `figma-*.sh` scripts load it internally and
   never output it; the agent only ever consumes their JSON.
-- Apply least privilege: read-only Figma scopes only.
+- Apply least privilege: read-only Figma scopes only. Scopes scale with the
+  introspection level — a single file needs `file_content:read` +
+  `file_metadata:read`; project/team enumeration (`figmaProjectId` /
+  `figmaTeamId(s)`, the org-level maille) **additionally needs `projects:read`**
+  (see docs/CREDENTIALS.md). A `403`/`404` on `/teams` or `/projects` endpoints
+  means the PAT lacks `projects:read` or is not a team member.
 
 ## 9. Autonomy boundaries
 - Autonomous: page traversal, frame/token extraction, reuse lookup, mapping.
@@ -72,3 +82,12 @@ complement the project constitution; on conflict, the stricter rule wins.
   REST (unless `mcp.fallbackToRest: false`, where an unreachable server is a hard
   error). Resolve the effective engine with `figma-resolve-source.sh`; never assume
   MCP is available.
+
+## 11. Mandatory section integration (model-agnostic)
+- Whenever Figma applies to a run (the `ensure` status reports `"mustInject": true`,
+  i.e. `ran` or `fresh`), the Figma design section is **mandatory** in the generated
+  `spec.md`, `plan.md` and `tasks.md` — regardless of the agent model.
+- The section is produced deterministically by `figma-render-section.sh` (paths in
+  `specSection` / `planSection` / `tasksSection`): **paste the rendered block
+  verbatim**, then complete only the judgement fields (placement, justification,
+  token mapping). Omitting the section is a defect, not a stylistic choice.

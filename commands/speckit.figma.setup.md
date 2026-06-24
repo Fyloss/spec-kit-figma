@@ -31,6 +31,11 @@ Run these from the workspace root. The short names used below map to:
    and fill `pageToPackageMapping` and `routingRules`.
 
 3. **Credentials.** Ensure `credentials.source` is set:
+   - **Scopes (read-only).** A single-file setup needs `file_content:read` +
+     `file_metadata:read`. A `figmaProjectId` or `figmaTeamId(s)` setup (the
+     org-level maille) **additionally requires `projects:read`** — without it the
+     team/project enumeration fails with `403`/`404`. Instruct the user to select
+     all three scopes when any project/team id is used (see `docs/CREDENTIALS.md`).
    - `env` for local development → instruct the user to store their own
      **read-only** Figma PAT in the OS keychain and export `FIGMA_PAT_COMMAND`
      from their shell profile (NOT in the workspace — there is no `.env`), e.g.:
@@ -65,7 +70,8 @@ Run these from the workspace root. The short names used below map to:
      → a whole team (the agent enumerates every project, then every file). Use the
      `config/figma.projects.config.organization.example.json` example as a
      starting point for an org-with-multiple-teams setup. At least one of these
-     ids MUST be set per enabled target.
+     ids MUST be set per enabled target. **Reminder:** `figmaProjectId` /
+     `figmaTeamId(s)` require the PAT to carry the `projects:read` scope (step 3).
 
 5. **Validate.** Run the `validate` script. If it exits non-zero, surface the
    exact error and stop — do not proceed to spec generation with an invalid config.

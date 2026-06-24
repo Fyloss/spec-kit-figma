@@ -192,3 +192,45 @@ JSON
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
 }
+
+# --- Mandatory section integration & broad-link handling -----------------------
+
+@test "an applicable run marks the section mandatory and renders spec/plan/tasks" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  echo '{"fileId":"single123FILE","pages":[{"id":"0:1","name":"Home","frames":[{"id":"1:2","name":"Hero","type":"FRAME"}]}],"components":{},"styles":{}}' \
+    > "${WORKSPACE}/.figma-context-snapshot.json"
+  run "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
+  [[ "$(status_json | jq -r '.mustInject')" == "true" ]]
+  [[ "$(status_json | jq -r '.specSection')" == *".figma-section.spec.md" ]]
+  [[ "$(status_json | jq -r '.planSection')" == *".figma-section.plan.md" ]]
+  [[ "$(status_json | jq -r '.tasksSection')" == *".figma-section.tasks.md" ]]
+  [ -f "${WORKSPACE}/.figma-section.spec.md" ]
+  [ -f "${WORKSPACE}/.figma-section.plan.md" ]
+  [ -f "${WORKSPACE}/.figma-section.tasks.md" ]
+  grep -q "Hero" "${WORKSPACE}/.figma-section.spec.md"
+}
+
+@test "a broad link (file/page, no node-id) flags linkScope broad with candidate frames" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  echo '{"fileId":"BroadFILE","pages":[{"id":"0:1","name":"Home","frames":[{"id":"1:2","name":"Hero","type":"FRAME"},{"id":"1:3","name":"Footer","type":"FRAME"}]}]}' \
+    > "${WORKSPACE}/.figma-context-snapshot.json"
+  run "$SCRIPT" --input "Build the home page https://www.figma.com/design/BroadFILE/Home"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
+  [[ "$(status_json | jq -r '.linkScope')" == "broad" ]]
+  [[ "$(status_json | jq -r '.candidateFrames | length')" == "2" ]]
+  [[ "$(status_json | jq -r '.mustInject')" == "true" ]]
+  grep -qi "confirm which of these frames" "${WORKSPACE}/.figma-section.spec.md"
+}
+
+@test "a link pinned to a top-level frame reports linkScope frame" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  echo '{"fileId":"PinFILE","nodes":{"nodes":{"9:9":{}}},"pages":[{"id":"0:1","name":"P","frames":[{"id":"9:9","name":"Card","type":"FRAME"}]}]}' \
+    > "${WORKSPACE}/.figma-context-snapshot.json"
+  run "$SCRIPT" --input "https://www.figma.com/design/PinFILE/X?node-id=9-9"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
+  [[ "$(status_json | jq -r '.linkScope')" == "frame" ]]
+}
