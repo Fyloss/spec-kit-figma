@@ -36,7 +36,8 @@ submodules) layouts.
 ├── commands/                           # agent-agnostic command templates
 │   ├── speckit.figma.setup.md
 │   ├── speckit.figma.ensure.md         # auto-context (before_specify/before_plan/before_tasks hooks)
-│   └── speckit.figma.introspect.md
+│   ├── speckit.figma.introspect.md
+│   └── speckit.figma.verify.md         # post-gen section check (after_* hooks; CI gate via --strict)
 ├── config/
 │   ├── figma.projects.config.schema.json
 │   ├── figma.projects.config.singlerepo.example.json
@@ -74,7 +75,12 @@ commands with your agent. Then run `/speckit.figma.setup` once.
 `./.specify/scripts/bash/figma-ensure-context.sh` before generation, piping in the
 user's raw feature input (`--input -`). When Figma applies, the script renders a
 ready-to-paste design section per phase and reports `mustInject: true` so the
-agent integrates it **regardless of model** — never silently omitting it. **Direct Figma links pasted in the
+agent integrates it **regardless of model** — never silently omitting it. After
+generation, the `after_specify` / `after_plan` / `after_tasks` hooks invoke
+`/speckit.figma.verify`, which confirms the section actually landed in the
+document (and self-corrects if it did not). Run
+`figma-verify-section.sh --phase <spec|plan|tasks> --strict` in CI to **fail the
+build** when a detected Figma mockup was not integrated. **Direct Figma links pasted in the
 feature description are detected automatically**: the linked file and frames
 become authoritative design targets and are introspected at node level — no
 manual command needed. The script is a safe no-op when the extension is

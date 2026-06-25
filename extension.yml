@@ -35,6 +35,10 @@ provides:
       file: commands/speckit.figma.introspect.md
       description: "Autonomously introspect the mapped Figma pages for the target package and produce design-grounded context for spec/plan/tasks."
 
+    - name: speckit.figma.verify
+      file: commands/speckit.figma.verify.md
+      description: "After generation, verify the Figma design section was integrated into spec/plan/tasks when a mockup was detected, and self-correct if missing. Strict mode (--strict / figma.verifyStrict) makes it a CI gate."
+
 hooks:
   before_specify:
     command: speckit.figma.ensure
@@ -50,6 +54,21 @@ hooks:
     command: speckit.figma.ensure
     optional: false
     description: "Automatically refresh and inject Figma design context (incl. direct links in the feature input) before task generation; safe no-op when Figma does not apply"
+
+  after_specify:
+    command: speckit.figma.verify
+    optional: true
+    description: "After spec generation, verify the Figma section was integrated (when a mockup was detected) and self-correct if missing. Optional so SpecKit versions without after_* hooks ignore it gracefully."
+
+  after_plan:
+    command: speckit.figma.verify
+    optional: true
+    description: "After plan generation, verify the Figma plan section was integrated (when a mockup was detected) and self-correct if missing. Optional so SpecKit versions without after_* hooks ignore it gracefully."
+
+  after_tasks:
+    command: speckit.figma.verify
+    optional: true
+    description: "After tasks generation, verify the Figma tasks section was integrated (when a mockup was detected) and self-correct if missing. Optional so SpecKit versions without after_* hooks ignore it gracefully."
 
 tags:
   - figma
