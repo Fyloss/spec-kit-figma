@@ -71,3 +71,22 @@ teardown() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"snapshot not found"* ]]
 }
+
+# --- Review fixes: sed-escaping of values & phase machine marker --------------
+
+@test "snapshot values with sed metacharacters render literally (no corruption)" {
+  cat > "$SNAP" <<'JSON'
+{ "fileId": "AbC123", "projectId": "a&b@c", "generatedAt": "t", "lastModified": "u",
+  "contextSource": "rest", "pages": [], "components": {}, "styles": {} }
+JSON
+  run "$SCRIPT" --phase spec --snapshot "$SNAP"
+  [ "$status" -eq 0 ]
+  grep -qF 'a&b@c' "$output"                       # value preserved verbatim
+  ! grep -qF '{{FIGMA_PROJECT_ID' "$output"        # placeholder fully substituted
+}
+
+@test "emits a phase-specific machine marker the verifier can match" {
+  run "$SCRIPT" --phase plan --snapshot "$SNAP"
+  [ "$status" -eq 0 ]
+  grep -qF 'speckit-figma:section phase=plan' "$output"
+}
