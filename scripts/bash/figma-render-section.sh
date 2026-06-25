@@ -64,6 +64,9 @@ fi
 if ! echo "$LINKS_JSON" | jq -e 'type == "array"' >/dev/null 2>&1; then
   echo "ERROR: --links must be a JSON array" >&2; exit 1
 fi
+if ! echo "$CANDIDATE_FRAMES_JSON" | jq -e 'type == "array"' >/dev/null 2>&1; then
+  echo "ERROR: --candidate-frames must be a JSON array" >&2; exit 1
+fi
 
 # Resolve the template: workspace install first, then the extension checkout.
 TEMPLATE=""
@@ -96,11 +99,14 @@ PROJECT_ID_E="$(sed_repl "$PROJECT_ID")"
 GENERATED_AT_E="$(sed_repl "$GENERATED_AT")"
 LAST_MODIFIED_E="$(sed_repl "$LAST_MODIFIED")"
 MODE_E="$(sed_repl "$MODE")"
+CONTEXT_SOURCE_E="$(sed_repl "$CONTEXT_SOURCE")"
 
 # Substitute the scalar placeholders the templates share. Judgement placeholders
 # (placement, justification, token mapping) are intentionally left untouched.
 # Delimiter '@' — the placeholders themselves contain '|', so it cannot be the
 # sed delimiter; replacement values are escaped above.
+# The engine placeholder ({{rest | mcp}}) is deterministic (the snapshot's
+# contextSource), so it is filled here rather than left for the agent.
 substitute() {
   sed \
     -e "s@{{FIGMA_FILE_ID}}@${FILE_ID_E}@g" \
@@ -108,6 +114,7 @@ substitute() {
     -e "s@{{GENERATED_AT}}@${GENERATED_AT_E}@g" \
     -e "s@{{LAST_MODIFIED}}@${LAST_MODIFIED_E}@g" \
     -e "s@{{multi-repo | mono-repo}}@${MODE_E}@g" \
+    -e "s@{{rest | mcp}}@${CONTEXT_SOURCE_E}@g" \
     "$1"
 }
 

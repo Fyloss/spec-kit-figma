@@ -121,12 +121,18 @@ compute_link_scope() {
     LINK_SCOPE="frame"
     local n
     for n in "${LINK_NODES[@]}"; do
-      # The creative is NOT pinned only when a linked node is a page/canvas
-      # (it covers many frames). A node-id that resolves to a specific frame —
-      # a top-level frame, a nested frame, or any other deep-fetched element —
-      # is a confirmed creative and must stay 'frame' (this is the case the
-      # original `.pages[].frames[]`-only check wrongly flagged as broad).
-      if jq -e --arg n "$n" '[ .pages[]? | select(.id == $n) ] | length > 0' "$SNAPSHOT" >/dev/null 2>&1; then
+      # The creative is NOT pinned only when a linked node is a page/canvas or
+      # the document root (it covers many frames). A node-id that resolves to a
+      # specific frame — top-level, nested, or any other deep-fetched element —
+      # is a confirmed creative and must stay 'frame' (the original
+      # `.pages[].frames[]`-only check wrongly flagged those as broad).
+      # Detect "broad" two ways: the id matches an indexed page (works even when
+      # the page node was not deep-fetched), OR the deep-fetched node's Figma
+      # type is CANVAS/DOCUMENT (covers a document-root link not in pages[]).
+      if jq -e --arg n "$n" '
+            ([ .pages[]? | select(.id == $n) ] | length > 0)
+            or ((.nodes.nodes[$n].document.type // "") as $t | $t == "CANVAS" or $t == "DOCUMENT")' \
+            "$SNAPSHOT" >/dev/null 2>&1; then
         LINK_SCOPE="broad"; break
       fi
     done

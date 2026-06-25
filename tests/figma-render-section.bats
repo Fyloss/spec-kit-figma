@@ -90,3 +90,22 @@ JSON
   [ "$status" -eq 0 ]
   grep -qF 'speckit-figma:section phase=plan' "$output"
 }
+
+# --- Copilot review: engine placeholder & candidate-frames validation ---------
+
+@test "substitutes the deterministic engine placeholder {{rest | mcp}}" {
+  cat > "$SNAP" <<'JSON'
+{ "fileId": "AbC", "projectId": "1", "generatedAt": "t", "lastModified": "u",
+  "contextSource": "mcp", "pages": [], "components": {}, "styles": {} }
+JSON
+  run "$SCRIPT" --phase plan --snapshot "$SNAP"
+  [ "$status" -eq 0 ]
+  ! grep -qF '{{rest | mcp}}' "$output"          # placeholder filled
+  grep -qiE 'engine.*: *mcp' "$output"           # filled with the snapshot value
+}
+
+@test "rejects a non-array --candidate-frames" {
+  run "$SCRIPT" --phase spec --snapshot "$SNAP" --candidate-frames '{"not":"an array"}'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--candidate-frames must be a JSON array"* ]]
+}

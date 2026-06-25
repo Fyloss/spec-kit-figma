@@ -271,3 +271,26 @@ JSON
   [[ "$(status_json | jq -r '.linkScope')" == "broad" ]]
   [[ "$(status_json | jq -r '.candidateFrames | length')" == "2" ]]
 }
+
+# --- Copilot review: broad detection via node type (document root / canvas) ----
+
+@test "a link to a CANVAS-type node not indexed in pages[] is broad (by node type)" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  # 7:7 is deep-fetched with type CANVAS but is NOT in .pages[].id.
+  echo '{"fileId":"CanvFILE","nodes":{"nodes":{"7:7":{"document":{"type":"CANVAS"}}}},"pages":[{"id":"0:1","name":"P","frames":[{"id":"1:2","name":"Hero","type":"FRAME"}]}]}' \
+    > "${WORKSPACE}/.figma-context-snapshot.json"
+  run "$SCRIPT" --input "https://www.figma.com/design/CanvFILE/X?node-id=7-7"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
+  [[ "$(status_json | jq -r '.linkScope')" == "broad" ]]
+}
+
+@test "a link to a SECTION-type node stays pinned (linkScope frame)" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  echo '{"fileId":"SecFILE","nodes":{"nodes":{"8:8":{"document":{"type":"SECTION"}}}},"pages":[{"id":"0:1","name":"P","frames":[{"id":"1:2","name":"Hero","type":"FRAME"}]}]}' \
+    > "${WORKSPACE}/.figma-context-snapshot.json"
+  run "$SCRIPT" --input "https://www.figma.com/design/SecFILE/X?node-id=8-8"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
+  [[ "$(status_json | jq -r '.linkScope')" == "frame" ]]
+}
