@@ -121,9 +121,12 @@ compute_link_scope() {
     LINK_SCOPE="frame"
     local n
     for n in "${LINK_NODES[@]}"; do
-      # A link node that is not a top-level FRAME (i.e. a page/canvas or a
-      # missing id) means the target creative is not pinned down → broad.
-      if ! jq -e --arg n "$n" '[ .pages[]?.frames[]? | select(.id == $n) ] | length > 0' "$SNAPSHOT" >/dev/null 2>&1; then
+      # The creative is NOT pinned only when a linked node is a page/canvas
+      # (it covers many frames). A node-id that resolves to a specific frame —
+      # a top-level frame, a nested frame, or any other deep-fetched element —
+      # is a confirmed creative and must stay 'frame' (this is the case the
+      # original `.pages[].frames[]`-only check wrongly flagged as broad).
+      if jq -e --arg n "$n" '[ .pages[]? | select(.id == $n) ] | length > 0' "$SNAPSHOT" >/dev/null 2>&1; then
         LINK_SCOPE="broad"; break
       fi
     done
@@ -139,16 +142,26 @@ compute_link_scope() {
 prepare_injection() {
   MUST_INJECT="true"
   compute_link_scope
-  local phase out
+  local phase out err
+  err="$(mktemp)"
   for phase in spec plan tasks; do
-    out="$("${SCRIPT_DIR}/figma-render-section.sh" --phase "$phase" --config "$CONFIG" \
-      --snapshot "$SNAPSHOT" --links "$LINKS_JSON" --candidate-frames "$CANDIDATE_FRAMES_JSON" 2>/dev/null || true)"
+    # Capture stdout (the rendered file path) separately from stderr so a render
+    # failure (missing template, bad JSON, ...) is SURFACED, not silently turned
+    # into a null section with no diagnostic.
+    if out="$("${SCRIPT_DIR}/figma-render-section.sh" --phase "$phase" --config "$CONFIG" \
+        --snapshot "$SNAPSHOT" --links "$LINKS_JSON" --candidate-frames "$CANDIDATE_FRAMES_JSON" 2>"$err")"; then
+      :
+    else
+      echo "WARN: figma-render-section.sh failed to render the '${phase}' section: $(cat "$err")" >&2
+      out=""
+    fi
     case "$phase" in
       spec) SPEC_SECTION="$out" ;;
       plan) PLAN_SECTION="$out" ;;
       tasks) TASKS_SECTION="$out" ;;
     esac
   done
+  rm -f "$err"
 }
 
 # True when the current snapshot already targets the linked file and contains
@@ -162,6 +175,13 @@ snapshot_covers_links() {
   done
   return 0
 }
+
+# Stale rendered sections from a previous run must not outlive it: the verifier
+# (figma-verify-section.sh) keys "Figma applied to this run" on the existence of
+# .figma-section.<phase>.md. Clear them up front so only THIS run's renders
+# remain; prepare_injection re-creates them only when Figma actually applies.
+ROOT_DIR="$(figma_repo_root)"
+rm -f "${ROOT_DIR}/.figma-section."*.md 2>/dev/null || true
 
 if [[ ! -f "$CONFIG" ]]; then
   echo "INFO: no ${CONFIG##*/} found; proceeding without Figma context." >&2

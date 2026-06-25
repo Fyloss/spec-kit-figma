@@ -68,7 +68,11 @@ frames, no specific frame selected). Do **NOT** write "the creative was not
 explicitly indicated" and move on. Instead:
 
 1. Present the `candidateFrames` from the status JSON as a **numbered list**
-   (frame name + node id, grouped by page).
+   (frame name + node id, grouped by page). **If `candidateFrames` is empty**
+   (the snapshot has no frame index yet — e.g. a project/team-only run), first
+   run `/speckit.figma.introspect --file <id>` to enumerate the file's frames,
+   then present them. Do not skip the checkpoint just because the list arrived
+   empty.
 2. Ask the developer **which frame(s)** the feature targets — this is the
    creative-confirmation checkpoint.
 3. Once they answer, re-run with the chosen frame (the precise deep link, or

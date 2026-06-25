@@ -84,8 +84,14 @@ echo "ADDED: .specify/memory/figma-design-rules.md"
 # extension checkout). Extension-owned, always refreshed.
 if [[ "$(cd "$TARGET" && pwd -P)" != "$EXT_DIR" ]]; then
   mkdir -p "$TARGET/.specify/templates"
-  cp "$EXT_DIR/templates/"*figma-section.template.md "$TARGET/.specify/templates/"
-  echo "ADDED: .specify/templates/ (spec/plan/tasks figma-section templates)"
+  # Guard the glob: if no *figma-section.template.md exists (partial/corrupted
+  # checkout), the unquoted glob would stay literal and cp would fail, aborting
+  # the installer under set -e mid-way. Consume the failure and warn instead.
+  if cp "$EXT_DIR/templates/"*figma-section.template.md "$TARGET/.specify/templates/" 2>/dev/null; then
+    echo "ADDED: .specify/templates/ (spec/plan/tasks figma-section templates)"
+  else
+    echo "WARN: no *figma-section.template.md found in ${EXT_DIR}/templates/ — section rendering will fall back to the extension checkout." >&2
+  fi
 fi
 
 # -----------------------------------------------------------------------------

@@ -89,3 +89,34 @@ status_json() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"--phase must be one of"* ]]
 }
+
+# --- Review fixes: ambiguous-doc safety & phase-specific machine marker --------
+
+@test "ambiguous multiple specs/*/<phase>.md does not silently pick one (doc-not-found)" {
+  printf 'rendered\n' > "$RENDERED"
+  mkdir -p "${WORKSPACE}/specs/001-a" "${WORKSPACE}/specs/002-b"
+  printf '# A\n## Figma Design Context *(extension: figma)*\n' > "${WORKSPACE}/specs/001-a/spec.md"
+  printf '# B no section\n' > "${WORKSPACE}/specs/002-b/spec.md"
+  run "$SCRIPT" --phase spec
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "doc-not-found" ]]
+  run "$SCRIPT" --phase spec --strict
+  [ "$status" -ne 0 ]
+}
+
+@test "recognizes the phase-specific machine marker without the heading text" {
+  printf 'rendered\n' > "$RENDERED"
+  printf '# Spec\n<!-- speckit-figma:section phase=spec -->\nbody\n' > "$DOC"
+  run "$SCRIPT" --phase spec --doc "$DOC"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "ok" ]]
+}
+
+@test "a wrong-phase machine marker is not accepted as the right phase via the machine marker" {
+  printf 'rendered\n' > "$RENDERED"
+  # Only the plan machine marker is present (no heading, no spec marker).
+  printf '# Doc\n<!-- speckit-figma:section phase=plan -->\nbody\n' > "$DOC"
+  run "$SCRIPT" --phase spec --doc "$DOC"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "section-missing" ]]
+}

@@ -56,7 +56,7 @@ scopes depend on the introspection level declared in `figma.projects.config.json
 | `figmaProjectId` (whole project) | `+ GET /projects/:project_id/files` | `+ projects:read` |
 | `figmaTeamId` / `figmaTeamIds` (whole team / org) | `+ GET /teams/:team_id/projects` | `+ projects:read` |
 
-> **Org-level setups (the `figmaTeamId(s)` maille):** select **all three** scopes —
+> **Org-level setups (the `figmaTeamId(s)` granularity):** select **all three** scopes —
 > `file_content:read`, `file_metadata:read`, `projects:read`. Without `projects:read`
 > the team/project enumeration returns `403`/`404` (the introspection then fails with a
 > `projects:read`-scope hint) even though individual files would read fine. The PAT

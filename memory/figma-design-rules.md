@@ -63,7 +63,7 @@ complement the project constitution; on conflict, the stricter rule wins.
 - Apply least privilege: read-only Figma scopes only. Scopes scale with the
   introspection level — a single file needs `file_content:read` +
   `file_metadata:read`; project/team enumeration (`figmaProjectId` /
-  `figmaTeamId(s)`, the org-level maille) **additionally needs `projects:read`**
+  `figmaTeamId(s)`, the org-level granularity) **additionally needs `projects:read`**
   (see docs/CREDENTIALS.md). A `403`/`404` on `/teams` or `/projects` endpoints
   means the PAT lacks `projects:read` or is not a team member.
 

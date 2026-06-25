@@ -33,7 +33,7 @@ Run these from the workspace root. The short names used below map to:
 3. **Credentials.** Ensure `credentials.source` is set:
    - **Scopes (read-only).** A single-file setup needs `file_content:read` +
      `file_metadata:read`. A `figmaProjectId` or `figmaTeamId(s)` setup (the
-     org-level maille) **additionally requires `projects:read`** — without it the
+     org-level granularity) **additionally requires `projects:read`** — without it the
      team/project enumeration fails with `403`/`404`. Instruct the user to select
      all three scopes when any project/team id is used (see `docs/CREDENTIALS.md`).
    - `env` for local development → instruct the user to store their own

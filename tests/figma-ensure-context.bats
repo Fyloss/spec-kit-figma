@@ -234,3 +234,40 @@ JSON
   [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
   [[ "$(status_json | jq -r '.linkScope')" == "frame" ]]
 }
+
+# --- Review fixes: stale-section cleanup & broad/frame classification ----------
+
+@test "ensure clears stale rendered sections when Figma no longer applies" {
+  # No config -> no-config skip path. A leftover .figma-section.*.md from a prior
+  # run must be removed so the verifier does not treat this run as 'applicable'.
+  printf 'stale\n' > "${WORKSPACE}/.figma-section.tasks.md"
+  printf 'stale\n' > "${WORKSPACE}/.figma-section.spec.md"
+  run "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-config" ]]
+  [ ! -f "${WORKSPACE}/.figma-section.tasks.md" ]
+  [ ! -f "${WORKSPACE}/.figma-section.spec.md" ]
+}
+
+@test "a link to a deep-fetched node that is not a top-level frame stays pinned (linkScope frame)" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  # 50:9 is deep-fetched into .nodes.nodes but is NOT a top-level page frame.
+  echo '{"fileId":"DeepFILE","nodes":{"nodes":{"50:9":{}}},"pages":[{"id":"0:1","name":"P","frames":[{"id":"1:2","name":"Hero","type":"FRAME"}]}]}' \
+    > "${WORKSPACE}/.figma-context-snapshot.json"
+  run "$SCRIPT" --input "https://www.figma.com/design/DeepFILE/X?node-id=50-9"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
+  [[ "$(status_json | jq -r '.linkScope')" == "frame" ]]
+}
+
+@test "a link whose node-id is a page/canvas is broad (covers many frames)" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  # 0:1 IS a page id in the snapshot, not a specific frame.
+  echo '{"fileId":"PageFILE","nodes":{"nodes":{"0:1":{}}},"pages":[{"id":"0:1","name":"Home","frames":[{"id":"1:2","name":"Hero","type":"FRAME"},{"id":"1:3","name":"Footer","type":"FRAME"}]}]}' \
+    > "${WORKSPACE}/.figma-context-snapshot.json"
+  run "$SCRIPT" --input "https://www.figma.com/design/PageFILE/Home?node-id=0-1"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
+  [[ "$(status_json | jq -r '.linkScope')" == "broad" ]]
+  [[ "$(status_json | jq -r '.candidateFrames | length')" == "2" ]]
+}

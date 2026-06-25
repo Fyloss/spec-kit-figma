@@ -85,17 +85,29 @@ LAST_MODIFIED="$(jq -r '.lastModified // "unknown"' "$SNAPSHOT")"
 CONTEXT_SOURCE="$(jq -r '.contextSource // "rest"' "$SNAPSHOT")"
 MODE="$(figma_config_get '.mode' 'single-repo')"
 
+# Escape a value for safe use as a sed REPLACEMENT with the '@' delimiter: a
+# backslash, '&' (expands to the whole match) and '@' (the delimiter) would
+# otherwise corrupt the command or the output. Values come from the snapshot /
+# config and are not guaranteed free of these characters.
+sed_repl() { printf '%s' "$1" | sed -e 's/[\\&@]/\\&/g'; }
+
+FILE_ID_E="$(sed_repl "$FILE_ID")"
+PROJECT_ID_E="$(sed_repl "$PROJECT_ID")"
+GENERATED_AT_E="$(sed_repl "$GENERATED_AT")"
+LAST_MODIFIED_E="$(sed_repl "$LAST_MODIFIED")"
+MODE_E="$(sed_repl "$MODE")"
+
 # Substitute the scalar placeholders the templates share. Judgement placeholders
 # (placement, justification, token mapping) are intentionally left untouched.
 # Delimiter '@' — the placeholders themselves contain '|', so it cannot be the
-# sed delimiter; Figma ids / ISO timestamps / repo modes never contain '@'.
+# sed delimiter; replacement values are escaped above.
 substitute() {
   sed \
-    -e "s@{{FIGMA_FILE_ID}}@${FILE_ID}@g" \
-    -e "s@{{FIGMA_PROJECT_ID | n/a}}@${PROJECT_ID}@g" \
-    -e "s@{{GENERATED_AT}}@${GENERATED_AT}@g" \
-    -e "s@{{LAST_MODIFIED}}@${LAST_MODIFIED}@g" \
-    -e "s@{{multi-repo | mono-repo}}@${MODE}@g" \
+    -e "s@{{FIGMA_FILE_ID}}@${FILE_ID_E}@g" \
+    -e "s@{{FIGMA_PROJECT_ID | n/a}}@${PROJECT_ID_E}@g" \
+    -e "s@{{GENERATED_AT}}@${GENERATED_AT_E}@g" \
+    -e "s@{{LAST_MODIFIED}}@${LAST_MODIFIED_E}@g" \
+    -e "s@{{multi-repo | mono-repo}}@${MODE_E}@g" \
     "$1"
 }
 
@@ -136,6 +148,10 @@ CANDIDATE_TABLE="$(echo "$CANDIDATE_FRAMES_JSON" | jq -r '
   end')"
 
 {
+  # Stable, phase-specific machine marker so figma-verify-section.sh can confirm
+  # integration without coupling to the (translatable) heading text, and can tell
+  # a wrong-phase section apart. Keep this line when pasting the block.
+  printf '<!-- speckit-figma:section phase=%s -->\n' "$PHASE"
   substitute "$TEMPLATE"
   printf '\n\n<!-- ===== AUTO-FILLED FROM .figma-context-snapshot.json — do not delete; complete the judgement fields above ===== -->\n'
   printf '\n### Snapshot facts (auto-filled, deterministic)\n\n'
