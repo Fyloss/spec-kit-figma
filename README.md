@@ -49,6 +49,7 @@ submodules) layouts.
 ├── tests/                              # bats test suite + fixtures
 ├── templates/
 │   ├── spec-figma-section.template.md
+│   ├── plan-figma-section.template.md
 │   └── tasks-figma-section.template.md
 ├── memory/
 │   └── figma-design-rules.md           # non-negotiable agent rules
@@ -66,8 +67,9 @@ specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/arch
 # or from a local checkout
 specify extension add --dev /path/to/spec-kit-figma
 ```
-This registers the `/speckit.figma.setup` and `/speckit.figma.introspect`
-commands with your agent. Then run `/speckit.figma.setup` once.
+This registers the `/speckit.figma.setup`, `/speckit.figma.ensure`,
+`/speckit.figma.introspect` and `/speckit.figma.verify` commands with your
+agent. Then run `/speckit.figma.setup` once.
 
 **Figma context is refreshed automatically:** the manifest's
 `before_specify` / `before_plan` / `before_tasks` hooks invoke
@@ -89,8 +91,8 @@ linked nodes) — and it never blocks spec/tasks generation. Running
 `/speckit.figma.introspect` manually remains available for deep dives
 (specific nodes, custom depth).
 
-The workspace's `/speckit.specify` and `/speckit.tasks` prompt files are
-**never modified by default**. If your agent does not support SpecKit
+The workspace's `/speckit.specify`, `/speckit.plan` and `/speckit.tasks` prompt
+files are **never modified by default**. If your agent does not support SpecKit
 extension hooks, opt into prompt injection with `./install.sh --prompt-hooks`
 (a managed block, refreshed in place on re-runs); a default `install.sh` run
 removes any block injected by a previous extension version.

@@ -44,12 +44,18 @@ manual command registration in step 4.
 ./install.sh --mode multi-repo
 ```
 The installer copies the config example to `figma.projects.config.json`, copies
-the helper scripts to `.specify/scripts/bash/`, git-ignores
-`.figma-context-snapshot.json`, installs the design-rules memory into
-`.specify/memory/`, and appends an **auto-context block** to the workspace's
-existing `/speckit.specify` and `/speckit.tasks` command prompts (skip with
-`--no-hooks`; re-run `install.sh` after `specify init` if the prompts did not
-exist yet). It never writes tokens or replaces id placeholders.
+the helper scripts (including `figma-ensure-context.sh`,
+`figma-render-section.sh` and `figma-verify-section.sh`) to
+`.specify/scripts/bash/`, installs the spec/plan/tasks section templates into
+`.specify/templates/`, git-ignores `.figma-context-snapshot.json` and
+`.figma-section.*.md`, and installs the design-rules memory into
+`.specify/memory/`. By **default it leaves the `/speckit.specify`,
+`/speckit.plan` and `/speckit.tasks` command prompts untouched** — automatic
+context runs through the `extension.yml` hooks. Pass `--prompt-hooks` to instead
+append a managed **auto-context block** to those three prompts (for agents
+without SpecKit extension-hook support), or `--no-hooks` to touch nothing;
+re-run `install.sh` after `specify init` if the prompts did not exist yet. It
+never writes tokens or replaces id placeholders.
 
 ## 2. Configure
 Edit `figma.projects.config.json`:
@@ -69,13 +75,17 @@ platform secret.
 
 ## 4. Register the commands with your agent
 > Skip this step if you installed via `specify extension add` (Option A) — SpecKit
-> already registered `/speckit.figma.setup` and `/speckit.figma.introspect`.
+> already registered all four commands (`/speckit.figma.setup`,
+> `/speckit.figma.ensure`, `/speckit.figma.introspect`, `/speckit.figma.verify`).
 
 For a manual install, the extension ships **agent-agnostic** command templates:
 - `commands/speckit.figma.setup.md`
 - `commands/speckit.figma.ensure.md` (auto-context; wired to the
   `before_specify`/`before_plan`/`before_tasks` hooks when installed via Option A)
 - `commands/speckit.figma.introspect.md`
+- `commands/speckit.figma.verify.md` (post-generation check; wired to the
+  `after_specify`/`after_plan`/`after_tasks` hooks when installed via Option A —
+  `--strict` / `figma.verifyStrict` turns it into a CI gate)
 
 Map them to your agent's command location, e.g.:
 
@@ -104,13 +114,19 @@ invoke `/speckit.figma.ensure`, which runs
 user's raw feature input (`--input -`). It re-introspects only when
 `.figma-context-snapshot.json` is missing or stale (older than 60 minutes, or
 older than the config — override with `FIGMA_SNAPSHOT_MAX_AGE_MINUTES` or
-`--max-age-minutes`). Figma context is injected into `spec.md` and `tasks.md`
+`--max-age-minutes`). Figma context is injected into `spec.md`, `plan.md` and `tasks.md`
 for front-end targets and skipped for excluded ones; any skip (no config,
 placeholders, excluded target, failed introspection) is surfaced as a note and
 never blocks generation.
 
-Your `/speckit.specify` and `/speckit.tasks` prompt files are **not modified**
-by default. If your agent does not support SpecKit extension hooks, run
+After generation, the `after_specify`/`after_plan`/`after_tasks` hooks run
+`/speckit.figma.verify` (`figma-verify-section.sh`), which confirms the Figma
+section was actually integrated when a mockup was detected — and self-corrects
+if it is missing. Enable a hard CI gate with `--strict` (or `figma.verifyStrict`
+in the config) to make a missing section fail the run instead of only warning.
+
+Your `/speckit.specify`, `/speckit.plan` and `/speckit.tasks` prompt files are
+**not modified** by default. If your agent does not support SpecKit extension hooks, run
 `./install.sh --prompt-hooks` to append a managed auto-context block to those
 prompts instead (refreshed in place on re-runs). A default `install.sh` run
 removes any block injected by a previous extension version; `--no-hooks`

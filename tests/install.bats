@@ -148,7 +148,7 @@ OLD
 @test "--prompt-hooks notes when no speckit command files exist to hook" {
   run "$INSTALL" --target "$WORKSPACE" --prompt-hooks
   [ "$status" -eq 0 ]
-  [[ "$output" == *"no /speckit.specify or /speckit.tasks command files found"* ]]
+  [[ "$output" == *"no /speckit.specify, /speckit.plan or /speckit.tasks command files found"* ]]
 }
 
 @test "install copies the ensure-context helper script" {

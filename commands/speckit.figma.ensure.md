@@ -86,8 +86,8 @@ When `"linkScope": "frame"`, the creative is already pinned: proceed directly.
 
 For any other `reason` (`no-config`, `unresolved-placeholders`, `target-excluded`,
 `target-not-mapped`, `target-disabled`, `ambiguous-target`, `invalid-config`,
-`introspect-failed`) — proceed without Figma context and add a short note
-mentioning the reason. Never block generation.
+`dry-run`, `introspect-failed`) — proceed without Figma context and add a short
+note mentioning the reason. Never block generation.
 
 ## 5. Credentials hygiene
 

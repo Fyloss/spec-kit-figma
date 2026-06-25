@@ -76,9 +76,12 @@ long as the token is printed on stdout, e.g.:
 | `pass`         | `pass show figma/pat` |
 | `secret-tool`  | `secret-tool lookup service figma-pat` |
 
-Resolution order in the scripts: environment variable (`FIGMA_PAT`) >
-`FIGMA_PAT_COMMAND`. There is **no `.env` fallback** — if neither is set the
-scripts fail with an explicit error pointing back here.
+Resolution order in the scripts: the environment variable named by
+`credentials.envVar` (default `FIGMA_PAT`) > `FIGMA_PAT_COMMAND`. There is **no
+`.env` fallback** — if neither is set the scripts fail with an explicit error
+pointing back here. If `FIGMA_PAT_COMMAND` is set but its command fails or
+prints nothing, the scripts warn and then fail with that same error; they never
+silently continue without a token.
 
 ## Keeping the token away from the agent
 

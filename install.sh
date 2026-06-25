@@ -12,9 +12,9 @@
 #     SpecKit convention — alongside .specify/memory/)
 #   - ensures .figma-context-snapshot.json is git-ignored
 #   - creates .specify/memory/ and installs the design-rules memory
-#   - by default LEAVES the /speckit.specify and /speckit.tasks prompts
-#     untouched (automatic Figma context runs via the extension.yml hooks
-#     before_specify/before_tasks -> /speckit.figma.ensure) and removes any
+#   - by default LEAVES the /speckit.specify, /speckit.plan and /speckit.tasks
+#     prompts untouched (automatic Figma context runs via the extension.yml hooks
+#     before_specify/before_plan/before_tasks -> /speckit.figma.ensure) and removes any
 #     auto-context block a previous version injected. --prompt-hooks opts back
 #     into prompt injection for agents without SpecKit extension-hook support;
 #     --no-hooks touches nothing (not even cleanup).
@@ -97,7 +97,7 @@ fi
 # -----------------------------------------------------------------------------
 # Prompt auto-context block. DEFAULT ("clean"): the prompts are NOT modified —
 # automatic Figma context is provided by the extension.yml hooks
-# (before_specify/before_tasks -> /speckit.figma.ensure) — and any block a
+# (before_specify/before_plan/before_tasks -> /speckit.figma.ensure) — and any block a
 # previous extension version injected is removed. "--prompt-hooks" ("inject")
 # appends/refreshes the managed block for agents without SpecKit
 # extension-hook support. "--no-hooks" ("off") touches nothing.
@@ -194,10 +194,10 @@ if [[ "$HOOKS" != "off" ]]; then
     done
   done
   if [[ "$HOOKS" == "inject" && "$HOOKED_ANY" == "false" ]]; then
-    echo "NOTE: no /speckit.specify or /speckit.tasks command files found — run 'specify init' first, then re-run install.sh --prompt-hooks to enable prompt injection."
+    echo "NOTE: no /speckit.specify, /speckit.plan or /speckit.tasks command files found — run 'specify init' first, then re-run install.sh --prompt-hooks to enable prompt injection."
   fi
   if [[ "$HOOKS" == "clean" ]]; then
-    echo "INFO: speckit command prompts left untouched — automatic Figma context runs via the extension hooks (before_specify/before_tasks -> /speckit.figma.ensure). Use --prompt-hooks if your agent does not support SpecKit extension hooks."
+    echo "INFO: speckit command prompts left untouched — automatic Figma context runs via the extension hooks (before_specify/before_plan/before_tasks -> /speckit.figma.ensure, after_specify/after_plan/after_tasks -> /speckit.figma.verify). Use --prompt-hooks if your agent does not support SpecKit extension hooks."
   fi
 fi
 
@@ -211,8 +211,9 @@ Next steps:
        echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"' >> ~/.zshrc
      CI / Cloud Agent: set credentials.source = "ci-secret" and inject a platform secret.
   3. Validate (from the workspace root):  ./.specify/scripts/bash/figma-validate-config.sh
-  4. Register the commands (commands/speckit.figma.setup.md, commands/speckit.figma.introspect.md)
+  4. Register the four commands (commands/speckit.figma.{setup,ensure,introspect,verify}.md)
      with your SpecKit agent of choice — or install natively with
      'specify extension add' (see extension.yml / docs/INSTALL.md), which registers
-     /speckit.figma.setup and /speckit.figma.introspect for you.
+     /speckit.figma.setup, /speckit.figma.ensure, /speckit.figma.introspect and
+     /speckit.figma.verify for you.
 EOF

@@ -12,7 +12,9 @@ Automated tests for the bash scripts of the SpecKit Figma extension, written wit
 - `figma-resolve-source.bats` — design-context engine resolution (REST default, MCP + REST fallback).
 - `figma-common.bats` — shared helpers (token loading, env var resolution, cache path, engine helpers, apiBaseUrl allowlist).
 - `figma-introspect.bats` — introspection entrypoint (argument validation, large-payload snapshot via a fake curl).
-- `figma-ensure-context.bats` — automatic pre-specify/tasks hook (skip reasons, snapshot freshness, target auto-resolution).
+- `figma-ensure-context.bats` — automatic pre-specify/plan/tasks hook (skip reasons, snapshot freshness, target auto-resolution, link-scope classification, stale-section cleanup).
+- `figma-render-section.bats` — ready-to-paste section rendering (placeholder substitution, pages/frames/candidate-frame tables, machine marker).
+- `figma-verify-section.bats` — post-generation section verification (phase-specific marker detection, strict-mode CI gate, document resolution).
 - `install.bats` — installer (file copies, idempotency, auto-context hook injection).
 
 The suite is offline: no test calls the Figma API. Network-dependent paths
