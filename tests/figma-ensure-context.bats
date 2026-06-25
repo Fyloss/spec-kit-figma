@@ -249,6 +249,21 @@ JSON
   [ ! -f "${WORKSPACE}/.figma-section.spec.md" ]
 }
 
+@test "ensure preserves a prior rendered section on a transient introspect-failure" {
+  # Figma APPLIES (valid config, enabled target) but introspection fails for lack
+  # of a token. A prior phase's render must NOT be wiped: the verifier keys
+  # 'applicable' on the file's existence, so wiping it would make after_* verify
+  # report not-applicable and let a --strict CI gate silently pass for a run where
+  # Figma genuinely applies. Unlike no-config, this skip is transient -> keep it.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  printf 'prior render\n' > "${WORKSPACE}/.figma-section.tasks.md"
+  unset FIGMA_PAT
+  run "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "introspect-failed" ]]
+  [ -f "${WORKSPACE}/.figma-section.tasks.md" ]
+}
+
 @test "a link to a deep-fetched node that is not a top-level frame stays pinned (linkScope frame)" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   # 50:9 is deep-fetched into .nodes.nodes but is NOT a top-level page frame.

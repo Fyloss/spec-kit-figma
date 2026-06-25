@@ -109,3 +109,18 @@ JSON
   [ "$status" -ne 0 ]
   [[ "$output" == *"--candidate-frames must be a JSON array"* ]]
 }
+
+@test "candidate-frame checklist shows the Page column and escapes pipes in names" {
+  run "$SCRIPT" --phase tasks --snapshot "$SNAP" \
+    --candidate-frames '[{"id":"9:9","name":"Checkout | v2","page":"Flows | A"}]'
+  [ "$status" -eq 0 ]
+  local out="$output"
+  [ -f "$out" ]
+  # Page column is present so frames with the same name on different pages are
+  # distinguishable in the creative-confirmation checklist.
+  grep -qF '| # | Page | Frame | Node id |' "$out"
+  # A literal "|" inside a Figma name is escaped so it cannot inject a spurious
+  # table column when the section is pasted verbatim into the document.
+  grep -qF 'Checkout \| v2' "$out"
+  grep -qF 'Flows \| A' "$out"
+}

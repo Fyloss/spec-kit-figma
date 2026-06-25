@@ -18,8 +18,10 @@
 #   figma-verify-section.sh --phase spec|plan|tasks
 #     [--doc <path>] [--config <path>] [--strict]
 # When --doc is omitted, the document is resolved from the SpecKit layout:
-# specs/<current-branch>/<phase>.md, else the most recently modified
-# specs/*/<phase>.md.
+# specs/<current-branch>/<phase>.md; otherwise it is used ONLY when exactly one
+# specs/*/<phase>.md exists. With several candidates the target is ambiguous, so
+# verification refuses (reason "doc-not-found") and asks for --doc rather than
+# risk verifying — and, under --strict, gating CI on — the wrong feature's doc.
 #
 # Prints a JSON status object on stdout:
 #   { "verified": true|false, "phase": "...", "applicable": true|false,
@@ -64,8 +66,16 @@ RENDERED="${ROOT}/.figma-section.${PHASE}.md"
 # from the (translatable) heading text and able to detect a wrong-phase section.
 MARKER="speckit-figma:section phase=${PHASE}"
 # Legacy/heading fallback so a section pasted without the machine comment (or
-# rendered by an older version) is still recognized.
-LEGACY_MARKER="(extension: figma)"
+# rendered by an older version) is still recognized. It MUST stay phase-specific:
+# the previous phase-agnostic "(extension: figma)" suffix is present in EVERY
+# template heading, so it matched a section pasted for the WRONG phase and made
+# the verifier report "ok" for a missing/misplaced section — silently defeating
+# the wrong-phase detection the machine marker above exists for (and --strict).
+case "$PHASE" in
+  spec)  LEGACY_MARKER="## Figma Design Context" ;;
+  plan)  LEGACY_MARKER="## Figma Design Plan" ;;
+  tasks) LEGACY_MARKER="## Figma-derived tasks" ;;
+esac
 
 emit() { # $1 verified(bool)  $2 applicable(bool)  $3 reason  $4 remedy
   jq -n --argjson verified "$1" --argjson applicable "$2" \

@@ -123,15 +123,20 @@ substitute() {
 # real introspected pages/frames, components, context engine and input links so
 # the agent CANNOT claim "no creative was indicated": the candidates are here.
 # -----------------------------------------------------------------------------
+# esc: keep free-text (page/frame names, link URLs) from corrupting the markdown
+# tables that get pasted verbatim — a literal "|" would inject spurious columns,
+# a newline would split the row. Escape the pipe and flatten any line breaks.
 PAGES_TABLE="$(jq -r '
+  def esc: (. // "—") | tostring | gsub("[|]"; "\\|") | gsub("[\n\r]+"; " ");
   (.pages // []) as $p
   | if ($p | length) == 0 then "_No mapped page introspected in the snapshot._"
     else ( "| Page | Frames |\n|------|--------|\n"
-           + ( [ $p[] | "| \(.name) | \((.frames // []) | length) |" ] | join("\n") ) )
+           + ( [ $p[] | "| \(.name | esc) | \((.frames // []) | length) |" ] | join("\n") ) )
     end' "$SNAPSHOT")"
 
 FRAMES_TABLE="$(jq -r '
-  [ (.pages // [])[] as $pg | ($pg.frames // [])[] | "| \($pg.name) | \(.name) | `\(.id)` |" ] as $rows
+  def esc: (. // "—") | tostring | gsub("[|]"; "\\|") | gsub("[\n\r]+"; " ");
+  [ (.pages // [])[] as $pg | ($pg.frames // [])[] | "| \($pg.name | esc) | \(.name | esc) | `\(.id)` |" ] as $rows
   | if ($rows | length) == 0 then "_No top-level frame indexed._"
     else "| Page | Frame | Node id |\n|------|-------|---------|\n" + ($rows | join("\n"))
     end' "$SNAPSHOT")"
@@ -140,18 +145,20 @@ COMPONENT_COUNT="$(jq -r '(.components // {} | length)' "$SNAPSHOT")"
 STYLE_COUNT="$(jq -r '(.styles // {} | length)' "$SNAPSHOT")"
 
 LINKS_TABLE="$(echo "$LINKS_JSON" | jq -r '
+  def esc: (. // "—") | tostring | gsub("[|]"; "\\|") | gsub("[\n\r]+"; " ");
   if (length == 0) then "_None — context derived from the page mapping._"
   else "| URL | File | Node |\n|-----|------|------|\n"
-       + ( [ .[] | "| \(.url) | `\(.fileId)` | `\(.nodeId // "—")` |" ] | join("\n") )
+       + ( [ .[] | "| \(.url | esc) | `\(.fileId)` | `\(.nodeId // "—")` |" ] | join("\n") )
   end')"
 
 CANDIDATE_TABLE="$(echo "$CANDIDATE_FRAMES_JSON" | jq -r '
+  def esc: (. // "—") | tostring | gsub("[|]"; "\\|") | gsub("[\n\r]+"; " ");
   if (length == 0) then ""
   else "\n> ⚠️ A broad Figma link (file/page, no specific frame) was provided. "
        + "Confirm which of these frames the feature targets BEFORE generating tasks "
        + "(creative-confirmation checkpoint — do not silently skip):\n\n"
-       + "| # | Frame | Node id |\n|---|-------|---------|\n"
-       + ( [ to_entries[] | "| \(.key + 1) | \(.value.name) | `\(.value.id)` |" ] | join("\n") )
+       + "| # | Page | Frame | Node id |\n|---|------|-------|---------|\n"
+       + ( [ to_entries[] | "| \(.key + 1) | \(.value.page | esc) | \(.value.name | esc) | `\(.value.id)` |" ] | join("\n") )
   end')"
 
 {

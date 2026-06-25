@@ -18,8 +18,9 @@ From the workspace root, run the verifier for the phase that was just generated:
 ```
 
 Pass `--doc <path>` if you know the exact document path; otherwise it resolves
-`specs/<current-branch>/<phase>.md` (or the most recently modified
-`specs/*/<phase>.md`).
+`specs/<current-branch>/<phase>.md`, or the single `specs/*/<phase>.md` when
+exactly one exists. With several candidates it refuses (reason `doc-not-found`)
+and asks for `--doc` instead of guessing the wrong feature's document.
 
 ## 2. Interpret the status JSON
 

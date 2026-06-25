@@ -120,3 +120,23 @@ status_json() {
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "section-missing" ]]
 }
+
+@test "a legacy heading from the WRONG phase is not accepted (no cross-phase false-ok)" {
+  # plan-phase verification is applicable (a plan section was rendered this run)...
+  printf 'rendered\n' > "${WORKSPACE}/.figma-section.plan.md"
+  # ...but the document only carries the SPEC heading (legacy, no machine marker).
+  # The old phase-agnostic "(extension: figma)" suffix matched it and reported ok.
+  printf '# Plan\n\n## Figma Design Context *(extension: figma)*\n\nbody\n' > "${WORKSPACE}/plan.md"
+  run "$SCRIPT" --phase plan --doc "${WORKSPACE}/plan.md"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "section-missing" ]]
+  [[ "$(status_json | jq -r '.verified')" == "false" ]]
+}
+
+@test "a legacy heading for the MATCHING phase is still accepted (backward compat)" {
+  printf 'rendered\n' > "${WORKSPACE}/.figma-section.plan.md"
+  printf '# Plan\n\n## Figma Design Plan *(extension: figma)*\n\nbody\n' > "${WORKSPACE}/plan.md"
+  run "$SCRIPT" --phase plan --doc "${WORKSPACE}/plan.md"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "ok" ]]
+}

@@ -147,6 +147,9 @@ compute_link_scope() {
 # omitted. Render failures are non-fatal (the agent falls back to the template).
 prepare_injection() {
   MUST_INJECT="true"
+  # Re-render starts clean so only this run's sections survive — a per-phase
+  # render failure below then leaves NO stale file for that phase.
+  clear_rendered_sections
   compute_link_scope
   local phase out err
   err="$(mktemp)"
@@ -184,13 +187,24 @@ snapshot_covers_links() {
 
 # Stale rendered sections from a previous run must not outlive it: the verifier
 # (figma-verify-section.sh) keys "Figma applied to this run" on the existence of
-# .figma-section.<phase>.md. Clear them up front so only THIS run's renders
-# remain; prepare_injection re-creates them only when Figma actually applies.
+# .figma-section.<phase>.md. clear_rendered_sections drops them so only THIS
+# run's renders remain.
+#
+# It is called on the paths where Figma DEFINITIVELY does not apply (no/invalid
+# config, excluded target) and at the start of prepare_injection (just before a
+# re-render) — but deliberately NOT on a transient introspect-failure. Wiping on
+# a transient failure would erase a prior phase's still-valid render, so the
+# verifier would report "not-applicable" and let a --strict CI gate silently pass
+# for a run where Figma genuinely applies; leaving the prior render keeps the
+# gate honest (fail-closed, consistent with verify's own --strict policy).
 ROOT_DIR="$(figma_repo_root)"
-rm -f "${ROOT_DIR}/.figma-section."*.md 2>/dev/null || true
+clear_rendered_sections() {
+  rm -f "${ROOT_DIR}/.figma-section."*.md 2>/dev/null || true
+}
 
 if [[ ! -f "$CONFIG" ]]; then
   echo "INFO: no ${CONFIG##*/} found; proceeding without Figma context." >&2
+  clear_rendered_sections
   emit false "no-config"
   exit 0
 fi
@@ -203,10 +217,12 @@ VALIDATE_RC=$?
 set -e
 if [[ "$VALIDATE_RC" -eq 2 ]]; then
   echo "WARN: ${VALIDATE_OUT}" >&2
+  clear_rendered_sections
   emit false "unresolved-placeholders"
   exit 0
 elif [[ "$VALIDATE_RC" -ne 0 ]]; then
   echo "WARN: ${VALIDATE_OUT}" >&2
+  clear_rendered_sections
   emit false "invalid-config"
   exit 0
 fi
@@ -221,6 +237,7 @@ if [[ -z "$TARGET" ]]; then
       TARGET="${ENABLED[0]}"
     else
       echo "WARN: multi-repo config with ${#ENABLED[@]} enabled targets (${ENABLED_LIST}); pass the target name explicitly." >&2
+      clear_rendered_sections
       emit false "ambiguous-target"
       exit 0
     fi
@@ -231,6 +248,7 @@ fi
 
 DETECT="$("${SCRIPT_DIR}/figma-detect-target.sh" "$TARGET" "$CONFIG")"
 if [[ "$(jq -r '.enabled' <<< "$DETECT")" != "true" ]]; then
+  clear_rendered_sections
   emit false "target-$(jq -r '.reason' <<< "$DETECT")"
   exit 0
 fi
