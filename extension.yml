@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: figma
   name: "Spec Kit Figma"
-  version: "1.0.0"
+  version: "1.1.0"
   description: "Agent-agnostic Figma design-context extension for SpecKit. Grounds spec/plan/tasks/implement in Figma. Supports single-repo (default), mono-repo and multi-repo layouts, with a portable REST engine (default) and an optional MCP engine for more faithful mockup implementation."
   author: "Fyloss"
   repository: "https://github.com/Fyloss/spec-kit-figma"
