@@ -148,6 +148,44 @@ For a **GitHub Cloud Agent** accessing Figma (future-proofing):
 - Never write the token to `.figma-context-snapshot.json` (the snapshot stores
   design structure only, no credentials).
 
+## Troubleshooting — proxy vs. auth (read this before blaming the token)
+
+The Figma REST API (`api.figma.com`) is a **public** endpoint. The single most
+common false diagnosis is reporting an **authentication** failure when the real
+problem is a **corporate proxy** that cannot reach figma.com.
+
+**HTTP 000 / `curl` exit 5 = proxy, not auth.** Concretely:
+
+| Symptom | Real cause | What the scripts report |
+|---|---|---|
+| `curl` exit `5` ("couldn't resolve proxy"), HTTP `000` | broken/unreachable proxy | `NETWORK/PROXY error` (code `NETWORK`) |
+| `curl` exit `6` with a proxy set | proxy DNS failure | `NETWORK/PROXY error` (code `NETWORK`) |
+| HTTP `401` / `403` | missing/invalid PAT or insufficient scope | `AUTH/SCOPE error` (code `AUTH`) |
+| HTTP `404` | wrong key, or PAT owner not a team member | `NOT FOUND` (code `NOT_FOUND`) |
+
+**Self-healing:** the single curl chokepoint (`figma_curl_get` in
+`figma-common.sh`) detects a proxy-connection failure (exit 5, or exit 6 / HTTP
+000 with a proxy configured) and **retries once with every proxy variable
+stripped**:
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
+    "no_proxy=*" "NO_PROXY=*" curl ...
+```
+
+This works in **both** topologies without configuration:
+- **broken corporate proxy** (proxy → exit 5, direct → 200): the strip retry
+  reaches Figma directly;
+- **proxy-only egress** (CI / locked-down: direct fails, proxy is the only way
+  out): the first, proxy-configured attempt already succeeds, so the strip never
+  runs.
+
+The retry is transport-only: the PAT is still sent solely as the `X-Figma-Token`
+header to `https://*.figma.com`, never logged. If a `NETWORK` error persists
+after the auto-retry, the proxy/network — **not** the token — is at fault. The
+`figma.ensure` status JSON carries a machine-readable `code`
+(`NETWORK`/`AUTH`/`NOT_FOUND`) so the calling command reports the true cause.
+
 ## Hard rules
 - The token MUST NOT appear in any committed file (`figma.projects.config.json`,
   scripts, snapshots, logs).
