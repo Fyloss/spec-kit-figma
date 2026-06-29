@@ -27,6 +27,10 @@ provides:
       file: commands/speckit.figma.setup.md
       description: "Configure the SpecKit Figma extension for this workspace and validate connectivity before any spec/plan/tasks run. Selects the REST engine (portable, CI-friendly) or the MCP engine, which yields more faithful mockup implementation."
 
+    - name: speckit.figma.update
+      file: commands/speckit.figma.update.md
+      description: "Update an already-installed Figma extension to a newer version: re-sync the helper scripts, templates, design-rules memory and hooks, re-register the slash-commands, and report old -> new. Idempotent; preserves figma.projects.config.json and needs no uninstall."
+
     - name: speckit.figma.ensure
       file: commands/speckit.figma.ensure.md
       description: "Automatically refresh the Figma design context (incl. direct Figma links pasted in the feature input) before spec/plan/tasks generation, and render the ready-to-paste design section so it is integrated regardless of agent model. Safe no-op when Figma does not apply; invoked by the before_specify/before_plan/before_tasks hooks."

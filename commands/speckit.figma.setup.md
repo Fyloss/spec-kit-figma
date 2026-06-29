@@ -23,12 +23,22 @@ Run these from the workspace root. The short names used below map to:
    multiple apps, propose `mode: "mono-repo"`. Otherwise default to
    `mode: "single-repo"` (one repository, one front-end app). Ask the user to confirm.
 
-2. **Scaffold config.** If `figma.projects.config.json` does not exist at the
-   workspace root, run the extension's `install.sh --mode <mode>` (it copies the
-   matching `figma.projects.config.{singlerepo|monorepo|multirepo}.example.json`
-   from the extension checkout's `config/` directory) and adapt the result: list
-   the front-end targets, mark back-end / infra / BFF targets under `excluded`,
-   and fill `pageToPackageMapping` and `routingRules`.
+2. **Sync assets, then scaffold config.** Always run the extension's
+   `install.sh --mode <mode>` first — it is idempotent and is what keeps an
+   already-installed workspace up to date: it refreshes the helper scripts,
+   section templates and design-rules memory, re-wires the hooks, checks the
+   synced asset version against the version SpecKit has registered (at
+   `.specify/extensions/figma/extension.yml`) and flags a mismatch, and warns if
+   any figma slash-command is missing for a configured agent (run `specify
+   extension add figma` to (re)register those). Do NOT gate this on whether the config already
+   exists — that was the bug that left re-runs stale. `install.sh` only
+   *scaffolds* `figma.projects.config.json` (from the matching
+   `figma.projects.config.{singlerepo|monorepo|multirepo}.example.json` in the
+   extension checkout's `config/`) when it is absent, and never overwrites an
+   existing one. When it has just been scaffolded, adapt it: list the front-end
+   targets, mark back-end / infra / BFF targets under `excluded`, and fill
+   `pageToPackageMapping` and `routingRules`. If the config already existed,
+   leave it untouched unless the user asks to reconfigure a specific field.
 
 3. **Credentials.** Ensure `credentials.source` is set:
    - **Scopes (read-only).** A single-file setup needs `file_content:read` +

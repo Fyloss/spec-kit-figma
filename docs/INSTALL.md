@@ -21,9 +21,10 @@ specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/arch
 # or from a local checkout
 specify extension add --dev /path/to/spec-kit-figma
 ```
-This registers `/speckit.figma.setup` and `/speckit.figma.introspect` with your
-agent. Verify with `specify extension list`. With this option you can skip the
-manual command registration in step 4.
+This registers all of the extension's commands — `/speckit.figma.setup`,
+`/speckit.figma.update`, `/speckit.figma.ensure`, `/speckit.figma.introspect` and
+`/speckit.figma.verify` — with your agent. Verify with `specify extension list`.
+With this option you can skip the manual command registration in step 4.
 
 > Option A registers the **commands** only. Also run the manual installer
 > (Option B) once so the helper scripts (`.specify/scripts/bash/`), the config
@@ -57,6 +58,48 @@ without SpecKit extension-hook support), or `--no-hooks` to touch nothing;
 re-run `install.sh` after `specify init` if the prompts did not exist yet. It
 never writes tokens or replaces id placeholders.
 
+### Updating an existing install
+
+Updating the extension in a project is **two complementary jobs** — they use
+different tools, and you need both, exactly as on first install:
+
+| What | Tool | Notes |
+| --- | --- | --- |
+| Assets + hooks (`.specify/scripts`, `.specify/templates`, `.specify/memory`, prompt hooks) | `install.sh` | idempotent; never overwrites `figma.projects.config.json` |
+| Slash-command registration (`speckit.figma.*`, per agent format) | `specify extension add figma` | agent-format aware; the **only** thing that registers commands, and what records the installed version at `.specify/extensions/figma/extension.yml` |
+
+The new files come from an updated extension source, so first **re-acquire** it
+(`git pull` the checkout, or re-download the release zip), then **re-apply** it —
+no uninstall is required, both tools are self-healing:
+
+```bash
+# from the target workspace root
+specify extension add figma --from <source>   # re-register commands (picks up NEW commands)
+<spec-kit-figma>/install.sh                    # re-sync assets + hooks; reports coherence (in sync / mismatch)
+```
+
+SpecKit records the install across two files (the extension keeps no parallel
+stamp of its own):
+
+- **`.specify/extensions/figma/extension.yml`** — the per-extension manifest,
+  which carries the installed `version`.
+- the **project registry** listing installed extensions under `installed:` —
+  named **`.specify/extensions.yml`** on most SpecKit versions and
+  **`.specify/extension.yml`** on some others. `install.sh` accepts both.
+
+`install.sh` reads the manifest version and reports coherence — `in sync at
+<version>` when the synced assets match the registered commands, or `WARN: figma
+version mismatch …` when they differ (your cue to re-run `specify extension
+add`). If only the registry is present, it reports figma as registered but with
+an unreadable version rather than claiming it is missing. It also warns
+`WARN: figma command(s) not registered for <dir>` when a configured agent is
+missing a command file.
+
+In a configured workspace you can run the whole procedure with the bundled
+**`/speckit.figma.update`** command, which orchestrates both tools and reports
+what changed. Re-running the interactive `/speckit.figma.setup` is **not** the
+way to update — it is for first-time configuration.
+
 ## 2. Configure
 Edit `figma.projects.config.json`:
 - choose `mode` (`single-repo` / `mono-repo` / `multi-repo`);
@@ -75,11 +118,14 @@ platform secret.
 
 ## 4. Register the commands with your agent
 > Skip this step if you installed via `specify extension add` (Option A) — SpecKit
-> already registered all four commands (`/speckit.figma.setup`,
-> `/speckit.figma.ensure`, `/speckit.figma.introspect`, `/speckit.figma.verify`).
+> already registered all of the extension's commands (`/speckit.figma.setup`,
+> `/speckit.figma.update`, `/speckit.figma.ensure`, `/speckit.figma.introspect`,
+> `/speckit.figma.verify`).
 
 For a manual install, the extension ships **agent-agnostic** command templates:
 - `commands/speckit.figma.setup.md`
+- `commands/speckit.figma.update.md` (re-sync assets/hooks + re-register commands
+  on a version bump; preserves the config — see "Updating an existing install")
 - `commands/speckit.figma.ensure.md` (auto-context; wired to the
   `before_specify`/`before_plan`/`before_tasks` hooks when installed via Option A)
 - `commands/speckit.figma.introspect.md`
