@@ -188,7 +188,111 @@ JSON
   run figma_api "/files/test"
   [ "$status" -ne 0 ]
   [[ "$output" != *"000000"* ]]
-  [[ "$output" == *"retries exhausted"* ]]
+  # An exhausted transport failure is reported as a NETWORK error, never auth.
+  [[ "$output" == *"NETWORK/PROXY error"* ]]
+  [[ "$output" == *"cannot reach api.figma.com"* ]]
+  [[ "$output" != *"authentication required"* ]]
+}
+
+# --- HTTP status classification (pure unit, no network) ----------------------
+
+@test "figma_classify_status maps transport/proxy failure (000) to NETWORK" {
+  run figma_classify_status 000
+  [ "$status" -eq 0 ]
+  [ "$output" = "NETWORK" ]
+}
+
+@test "figma_classify_status maps 401 and 403 to AUTH" {
+  run figma_classify_status 401
+  [ "$output" = "AUTH" ]
+  run figma_classify_status 403
+  [ "$output" = "AUTH" ]
+}
+
+@test "figma_classify_status maps 404 to NOT_FOUND" {
+  run figma_classify_status 404
+  [ "$output" = "NOT_FOUND" ]
+}
+
+@test "figma_classify_status maps 429 to RATE_LIMIT and 5xx to SERVER" {
+  run figma_classify_status 429
+  [ "$output" = "RATE_LIMIT" ]
+  run figma_classify_status 503
+  [ "$output" = "SERVER" ]
+}
+
+# --- Cause-specific diagnostics ----------------------------------------------
+
+@test "figma_error_message NETWORK never mentions authentication" {
+  run figma_error_message NETWORK "/files/abc" 000
+  [[ "$output" == *"NETWORK/PROXY"* ]]
+  [[ "$output" == *"proxy"* ]]
+  [[ "$output" != *"authentication required"* ]]
+}
+
+@test "figma_error_message AUTH points at CREDENTIALS and forbids .env" {
+  run figma_error_message AUTH "/teams/123/projects" 403
+  [[ "$output" == *"AUTH/SCOPE"* ]]
+  [[ "$output" == *"CREDENTIALS.md"* ]]
+  [[ "$output" == *"projects:read"* ]]
+  [[ "$output" == *".env"* ]]
+}
+
+@test "figma_error_message NOT_FOUND mentions membership" {
+  run figma_error_message NOT_FOUND "/files/abc" 404
+  [[ "$output" == *"NOT FOUND"* ]]
+  [[ "$output" == *"member"* ]]
+}
+
+# --- Proxy self-heal: broken proxy, direct retry succeeds --------------------
+
+# A fake curl that fails (exit 5, "couldn't resolve proxy") whenever a proxy var
+# is set, and succeeds (HTTP 200 + body) once the proxy is stripped. This models
+# the measured corporate case: proxy -> exit 5; direct -> 200.
+install_proxy_breaking_curl() {
+  mkdir -p "${WORKSPACE}/bin"
+  cat > "${WORKSPACE}/bin/curl" <<'FAKE'
+#!/usr/bin/env bash
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -w|-H|--max-time) shift 2 ;;
+    *) shift ;;
+  esac
+done
+if [[ -n "${HTTP_PROXY:-}${HTTPS_PROXY:-}${http_proxy:-}${https_proxy:-}" ]]; then
+  printf '000'; exit 5
+fi
+[[ -n "$out" ]] && printf '{"name":"ok"}' > "$out"
+printf '200'
+FAKE
+  chmod +x "${WORKSPACE}/bin/curl"
+  export PATH="${WORKSPACE}/bin:${PATH}"
+}
+
+@test "figma_api self-heals a broken proxy by retrying directly" {
+  install_proxy_breaking_curl
+  export FIGMA_PAT="figd_dummy"
+  export FIGMA_API_BASE="https://api.figma.com/v1"
+  export FIGMA_API_MAX_ATTEMPTS="1"
+  export FIGMA_API_RETRY_DELAY="0"
+  export HTTPS_PROXY="http://broken-proxy.invalid:8080"
+  export HTTP_PROXY="$HTTPS_PROXY"
+  run figma_api "/me"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"name":"ok"'* ]]
+}
+
+@test "figma_api never echoes the PAT, even on the proxy retry path" {
+  install_proxy_breaking_curl
+  export FIGMA_PAT="figd_SECRET_TOKEN_DO_NOT_LEAK"
+  export FIGMA_API_BASE="https://api.figma.com/v1"
+  export FIGMA_API_MAX_ATTEMPTS="1"
+  export FIGMA_API_RETRY_DELAY="0"
+  export HTTPS_PROXY="http://broken-proxy.invalid:8080"
+  run figma_api "/me"
+  [[ "$output" != *"figd_SECRET_TOKEN_DO_NOT_LEAK"* ]]
 }
 
 @test "figma_api_base rejects a non-figma.com host from the config" {

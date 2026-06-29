@@ -109,10 +109,28 @@ JSON
 @test "a failed introspection is reported but never blocks (exit 0)" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   unset FIGMA_PAT
+  unset FIGMA_PAT_COMMAND
   run "$SCRIPT"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.ran')" == "false" ]]
   [[ "$(status_json | jq -r '.reason')" == "introspect-failed" ]]
+  # No-token is a credentials problem, surfaced as a machine-readable AUTH code
+  # (never a silent no-op, never a fabricated network cause).
+  [[ "$(status_json | jq -r '.code')" == "AUTH" ]]
+}
+
+@test "a network/proxy introspection failure propagates code NETWORK, not auth" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  export FIGMA_PAT="figd_dummy"
+  # Unreachable base => transport failure (000) => NETWORK, not AUTH.
+  export FIGMA_API_BASE="http://127.0.0.1:9/v1"
+  export FIGMA_API_MAX_ATTEMPTS="1"
+  export FIGMA_API_RETRY_DELAY="0"
+  run "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "introspect-failed" ]]
+  [[ "$(status_json | jq -r '.code')" == "NETWORK" ]]
+  [[ "$output" != *"authentication required"* ]]
 }
 
 @test "rejects a non-numeric --max-age-minutes" {

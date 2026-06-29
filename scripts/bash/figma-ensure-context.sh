@@ -8,11 +8,13 @@
 # whether Figma applies to the run and re-introspects only when the snapshot
 # is missing or stale.
 #
-# Designed as a SAFE NO-OP: every configuration problem (missing config,
-# unresolved placeholders, excluded target, failed introspection, ...) is
-# reported as a skip reason with exit 0 so spec/tasks generation is never
-# blocked — the agent surfaces the reason instead. Non-zero exits are reserved
-# for unexpected internal errors and bad CLI arguments.
+# Designed as a SAFE NO-OP for generation flow: every configuration problem
+# (missing config, unresolved placeholders, excluded target, failed
+# introspection, ...) is reported as a skip reason with exit 0 so spec/tasks
+# generation is never blocked. It is NOT silent about *why*: a failed
+# introspection carries a machine-readable `code` (NETWORK|AUTH|NOT_FOUND) so the
+# agent reports the real cause instead of guessing "authentication required".
+# Non-zero exits are reserved for unexpected internal errors and bad CLI args.
 #
 # Usage:
 #   figma-ensure-context.sh [<target-name>] [--config <path>]
@@ -28,7 +30,8 @@
 # FIGMA_SNAPSHOT_MAX_AGE_MINUTES overrides the default freshness window (60).
 #
 # Prints a JSON status object on stdout:
-#   { "ran": true|false, "reason": "...", "target": "...",
+#   { "ran": true|false, "reason": "...", "code": "NETWORK|AUTH|NOT_FOUND|...|null",
+#     "target": "...",
 #     "snapshot": "...", "links": [...], "introspectArgs": [...],
 #     "mustInject": true|false,        # section is mandatory in spec/plan/tasks
 #     "linkScope": "none|frame|broad", # "broad" => confirm a frame before tasks
@@ -83,6 +86,9 @@ CANDIDATE_FRAMES_JSON="[]" # top-level frames to confirm when LINK_SCOPE=broad
 SPEC_SECTION=""
 PLAN_SECTION=""
 TASKS_SECTION=""
+# Machine-readable failure cause from figma_api (NETWORK|AUTH|NOT_FOUND|...),
+# read back via FIGMA_DIAG_FILE when introspection fails. Empty otherwise.
+FAILURE_CODE=""
 
 emit() { # $1 = ran (true|false), $2 = reason
   jq -n --argjson ran "$1" --arg reason "$2" --arg target "${TARGET:-}" --arg snapshot "$SNAPSHOT" \
@@ -90,10 +96,12 @@ emit() { # $1 = ran (true|false), $2 = reason
     --argjson mustInject "$MUST_INJECT" \
     --arg linkScope "$LINK_SCOPE" \
     --argjson candidateFrames "$CANDIDATE_FRAMES_JSON" \
+    --arg code "$FAILURE_CODE" \
     --arg specSection "$SPEC_SECTION" \
     --arg planSection "$PLAN_SECTION" \
     --arg tasksSection "$TASKS_SECTION" \
     '{ran: $ran, reason: $reason,
+      code: (if $code == "" then null else $code end),
       target: (if $target == "" then null else $target end),
       snapshot: $snapshot,
       links: $links,
@@ -315,11 +323,29 @@ if [[ "$DRY_RUN" == "true" ]]; then
 fi
 
 # Introspection output (index) goes to stderr: this script's stdout is the
-# machine-readable status contract.
+# machine-readable status contract. FIGMA_DIAG_FILE lets figma_api (inside the
+# introspect child) record the REAL failure cause so we never hide a network
+# problem behind a fabricated "authentication required".
+FIGMA_DIAG_FILE="$(mktemp)"; export FIGMA_DIAG_FILE
+trap 'rm -f "$FIGMA_DIAG_FILE"' EXIT
 if "${SCRIPT_DIR}/figma-introspect.sh" "${INTROSPECT_ARGS[@]}" --config "$CONFIG" >&2; then
   prepare_injection
   emit true "introspected"
 else
-  echo "WARN: Figma introspection failed for target '${TARGET}'; proceeding without fresh design context (see errors above)." >&2
+  if [[ -s "$FIGMA_DIAG_FILE" ]]; then
+    FAILURE_CODE="$(jq -r '.code // empty' "$FIGMA_DIAG_FILE" 2>/dev/null || true)"
+  fi
+  # Fail-LOUD with the specific cause: the agent (and any weak LLM) must report
+  # the truth, not the most-common-but-wrong "auth" guess.
+  case "$FAILURE_CODE" in
+    NETWORK)
+      echo "WARN: Figma unreachable (network/proxy) for target '${TARGET}'; the script auto-retried directly. This is a connectivity problem, not a credentials one — do not report a credentials failure." >&2 ;;
+    AUTH)
+      echo "WARN: Figma auth/scope failure for target '${TARGET}'; check the PAT scopes and use the keychain + FIGMA_PAT_COMMAND (never a .env). See docs/CREDENTIALS.md." >&2 ;;
+    NOT_FOUND)
+      echo "WARN: Figma returned 404 for target '${TARGET}'; the file/project/team key is wrong or the PAT owner is not a member. See docs/CREDENTIALS.md." >&2 ;;
+    *)
+      echo "WARN: Figma introspection failed for target '${TARGET}'; proceeding without fresh design context (see errors above)." >&2 ;;
+  esac
   emit false "introspect-failed"
 fi

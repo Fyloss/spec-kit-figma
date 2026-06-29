@@ -198,7 +198,7 @@ figma_load_token() {
     fi
     echo "WARN: FIGMA_PAT_COMMAND failed or returned an empty token." >&2
   fi
-  echo "ERROR: ${var} not found. Set it in your environment (CI secret) or store the PAT in your OS keychain and export FIGMA_PAT_COMMAND locally (see docs/CREDENTIALS.md)." >&2
+  echo "ERROR: ${var} not found. Store the PAT in your OS keychain and export FIGMA_PAT_COMMAND locally (e.g. 'security find-generic-password -s figma-pat -w'), or inject ${var} as a CI secret. Do NOT 'export ${var}=...' by hand and do NOT create a .env file — the token must never be written to disk in the workspace (see docs/CREDENTIALS.md)." >&2
   return 1
 }
 
@@ -216,8 +216,88 @@ figma_scope_hint() {
   esac
 }
 
+# Classify a Figma HTTP status into a stable machine code the caller can switch
+# on and surface verbatim. Transport failures reach here as code 000. Pure
+# function: no network, no globals. Prints exactly one of:
+#   OK | NETWORK | AUTH | NOT_FOUND | RATE_LIMIT | SERVER | UNKNOWN
+figma_classify_status() {
+  case "$1" in
+    200|201|204)     echo "OK" ;;
+    000)             echo "NETWORK" ;;
+    401|403)         echo "AUTH" ;;
+    404)             echo "NOT_FOUND" ;;
+    429)             echo "RATE_LIMIT" ;;
+    500|502|503|504) echo "SERVER" ;;
+    *)               echo "UNKNOWN" ;;
+  esac
+}
+
+# Build the cause-specific diagnostic for a failed Figma call. The text IS the
+# instruction a weak LLM will copy verbatim, so each cause names its real remedy
+# and the NETWORK case explicitly forbids the "authentication" misdiagnosis.
+# Usage: figma_error_message <class> <path> <httpStatus>
+figma_error_message() {
+  local class="$1" path="$2" code="$3"
+  case "$class" in
+    NETWORK)
+      printf 'NETWORK/PROXY error: cannot reach api.figma.com (HTTP %s). A broken or unreachable proxy is the usual cause — the script already auto-retried directly without the proxy. This is a connectivity problem, NOT a credentials problem. HTTP 000 / curl exit 5 = proxy. If it persists, check network/proxy connectivity to api.figma.com.' "$code" ;;
+    AUTH)
+      printf 'AUTH/SCOPE error: Figma returned HTTP %s for %s. The PAT is missing, invalid, or lacks the required read-only scopes (team/project enumeration also needs projects:read). Store the PAT in the OS keychain and export FIGMA_PAT_COMMAND; do NOT export the token by hand and do NOT create a .env (see docs/CREDENTIALS.md). %s' "$code" "$path" "$(figma_scope_hint "$path")" ;;
+    NOT_FOUND)
+      printf 'NOT FOUND: Figma returned 404 for %s. Either the file/project/team key is wrong, or the PAT owner is not a member of that team/project. Verify the id and team membership (see docs/CREDENTIALS.md).' "$path" ;;
+    RATE_LIMIT)
+      printf 'RATE LIMIT: Figma returned HTTP %s for %s after retries; wait and retry later.' "$code" "$path" ;;
+    SERVER)
+      printf 'SERVER error: Figma returned HTTP %s for %s after retries; this is a Figma-side outage, retry later.' "$code" "$path" ;;
+    *)
+      printf 'Figma API error HTTP %s for %s.' "$code" "$path" ;;
+  esac
+}
+
+# Record a machine-readable failure cause for the calling process to read back
+# (set FIGMA_DIAG_FILE to a writable path). No-op when unset. Never contains the
+# token — only the class, the HTTP status and the request path.
+figma_record_diag() {
+  [[ -n "${FIGMA_DIAG_FILE:-}" ]] || return 0
+  jq -n --arg code "$1" --arg httpStatus "$2" --arg path "$3" \
+    '{code: $code, httpStatus: $httpStatus, path: $path}' > "$FIGMA_DIAG_FILE" 2>/dev/null || true
+}
+
+# Single Figma GET. Writes the body to $1 and prints the HTTP status to stdout
+# (transport failures print 000). The Figma REST API is a PUBLIC
+# endpoint, so on a proxy-connection failure — curl exit 5 ("couldn't resolve
+# proxy"), exit 6 ("couldn't resolve host") with a proxy configured, or a 000
+# transport failure with a proxy configured — it retries ONCE with every proxy
+# variable stripped. This self-heals BOTH a broken corporate proxy (direct works)
+# and is harmless where the proxy is the only egress (the first attempt succeeds
+# so the strip never runs). The token stays an X-Figma-Token header on both tries.
+figma_curl_get() {
+  local out="$1" url="$2" token="$3"
+  local code rc proxy_set=""
+  [[ -n "${HTTP_PROXY:-}${HTTPS_PROXY:-}${http_proxy:-}${https_proxy:-}" ]] && proxy_set="yes"
+  # `|| rc=$?` keeps the captured code intact under set -e and records curl's exit.
+  code="$(curl -sS -o "$out" -w '%{http_code}' \
+    -H "X-Figma-Token: ${token}" \
+    -H "Accept: application/json" \
+    "$url" 2>/dev/null)" && rc=0 || rc=$?
+  [[ -n "$code" ]] || code="000"
+  if [[ "$rc" -eq 5 || ( -n "$proxy_set" && ( "$rc" -eq 6 || "$code" == "000" ) ) ]]; then
+    echo "WARN: cannot reach Figma via the configured proxy (curl exit ${rc}); retrying directly without the proxy..." >&2
+    code="$(env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy "no_proxy=*" "NO_PROXY=*" \
+      curl -sS -o "$out" -w '%{http_code}' \
+      -H "X-Figma-Token: ${token}" \
+      -H "Accept: application/json" \
+      "$url" 2>/dev/null)" && rc=0 || rc=$?
+    [[ -n "$code" ]] || code="000"
+  fi
+  printf '%s' "$code"
+}
+
 # GET helper with retry. Usage: figma_api "/files/<key>?depth=1" [config-path]
-# Retries 429/5xx AND transport failures (code 000) with exponential backoff.
+# Retries 429/5xx AND transport failures (code 000) with exponential backoff;
+# each attempt self-heals a broken/mandatory proxy via figma_curl_get. On a
+# terminal failure it records a cause-specific diagnostic (NETWORK/AUTH/...) so
+# the caller reports the truth instead of guessing "authentication required".
 # FIGMA_API_MAX_ATTEMPTS / FIGMA_API_RETRY_DELAY override the retry policy (tests).
 figma_api() {
   figma_require curl
@@ -226,19 +306,16 @@ figma_api() {
   # Validate the base URL BEFORE touching the token: a rejected apiBaseUrl
   # must never get anywhere near the credential.
   local base; base="$(figma_api_base "$config")" || return 1
-  local token; token="$(figma_load_token "$config")" || return 1
+  # A missing/empty token is a credentials problem: record it as AUTH so the
+  # caller reports the truth (figma_load_token already printed the keychain hint).
+  local token; token="$(figma_load_token "$config")" || { figma_record_diag AUTH "" "$path"; return 1; }
   local url="${base}${path}"
   local attempt=0 max_attempts="${FIGMA_API_MAX_ATTEMPTS:-5}" delay="${FIGMA_API_RETRY_DELAY:-2}"
+  local last_code="000"
   while (( attempt < max_attempts )); do
     local tmp; tmp="$(mktemp)"
-    local code
-    # On a transport failure curl itself emits '000' via -w before exiting
-    # non-zero; the fallback assignment must REPLACE the captured output, not
-    # append to it (appending used to garble the code into '000000').
-    code="$(curl -sS -o "$tmp" -w '%{http_code}' \
-      -H "X-Figma-Token: ${token}" \
-      -H "Accept: application/json" \
-      "$url" 2>/dev/null)" || code="000"
+    local code; code="$(figma_curl_get "$tmp" "$url" "$token")"
+    last_code="$code"
     case "$code" in
       200)
         cat "$tmp"; rm -f "$tmp"; return 0 ;;
@@ -246,15 +323,17 @@ figma_api() {
         rm -f "$tmp"
         echo "WARN: Figma API ${code} (attempt $((attempt+1))/${max_attempts}); backing off ${delay}s..." >&2
         sleep "$delay"; delay=$(( delay * 2 )); attempt=$(( attempt + 1 )) ;;
-      403|404)
-        echo "ERROR: Figma API ${code} for ${path}" >&2
-        figma_scope_hint "$path" >&2
-        cat "$tmp" >&2; rm -f "$tmp"; return 1 ;;
-      *)
-        echo "ERROR: Figma API ${code} for ${path}" >&2
+      401|403|404|*)
+        local class; class="$(figma_classify_status "$code")"
+        figma_record_diag "$class" "$code" "$path"
+        echo "ERROR: $(figma_error_message "$class" "$path" "$code")" >&2
         cat "$tmp" >&2; rm -f "$tmp"; return 1 ;;
     esac
   done
-  echo "ERROR: Figma API retries exhausted for ${path}" >&2
+  # Retries exhausted: classify by the LAST status so a network outage (000)
+  # never gets mislabelled as an auth failure.
+  local class; class="$(figma_classify_status "$last_code")"
+  figma_record_diag "$class" "$last_code" "$path"
+  echo "ERROR: $(figma_error_message "$class" "$path" "$last_code")" >&2
   return 1
 }
