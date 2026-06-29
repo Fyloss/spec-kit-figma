@@ -124,6 +124,10 @@ and [docs/MONOREPO.md](docs/MONOREPO.md).
   `projects:read`** (and the token must belong to a member of those teams) so the
   organization > team > projects > files hierarchy can be enumerated. See
   [docs/CREDENTIALS.md](docs/CREDENTIALS.md) for the full scope matrix.
+- **Behind a corporate proxy?** A transport failure (`curl` exit 5, HTTP `000`)
+  is a proxy/network problem, not a bad token. The single curl chokepoint
+  auto-retries once with the proxy stripped; if it still fails, see
+  [docs/CREDENTIALS.md → Troubleshooting — proxy vs auth](docs/CREDENTIALS.md#troubleshooting--proxy-vs-auth-read-this-before-blaming-the-token).
 
 ## Design-context engines (REST / MCP)
 The engine is selected per workspace via `figma.contextSource`:

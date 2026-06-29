@@ -74,6 +74,23 @@ Run these from the workspace root. The short names used below map to:
 - Never assume MCP is present: portability (REST) is the contract; MCP is an
   opt-in enrichment for those who run the server.
 
+## 1c. When introspection fails — report the true cause, never guess
+
+If `introspect` exits non-zero, it has already classified the failure and printed
+a cause-specific diagnostic to **stderr**. Read it and report that cause — do not
+default to "authentication required":
+
+- `NETWORK/PROXY error` (curl exit 5, or exit 6 / HTTP `000` with a proxy set) —
+  a corporate proxy or the network cannot reach `api.figma.com`. The single curl
+  chokepoint already retried once with every proxy variable stripped; if it still
+  failed, the **proxy/network is at fault, not the token**. See docs/CREDENTIALS.md
+  → "Troubleshooting — proxy vs auth".
+- `AUTH/SCOPE error` (`401/403`) — the PAT is missing, expired, or lacks
+  `projects:read` / `file_content:read`. See docs/CREDENTIALS.md. Never suggest
+  exporting the token by hand or creating a `.env`.
+- `404` — the file/project/team key is wrong, or the PAT owner is not a member of
+  that team.
+
 ## 2. Autonomous traversal
 
 - Resolve the design source for the target from the strongest signal available

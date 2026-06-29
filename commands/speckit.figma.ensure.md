@@ -86,8 +86,23 @@ When `"linkScope": "frame"`, the creative is already pinned: proceed directly.
 
 For any other `reason` (`no-config`, `unresolved-placeholders`, `target-excluded`,
 `target-not-mapped`, `target-disabled`, `ambiguous-target`, `invalid-config`,
-`dry-run`, `introspect-failed`) — proceed without Figma context and add a short
-note mentioning the reason. Never block generation.
+`dry-run`) — proceed without Figma context and add a short note mentioning the
+reason. Never block generation.
+
+### `introspect-failed` — report the true cause, never guess
+
+When `"reason": "introspect-failed"`, the JSON also carries a `code` field with
+the machine-classified failure cause. Read it and report **that** cause — do not
+assume the token is at fault:
+
+| `code` | Cause | What to tell the user |
+| --- | --- | --- |
+| `NETWORK` | proxy/connectivity failure; the PAT was never rejected | the corporate proxy or network cannot reach `api.figma.com` (the auto-retry already stripped the proxy and still failed). The token is **not** the problem. See docs/CREDENTIALS.md → "Troubleshooting — proxy vs auth". |
+| `AUTH` | `401/403` — token missing/invalid or lacking a scope | the PAT is missing, expired, or lacks `projects:read` / `file_content:read`. See docs/CREDENTIALS.md. Never suggest exporting the token by hand or creating a `.env`. |
+| `NOT_FOUND` | `404` — wrong key or non-member | the file/project/team key is wrong, or the PAT owner is not a member of that team. |
+
+For any other or absent `code`, fall back to the generic note above. Then
+proceed without Figma context — never block generation.
 
 ## 5. Credentials hygiene
 
