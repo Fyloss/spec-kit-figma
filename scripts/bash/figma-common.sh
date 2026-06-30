@@ -385,7 +385,9 @@ figma_api() {
     local code; code="$(figma_curl_get "$tmp" "$url" "$token")"
     last_code="$code"
     case "$code" in
-      200)
+      200|201|204)
+        # 2xx success (201/204 carry an empty body); stay consistent with
+        # figma_classify_status, which already classes these as OK.
         cat "$tmp"; rm -f "$tmp"; return 0 ;;
       000|429|500|502|503|504)
         rm -f "$tmp"

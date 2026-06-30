@@ -307,6 +307,38 @@ FAKE
   [[ "$output" != *"figd_SECRET_TOKEN_DO_NOT_LEAK"* ]]
 }
 
+# A fake curl that returns a 2xx success code OTHER than 200 (here 204 No
+# Content, with an empty body) — exercising the contract that figma_classify_status
+# already treats 201/204 as OK, so figma_api must accept them as success too.
+install_no_content_curl() {
+  mkdir -p "${WORKSPACE}/bin"
+  cat > "${WORKSPACE}/bin/curl" <<'FAKE'
+#!/usr/bin/env bash
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -w|-H|--max-time) shift 2 ;;
+    *) shift ;;
+  esac
+done
+[[ -n "$out" ]] && : > "$out"   # 204 No Content -> empty body
+printf '204'
+FAKE
+  chmod +x "${WORKSPACE}/bin/curl"
+  export PATH="${WORKSPACE}/bin:${PATH}"
+}
+
+@test "figma_api treats a 2xx success code other than 200 (204) as success" {
+  install_no_content_curl
+  export FIGMA_PAT="figd_dummy"
+  export FIGMA_API_BASE="https://api.figma.com/v1"
+  export FIGMA_API_MAX_ATTEMPTS="1"
+  export FIGMA_API_RETRY_DELAY="0"
+  run figma_api "/me"
+  [ "$status" -eq 0 ]
+}
+
 @test "figma_api_base rejects a non-figma.com host from the config" {
   unset FIGMA_API_BASE
   cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'

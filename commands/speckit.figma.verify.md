@@ -11,10 +11,22 @@ for approval; it is a safe no-op when Figma does not apply.
 
 ## 1. Run the check
 
-From the workspace root, run the verifier for the phase that was just generated:
+Pick `--phase` from the hook that invoked you — it MUST match the document that
+was just generated. NEVER default to `spec`: this one command file is shared by
+all three after-hooks, so verifying the wrong phase would let a missing
+plan/tasks section pass silently (and pass a `--strict` CI gate).
+
+| Invoking hook | Generated document | Use |
+|---|---|---|
+| `after_specify` | `spec.md` | `--phase spec` |
+| `after_plan` | `plan.md` | `--phase plan` |
+| `after_tasks` | `tasks.md` | `--phase tasks` |
+
+From the workspace root, run the verifier with the matching phase (substitute
+`<phase>` using the table above):
 
 ```bash
-./.specify/scripts/bash/figma-verify-section.sh --phase spec   # or plan / tasks
+./.specify/scripts/bash/figma-verify-section.sh --phase <phase>
 ```
 
 Pass `--doc <path>` if you know the exact document path; otherwise it resolves

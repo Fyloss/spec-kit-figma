@@ -140,3 +140,17 @@ status_json() {
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "ok" ]]
 }
+
+# The after_specify/after_plan/after_tasks hooks all invoke this ONE command
+# file with no arguments, so its prompt must bind each hook to the matching
+# phase. A spec-hardcoded example would make a weak agent verify spec after
+# plan/tasks generation, letting a missing section pass even under --strict.
+@test "verify command doc binds each after-hook to its own phase (no spec-only default)" {
+  doc="${REPO_ROOT}/commands/speckit.figma.verify.md"
+  grep -qF "after_plan" "$doc"
+  grep -qF "after_tasks" "$doc"
+  grep -qF -- "--phase plan" "$doc"
+  grep -qF -- "--phase tasks" "$doc"
+  # ...and it must NOT ship a runnable example that hardcodes the spec phase.
+  ! grep -qE 'figma-verify-section\.sh --phase spec( |$)' "$doc"
+}
