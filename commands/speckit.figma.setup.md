@@ -71,6 +71,13 @@ Run these from the workspace root. The short names used below map to:
      `mcp.fallbackToRest: true` (default) so the extension degrades gracefully to
      REST when the server is absent. Only set it to `false` when MCP is mandatory
      for the run. Recommend keeping `rest` in CI.
+   - **If the user is on Claude Code, recommend the official Figma plugin** as the
+     simplest MCP path: `claude plugin install figma@claude-plugins-official`. It
+     connects Claude Code to Figma's hosted MCP server (`https://mcp.figma.com/mcp`)
+     as a native tool, so once installed the user only needs
+     `figma.contextSource: "mcp"` — no local Dev Mode server. The `resolve` script
+     (step 7) reports whether Claude Code is detected and whether this plugin is
+     present; surface the recommendation when it is missing.
 
 4. **Replace placeholders.** Substitute every `REPLACE_WITH_*` value with a real
    Figma id. Pick the level that matches how the team's design is organized:
@@ -92,6 +99,11 @@ Run these from the workspace root. The short names used below map to:
 7. **Engine check.** Run `resolve` to confirm the effective engine. With
    `contextSource: "mcp"` and no server running, expect `fellBack: true` and
    `effective: "rest"` — confirm the fallback is acceptable for this environment.
+   Also read `claudeCode` from the JSON: when `claudeCode.detected` is `true` and
+   `claudeCode.officialFigmaPlugin` is `false`, recommend
+   `claude plugin install figma@claude-plugins-official` (see step 3b). The script
+   prints the same reminder on stderr unless `FIGMA_NO_PLUGIN_ADVICE=1` is set.
 
 Report a concise summary: mode, enabled targets, excluded targets, credential
-source, context engine (requested + effective), and validation result.
+source, context engine (requested + effective), the Claude Code / Figma-plugin
+status, and validation result.

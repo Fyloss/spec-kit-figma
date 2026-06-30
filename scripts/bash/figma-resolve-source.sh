@@ -12,7 +12,11 @@
 # Prints a JSON object on stdout:
 #   { "requested": "rest|mcp", "effective": "rest|mcp",
 #     "fellBack": true|false,
-#     "mcp": { "url": "...", "reachable": true|false, "fallbackToRest": true|false } }
+#     "mcp": { "url": "...", "reachable": true|false, "fallbackToRest": true|false },
+#     "claudeCode": { "detected": true|false, "officialFigmaPlugin": true|false } }
+# When running in Claude Code without a Figma plugin, a recommendation to install
+# `figma@claude-plugins-official` is also printed to stderr (see
+# figma_claude_plugin_advice; silence with FIGMA_NO_PLUGIN_ADVICE=1).
 # Exit codes: 0 = resolved, 1 = MCP required but unreachable (fallback disabled).
 # =============================================================================
 set -euo pipefail
@@ -51,6 +55,13 @@ fi
 FELL_BACK="false"
 [[ "$REQUESTED" == "mcp" && "$EFFECTIVE" == "rest" ]] && FELL_BACK="true"
 
+# Claude Code advisory: surface the official Figma plugin when it would help.
+# The human-readable tip goes to stderr (see figma_claude_plugin_advice); the
+# JSON carries the same signal so /speckit.figma.setup can report it too.
+CLAUDE_CODE="false"; figma_is_claude_code && CLAUDE_CODE="true"
+FIGMA_PLUGIN="false"; figma_claude_figma_plugin_installed && FIGMA_PLUGIN="true"
+figma_claude_plugin_advice
+
 jq -n \
   --arg requested "$REQUESTED" \
   --arg effective "$EFFECTIVE" \
@@ -58,5 +69,8 @@ jq -n \
   --argjson reachable "$REACHABLE" \
   --argjson fallback "$FALLBACK" \
   --argjson fellBack "$FELL_BACK" \
+  --argjson claudeCode "$CLAUDE_CODE" \
+  --argjson figmaPlugin "$FIGMA_PLUGIN" \
   '{requested:$requested, effective:$effective, fellBack:$fellBack,
-    mcp:{url:$url, reachable:$reachable, fallbackToRest:$fallback}}'
+    mcp:{url:$url, reachable:$reachable, fallbackToRest:$fallback},
+    claudeCode:{detected:$claudeCode, officialFigmaPlugin:$figmaPlugin}}'

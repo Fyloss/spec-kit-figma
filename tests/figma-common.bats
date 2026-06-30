@@ -394,3 +394,102 @@ JSON
   [[ "$output" == *"file_content:read"* ]]
   [[ "$output" != *"projects:read"* ]]
 }
+
+# --- Claude Code / official Figma plugin advisory ----------------------------
+
+# Build a fake Claude Code config home with an installed-plugins registry whose
+# "plugins" object contains the given keys (none = empty registry).
+make_claude_config() {
+  local home="${WORKSPACE}/claude-home"
+  mkdir -p "${home}/plugins"
+  local keys=""
+  for k in "$@"; do
+    keys="${keys:+${keys},}\"${k}\": []"
+  done
+  cat > "${home}/plugins/installed_plugins.json" <<JSON
+{ "version": 2, "plugins": { ${keys} } }
+JSON
+  echo "$home"
+}
+
+@test "figma_is_claude_code is true when CLAUDECODE=1" {
+  export CLAUDECODE=1
+  run figma_is_claude_code
+  [ "$status" -eq 0 ]
+}
+
+@test "figma_is_claude_code is true via the AI_AGENT signal" {
+  unset CLAUDECODE
+  export AI_AGENT="claude-code_2-1-196_agent"
+  run figma_is_claude_code
+  [ "$status" -eq 0 ]
+}
+
+@test "figma_is_claude_code is false outside Claude Code" {
+  unset CLAUDECODE
+  unset AI_AGENT
+  run figma_is_claude_code
+  [ "$status" -ne 0 ]
+}
+
+@test "figma_claude_figma_plugin_installed detects the official plugin" {
+  export CLAUDE_CONFIG_DIR="$(make_claude_config 'figma@claude-plugins-official')"
+  run figma_claude_figma_plugin_installed
+  [ "$status" -eq 0 ]
+}
+
+@test "figma_claude_figma_plugin_installed detects a figma plugin from any marketplace" {
+  export CLAUDE_CONFIG_DIR="$(make_claude_config 'figma@some-other-marketplace')"
+  run figma_claude_figma_plugin_installed
+  [ "$status" -eq 0 ]
+}
+
+@test "figma_claude_figma_plugin_installed is false when no figma plugin is present" {
+  export CLAUDE_CONFIG_DIR="$(make_claude_config 'swift-lsp@claude-plugins-official')"
+  run figma_claude_figma_plugin_installed
+  [ "$status" -ne 0 ]
+}
+
+@test "figma_claude_figma_plugin_installed is false when the registry is absent" {
+  export CLAUDE_CONFIG_DIR="${WORKSPACE}/no-such-home"
+  run figma_claude_figma_plugin_installed
+  [ "$status" -ne 0 ]
+}
+
+@test "figma_claude_plugin_advice recommends the plugin in Claude Code without it" {
+  export CLAUDECODE=1
+  unset FIGMA_NO_PLUGIN_ADVICE
+  export CLAUDE_CONFIG_DIR="$(make_claude_config)"
+  run figma_claude_plugin_advice
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"figma@claude-plugins-official"* ]]
+  [[ "$output" == *"mcp.figma.com/mcp"* ]]
+}
+
+@test "figma_claude_plugin_advice stays silent when the plugin is installed" {
+  export CLAUDECODE=1
+  unset FIGMA_NO_PLUGIN_ADVICE
+  export CLAUDE_CONFIG_DIR="$(make_claude_config 'figma@claude-plugins-official')"
+  run figma_claude_plugin_advice
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "figma_claude_plugin_advice stays silent outside Claude Code" {
+  unset CLAUDECODE
+  unset AI_AGENT
+  unset FIGMA_NO_PLUGIN_ADVICE
+  export CLAUDE_CONFIG_DIR="$(make_claude_config)"
+  run figma_claude_plugin_advice
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "figma_claude_plugin_advice is silenced by FIGMA_NO_PLUGIN_ADVICE=1" {
+  export CLAUDECODE=1
+  export FIGMA_NO_PLUGIN_ADVICE=1
+  export CLAUDE_CONFIG_DIR="$(make_claude_config)"
+  run figma_claude_plugin_advice
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}

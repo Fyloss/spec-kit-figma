@@ -182,6 +182,60 @@ figma_resolve_context_source() {
   figma_decide_context_source "$requested" "$reachable" "$fallback" "$(figma_mcp_url "$config")"
 }
 
+# -----------------------------------------------------------------------------
+# Claude Code / official Figma plugin advisory
+# -----------------------------------------------------------------------------
+# Inside Claude Code, the most reliable way to obtain rich MCP design context is
+# the official Figma plugin (`claude plugin install figma@claude-plugins-official`):
+# it wires Figma's *hosted* MCP server (https://mcp.figma.com/mcp) in as a native
+# Claude Code tool, so the agent reads structured node data directly — no local
+# Dev Mode server, no curl probe. These helpers detect that situation and nudge
+# the user toward the plugin; they are advisory only and never change behaviour.
+
+# True when running inside Claude Code. The CLI exports CLAUDECODE=1 for every
+# command it spawns (AI_AGENT=claude-code... is a secondary signal).
+figma_is_claude_code() {
+  [[ "${CLAUDECODE:-}" == "1" ]] && return 0
+  [[ "${AI_AGENT:-}" == claude-code* ]]
+}
+
+# Path to Claude Code's installed-plugins registry. Honours CLAUDE_CONFIG_DIR
+# (which relocates ~/.claude), so the probe follows a customised config home.
+figma_claude_plugins_file() {
+  echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json"
+}
+
+# True when ANY Figma plugin is installed in Claude Code (the official one or a
+# fork from another marketplace), matched on the `figma@<marketplace>` key the
+# CLI writes to installed_plugins.json. Returns non-zero — i.e. "not installed",
+# so the advice fires — when jq is missing or the registry is absent/unreadable.
+figma_claude_figma_plugin_installed() {
+  local file; file="$(figma_claude_plugins_file)"
+  [[ -f "$file" ]] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  jq -e 'any((.plugins // {}) | keys[]; startswith("figma@"))' "$file" >/dev/null 2>&1
+}
+
+# Print a recommendation to stderr when running in Claude Code WITHOUT a Figma
+# plugin. No-op for other agents, when a plugin is already present, or when
+# FIGMA_NO_PLUGIN_ADVICE=1 silences it. Always returns 0 so callers can chain it
+# without `set -e` aborting on the "no advice needed" path.
+figma_claude_plugin_advice() {
+  [[ "${FIGMA_NO_PLUGIN_ADVICE:-}" == "1" ]] && return 0
+  figma_is_claude_code || return 0
+  figma_claude_figma_plugin_installed && return 0
+  cat >&2 <<'EOF'
+TIP: Claude Code detected without the official Figma plugin. For the richest,
+     most faithful design context, install it:
+         claude plugin install figma@claude-plugins-official
+     It connects Claude Code to Figma's hosted MCP server
+     (https://mcp.figma.com/mcp) as a native tool — no local Dev Mode server
+     required — then set "figma.contextSource": "mcp" in
+     figma.projects.config.json. (Silence with FIGMA_NO_PLUGIN_ADVICE=1.)
+EOF
+  return 0
+}
+
 # Load the token: environment variable first, then FIGMA_PAT_COMMAND (a secret
 # manager such as the macOS keychain). There is deliberately NO plaintext .env
 # fallback — locally the token MUST be stored in the OS keychain and fetched via

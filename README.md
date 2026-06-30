@@ -169,14 +169,33 @@ The engine is selected per workspace via `figma.contextSource`:
 > precisely than from the REST snapshot alone. When fidelity to the original
 > Figma design matters, prefer `figma.contextSource: "mcp"`.
 
+> [!TIP]
+> **Using Claude Code? Install the official Figma plugin.** It is by far the most
+> reliable way to get MCP design context with Claude Code:
+> ```bash
+> claude plugin install figma@claude-plugins-official
+> ```
+> The plugin wires Figma's **hosted** MCP server (`https://mcp.figma.com/mcp`) in
+> as a native Claude Code tool — no local Dev Mode server, no extra config — and
+> then you simply set `figma.contextSource: "mcp"` in
+> `figma.projects.config.json`. When the extension's scripts run inside Claude
+> Code and the plugin is absent, `figma-resolve-source.sh` (and `/speckit.figma.setup`)
+> print a one-line reminder; silence it with `FIGMA_NO_PLUGIN_ADVICE=1`. Note
+> this hosted server differs from the local Dev Mode MCP server
+> (`http://127.0.0.1:3845/mcp`), which the extension's curl probe targets by
+> default via `figma.mcp.url`.
+
 With `"mcp"`, configure `figma.mcp` (`url`, optional `serverName`,
 `fallbackToRest`). The extension probes the server and, when it is unreachable,
 **transparently falls back to REST** — unless `fallbackToRest: false`, which makes
 an absent server a hard error. Resolve the effective engine at any time:
 ```bash
 ./.specify/scripts/bash/figma-resolve-source.sh
-# -> {"requested":"mcp","effective":"rest","fellBack":true, ...}
+# -> {"requested":"mcp","effective":"rest","fellBack":true,
+#     "claudeCode":{"detected":true,"officialFigmaPlugin":false}, ...}
 ```
+The `claudeCode` block reports whether the run is inside Claude Code and whether
+the official Figma plugin is installed, so tooling can recommend it when missing.
 You keep full portability (REST) while offering MCP richness to those who have it.
 
 ## Testing

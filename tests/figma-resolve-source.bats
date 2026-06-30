@@ -6,6 +6,9 @@ load helpers/common
 setup() {
   SCRIPT="${SCRIPTS_DIR}/figma-resolve-source.sh"
   WORKSPACE="$(make_temp_workspace)"
+  # Silence the Claude Code plugin advisory by default so it never pollutes the
+  # JSON these tests parse; the dedicated advisory tests re-enable it explicitly.
+  export FIGMA_NO_PLUGIN_ADVICE=1
 }
 
 teardown() {
@@ -70,4 +73,37 @@ JSON
   run "$SCRIPT"
   [ "$status" -eq 0 ]
   [[ "$(echo "$output" | jq -r '.effective')" == "rest" ]]
+}
+
+@test "recommends the Figma plugin in Claude Code when it is missing" {
+  cat > "${WORKSPACE}/config.json" <<'JSON'
+{ "figma": { "contextSource": "rest" } }
+JSON
+  export CLAUDECODE=1
+  unset FIGMA_NO_PLUGIN_ADVICE
+  mkdir -p "${WORKSPACE}/claude-home/plugins"
+  echo '{ "version": 2, "plugins": {} }' > "${WORKSPACE}/claude-home/plugins/installed_plugins.json"
+  export CLAUDE_CONFIG_DIR="${WORKSPACE}/claude-home"
+  run "$SCRIPT" "${WORKSPACE}/config.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"figma@claude-plugins-official"* ]]
+  json="$(echo "$output" | sed -n '/^{/,$p')"
+  [[ "$(echo "$json" | jq -r '.claudeCode.detected')" == "true" ]]
+  [[ "$(echo "$json" | jq -r '.claudeCode.officialFigmaPlugin')" == "false" ]]
+}
+
+@test "stays quiet and reports the plugin when it is already installed" {
+  cat > "${WORKSPACE}/config.json" <<'JSON'
+{ "figma": { "contextSource": "rest" } }
+JSON
+  export CLAUDECODE=1
+  unset FIGMA_NO_PLUGIN_ADVICE
+  mkdir -p "${WORKSPACE}/claude-home/plugins"
+  echo '{ "version": 2, "plugins": { "figma@claude-plugins-official": [] } }' \
+    > "${WORKSPACE}/claude-home/plugins/installed_plugins.json"
+  export CLAUDE_CONFIG_DIR="${WORKSPACE}/claude-home"
+  run "$SCRIPT" "${WORKSPACE}/config.json"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"claude plugin install"* ]]
+  [[ "$(echo "$output" | jq -r '.claudeCode.officialFigmaPlugin')" == "true" ]]
 }
