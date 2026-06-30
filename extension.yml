@@ -51,8 +51,8 @@ hooks:
 
   before_plan:
     command: speckit.figma.ensure
-    optional: true
-    description: "Automatically refresh and inject the Figma design plan section before plan generation; safe no-op when Figma does not apply. Optional so SpecKit versions without a before_plan hook ignore it gracefully (the prompt-hook fallback also covers plan)."
+    optional: false
+    description: "Automatically refresh and inject the Figma design plan section before plan generation; safe no-op when Figma does not apply. Mandatory (optional: false) so the step is auto-executed and the agent cannot decline it."
 
   before_tasks:
     command: speckit.figma.ensure
@@ -61,18 +61,18 @@ hooks:
 
   after_specify:
     command: speckit.figma.verify
-    optional: true
-    description: "After spec generation, verify the Figma section was integrated (when a mockup was detected) and self-correct if missing. Optional so SpecKit versions without after_* hooks ignore it gracefully."
+    optional: false
+    description: "After spec generation, verify the Figma section was integrated (when a mockup was detected) and self-correct if missing. Mandatory (optional: false) so the verification always runs and the agent cannot skip the gate."
 
   after_plan:
     command: speckit.figma.verify
-    optional: true
-    description: "After plan generation, verify the Figma plan section was integrated (when a mockup was detected) and self-correct if missing. Optional so SpecKit versions without after_* hooks ignore it gracefully."
+    optional: false
+    description: "After plan generation, verify the Figma plan section was integrated (when a mockup was detected) and self-correct if missing. Mandatory (optional: false) so the verification always runs and the agent cannot skip the gate."
 
   after_tasks:
     command: speckit.figma.verify
-    optional: true
-    description: "After tasks generation, verify the Figma tasks section was integrated (when a mockup was detected) and self-correct if missing. Optional so SpecKit versions without after_* hooks ignore it gracefully."
+    optional: false
+    description: "After tasks generation, verify the Figma tasks section was integrated (when a mockup was detected) and self-correct if missing. Mandatory (optional: false) so the verification always runs and the agent cannot skip the gate."
 
 tags:
   - figma

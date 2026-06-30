@@ -171,6 +171,12 @@ section was actually integrated when a mockup was detected — and self-corrects
 if it is missing. Enable a hard CI gate with `--strict` (or `figma.verifyStrict`
 in the config) to make a missing section fail the run instead of only warning.
 
+All six hooks are declared `optional: false` in `extension.yml`, so a compliant
+SpecKit host **auto-executes** them on every `specify` / `plan` / `tasks` run —
+the agent is never offered an opt-in prompt it could decline. They stay safe
+no-ops when Figma does not apply (no config, excluded target, no mockup), so
+making them mandatory never blocks non-Figma projects.
+
 Your `/speckit.specify`, `/speckit.plan` and `/speckit.tasks` prompt files are
 **not modified** by default. If your agent does not support SpecKit extension hooks, run
 `./install.sh --prompt-hooks` to append a managed auto-context block to those
