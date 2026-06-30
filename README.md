@@ -185,6 +185,26 @@ The engine is selected per workspace via `figma.contextSource`:
 > (`http://127.0.0.1:3845/mcp`), which the extension's curl probe targets by
 > default via `figma.mcp.url`.
 
+> [!TIP]
+> **Using VS Code? Add Figma's hosted MCP server.** The same hosted server
+> (`https://mcp.figma.com/mcp`) works with any VS Code agent that supports MCP —
+> no local Dev Mode server required. With **GitHub Copilot (agent mode)**, which
+> consumes VS Code's native MCP support, run **MCP: Add Server…** from the Command
+> Palette (pick *HTTP*, URL `https://mcp.figma.com/mcp`), or add it to your
+> workspace `.vscode/mcp.json`:
+> ```jsonc
+> {
+>   "servers": {
+>     "figma": { "type": "http", "url": "https://mcp.figma.com/mcp" }
+>   }
+> }
+> ```
+> Other VS Code agents (Cline, Continue, the Claude Code extension…) do **not**
+> read `.vscode/mcp.json` — add the same URL through their own MCP configuration
+> instead. Sign in to Figma when prompted for OAuth, then set
+> `figma.contextSource: "mcp"` in `figma.projects.config.json`. (Auto-detection of
+> this server is Claude-Code-only; in VS Code, add it manually as above.)
+
 With `"mcp"`, configure `figma.mcp` (`url`, optional `serverName`,
 `fallbackToRest`). The extension probes the server and, when it is unreachable,
 **transparently falls back to REST** — unless `fallbackToRest: false`, which makes

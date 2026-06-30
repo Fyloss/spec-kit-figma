@@ -78,6 +78,15 @@ Run these from the workspace root. The short names used below map to:
      `figma.contextSource: "mcp"` — no local Dev Mode server. The `resolve` script
      (step 7) reports whether Claude Code is detected and whether this plugin is
      present; surface the recommendation when it is missing.
+   - **If the user is on VS Code, recommend adding the same hosted server**
+     (`https://mcp.figma.com/mcp`) to whatever VS Code agent they use. With
+     **GitHub Copilot (agent mode)**, which consumes VS Code's native MCP support,
+     use **MCP: Add Server…** (HTTP) or a `.vscode/mcp.json` entry
+     `{"servers":{"figma":{"type":"http","url":"https://mcp.figma.com/mcp"}}}`.
+     Other VS Code agents (Cline, Continue, the Claude Code extension…) read their
+     own MCP config — add the same URL there instead. Then set
+     `figma.contextSource: "mcp"`. Auto-detection is Claude-Code-only, so in VS
+     Code this step is manual.
 
 4. **Replace placeholders.** Substitute every `REPLACE_WITH_*` value with a real
    Figma id. Pick the level that matches how the team's design is organized:
