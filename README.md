@@ -93,6 +93,30 @@ linked nodes) — and it never blocks spec/tasks generation. Running
 `/speckit.figma.introspect` manually remains available for deep dives
 (specific nodes, custom depth).
 
+> [!WARNING]
+> **Use a capable model (Claude Sonnet or better).** Lighter models are strongly
+> discouraged for this extension.
+>
+> Each Spec Kit SDD command is a multi-step protocol, not just Markdown generation:
+> the agent must first run a setup script (under `.specify/scripts/`) that detects
+> the feature branch, resolves plan/spec file paths, etc., then read that output and
+> apply the template. The Figma hooks add another such step — run
+> `figma-ensure-context.sh`, read its `mustInject` report, and integrate the rendered
+> design section.
+>
+> Lightweight models such as Claude Haiku are built for fast, read-only exploration
+> and intermittently skip exactly this "run the script → read the result → apply the
+> instruction" chain. It is not really random — it is a reliability gap on structured,
+> multi-step instructions. With such a model there is a real risk the Figma hook is
+> silently skipped and the design section is never injected. (Inside Claude Code, the
+> exploration agent currently runs on Haiku for quick codebase searches — its real
+> niche, but not Spec Kit orchestration.) The `after_*` verify hooks reduce, but do
+> not eliminate, this risk.
+>
+> For the steps that actually interpret the mockups (`specify`, `plan`), Opus is
+> preferable — that's where visual intent is translated into the spec, and an error
+> there propagates downstream.
+
 The workspace's `/speckit.specify`, `/speckit.plan` and `/speckit.tasks` prompt
 files are **never modified by default**. If your agent does not support SpecKit
 extension hooks, opt into prompt injection with `./install.sh --prompt-hooks`
