@@ -36,10 +36,10 @@ teardown() {
   [ ! -e "${WORKSPACE}/.env.example" ]
 }
 
-@test "install git-ignores the snapshot but not .env" {
+@test "install git-ignores the .figma state directory but not .env" {
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
-  grep -qxF ".figma-context-snapshot.json" "${WORKSPACE}/.gitignore"
+  grep -qxF ".figma/" "${WORKSPACE}/.gitignore"
   ! grep -qxF ".env" "${WORKSPACE}/.gitignore"
 }
 

@@ -53,7 +53,7 @@ Run these from the workspace root. The short names used below map to:
      security add-generic-password -s figma-pat -a "$USER" -w 'figd_xxxxxxxx'
      echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"' >> ~/.zshrc
      ```
-     Confirm `.figma-context-snapshot.json` is git-ignored. Never write a token
+     Confirm `.figma/context-snapshot.json` is git-ignored. Never write a token
      to any workspace file (see `docs/CREDENTIALS.md`).
    - `ci-secret` for CI / GitHub Cloud Agent → set `secretName` (and `envVar`
      when the variable injected at runtime differs from the secret name) and

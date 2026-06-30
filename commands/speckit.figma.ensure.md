@@ -26,7 +26,7 @@ Any direct Figma link in the input is detected and introspected automatically �
 the linked file/frames become the authoritative design targets (node-level
 detail included), so no manual `/speckit.figma.introspect` run is needed. The
 script skips harmlessly when the extension is not configured, the target is
-excluded, or `.figma-context-snapshot.json` is already fresh and covers the
+excluded, or `.figma/context-snapshot.json` is already fresh and covers the
 linked nodes.
 
 ## 2. Integrate the rendered section — MANDATORY when `mustInject` is true
@@ -50,7 +50,7 @@ Do this, in order:
    pages, frames and input links — keep it.
 2. **Complete the judgement placeholders** left in the block (component placement
    reuse/create, justification, token mapping) by loading
-   `.figma-context-snapshot.json` and applying the rules of
+   `.figma/context-snapshot.json` and applying the rules of
    `/speckit.figma.introspect` sections 3-7 (frame confirmation, 3-level
    placement, token gaps, tests + Storybook sub-tasks).
 3. Treat any `links` in the status JSON as authoritative design targets for the

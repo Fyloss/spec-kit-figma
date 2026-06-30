@@ -6,7 +6,7 @@
 # tasks.md REGARDLESS of the agent model: instead of asking the model to
 # synthesise a section from the template + snapshot + rules (which weaker models
 # silently skip), this script renders the matching template with every
-# DETERMINISTIC placeholder already filled from `.figma-context-snapshot.json`
+# DETERMINISTIC placeholder already filled from `.figma/context-snapshot.json`
 # (file id, project id, generated/lastModified timestamps, context engine, the
 # introspected page/frame index, component/style counts, and any direct input
 # links). The agent only has to (1) paste the rendered block verbatim and
@@ -18,7 +18,7 @@
 #     [--config <path>] [--snapshot <path>]
 #     [--links <json-array>] [--candidate-frames <json-array>] [--out <path>]
 #
-# Output: writes <root>/.figma-section.<phase>.md (git-ignored) and prints its
+# Output: writes <root>/.figma/section.<phase>.md (git-ignored) and prints its
 # path on stdout. Templates are resolved from the workspace
 # (<root>/.specify/templates/) first, then the extension checkout
 # (<script>/../../templates/).
@@ -55,7 +55,8 @@ esac
 
 ROOT="$(figma_repo_root)"
 [[ -n "$SNAPSHOT" ]] || SNAPSHOT="$(figma_cache_path)"
-[[ -n "$OUT" ]] || OUT="${ROOT}/.figma-section.${PHASE}.md"
+[[ -n "$OUT" ]] || OUT="$(figma_section_path "$PHASE")"
+mkdir -p "$(dirname "$OUT")"
 
 if [[ ! -f "$SNAPSHOT" ]]; then
   echo "ERROR: snapshot not found: ${SNAPSHOT} (run figma-introspect.sh first)" >&2
@@ -167,7 +168,7 @@ CANDIDATE_TABLE="$(echo "$CANDIDATE_FRAMES_JSON" | jq -r '
   # a wrong-phase section apart. Keep this line when pasting the block.
   printf '<!-- speckit-figma:section phase=%s -->\n' "$PHASE"
   substitute "$TEMPLATE"
-  printf '\n\n<!-- ===== AUTO-FILLED FROM .figma-context-snapshot.json — do not delete; complete the judgement fields above ===== -->\n'
+  printf '\n\n<!-- ===== AUTO-FILLED FROM .figma/context-snapshot.json — do not delete; complete the judgement fields above ===== -->\n'
   printf '\n### Snapshot facts (auto-filled, deterministic)\n\n'
   # Backticks below are literal markdown; %s is expanded by printf, not the shell.
   # shellcheck disable=SC2016

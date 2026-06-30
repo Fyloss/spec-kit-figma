@@ -20,5 +20,8 @@ unset FIGMA_PAT FIGMA_PAT_COMMAND FIGMA_CONFIG FIGMA_API_BASE
 make_temp_workspace() {
   local dir
   dir="$(mktemp -d "${TMPDIR:-/tmp}/figma-test.XXXXXX")"
+  # Generated/cached Figma artifacts live under .figma/; pre-create it so tests
+  # can stage a snapshot or rendered section without a separate mkdir.
+  mkdir -p "$dir/.figma"
   printf '%s' "$dir"
 }

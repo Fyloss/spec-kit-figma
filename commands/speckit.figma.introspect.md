@@ -60,7 +60,7 @@ Run these from the workspace root. The short names used below map to:
 
 - Run the `resolve` script. It returns the **effective** engine for this run:
   - `effective: "rest"` — use the portable REST engine: drive `introspect` (curl +
-    jq) and reason over the resulting `.figma-context-snapshot.json`. This is the
+    jq) and reason over the resulting `.figma/context-snapshot.json`. This is the
     default and the only engine guaranteed in CI.
   - `effective: "mcp"` — a Figma **MCP server** is configured and reachable. Prefer
     its richer tools (e.g. code/variables/screenshot retrieval) for design context,
@@ -100,7 +100,7 @@ default to "authentication required":
   - `figmaTeamId` / `figmaTeamIds` set → run `introspect --team <teamId>` (repeat
     `--team` for each id). The script enumerates **every project of each team**,
     then **every file of each project**, writing a nested `teams[] → projects[] →
-    files[]` index into `.figma-context-snapshot.json`. Use it to autonomously
+    files[]` index into `.figma/context-snapshot.json`. Use it to autonomously
     pick the relevant files, then drill into their pages.
   - `figmaProjectId` set → run `introspect --project <projectId>` to enumerate all
     files of that single project.
@@ -120,7 +120,7 @@ default to "authentication required":
   --depth <N>` with a deeper tree and/or `introspect --file <id> --node
   <nodeId>` for each frame of interest — the raw node JSON (fills, typography,
   spacing, radius, shadows) lands in the snapshot's `nodes` field. Reuse the
-  cached `.figma-context-snapshot.json` within the session; rely on the
+  cached `.figma/context-snapshot.json` within the session; rely on the
   script's backoff for HTTP 429.
 
 ## 3. Creative identification checkpoint (mobile + desktop)
@@ -185,7 +185,7 @@ regardless of the agent model. Do not hand-assemble it from scratch:
    `./.specify/scripts/bash/figma-render-section.sh --phase spec` (or `plan` /
    `tasks`). It fills every deterministic placeholder from the snapshot (file,
    pages, top-level frames, components/styles, context engine, input links) and
-   writes `.figma-section.<phase>.md`. The `ensure` hook already does this and
+   writes `.figma/section.<phase>.md`. The `ensure` hook already does this and
    reports the path in `specSection` / `planSection` / `tasksSection`.
 2. **Paste that rendered block verbatim** into the generated document.
 3. **Complete the judgement fields** it leaves open (per-component placement +

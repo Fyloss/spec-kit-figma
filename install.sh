@@ -10,7 +10,7 @@
 #   - copies the helper scripts to <root>/.specify/scripts/bash/ (docs and
 #     commands invoke ./.specify/scripts/bash/*.sh from the workspace root, the
 #     SpecKit convention — alongside .specify/memory/)
-#   - ensures .figma-context-snapshot.json is git-ignored
+#   - ensures the .figma/ state directory is git-ignored
 #   - creates .specify/memory/ and installs the design-rules memory
 #   - by default LEAVES the /speckit.specify, /speckit.plan and /speckit.tasks
 #     prompts untouched (automatic Figma context runs via the extension.yml hooks
@@ -94,9 +94,17 @@ fi
 
 GI="$TARGET/.gitignore"
 touch "$GI"
-for SNAPSHOT_ENTRY in ".figma-context-snapshot.json" ".figma-section.*.md"; do
-  grep -qxF "$SNAPSHOT_ENTRY" "$GI" || { echo "$SNAPSHOT_ENTRY" >> "$GI"; echo "GITIGNORE: added $SNAPSHOT_ENTRY"; }
+# All generated/cached Figma artifacts now live under .figma/ — a single entry
+# covers the snapshot and every rendered section.
+grep -qxF ".figma/" "$GI" || { echo ".figma/" >> "$GI"; echo "GITIGNORE: added .figma/"; }
+# Drop legacy root-level entries/files from earlier versions so nothing lingers.
+for LEGACY_ENTRY in ".figma-context-snapshot.json" ".figma-section.*.md"; do
+  if grep -qxF "$LEGACY_ENTRY" "$GI"; then
+    grep -vxF "$LEGACY_ENTRY" "$GI" > "$GI.tmp" && mv "$GI.tmp" "$GI"
+    echo "GITIGNORE: removed legacy $LEGACY_ENTRY"
+  fi
 done
+rm -f "$TARGET/.figma-context-snapshot.json" "$TARGET"/.figma-section.*.md 2>/dev/null || true
 
 # The introspect command mandates loading this memory file, so it must always
 # be installed — create .specify/memory rather than silently skipping.
@@ -235,14 +243,14 @@ Before generating, refresh the Figma design context:
    targets (node-level detail included), so no manual
    /speckit.figma.introspect run is needed. The script is a safe no-op when
    the extension is not configured, the target is excluded, or
-   `.figma-context-snapshot.json` is already fresh and covers the linked
+   `.figma/context-snapshot.json` is already fresh and covers the linked
    nodes.
 2. When it prints `"ran": true` or `"reason": "fresh"` with `"mustInject": true`,
    the Figma design section is MANDATORY in this document — never omit it,
    whatever the agent model. The script renders a ready-to-paste section to the
    path reported in `specSection` / `planSection` / `tasksSection` (the one
    matching this command): insert that rendered block VERBATIM into the
-   generated document, then load `.figma-context-snapshot.json` and complete the
+   generated document, then load `.figma/context-snapshot.json` and complete the
    judgement placeholders by applying the rules of `/speckit.figma.introspect`
    (sections 3-7: frame confirmation, component placement, token gaps, tests +
    Storybook sub-tasks). Treat any `links` reported in the status JSON as

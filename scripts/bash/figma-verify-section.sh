@@ -6,7 +6,7 @@
 # section and guarantees the FILE exists, but it cannot guarantee the agent
 # actually PASTED it into the generated spec.md / plan.md / tasks.md. This
 # verification runs AFTER generation and checks that — when a Figma mockup was
-# detected for the run (i.e. the rendered `.figma-section.<phase>.md` exists) —
+# detected for the run (i.e. the rendered `.figma/section.<phase>.md` exists) —
 # the corresponding document really contains the Figma section marker.
 #
 # Designed as a SAFE NO-OP by default: when Figma does not apply, the document
@@ -61,7 +61,7 @@ if [[ "$STRICT" != "true" ]] \
 fi
 
 ROOT="$(figma_repo_root)"
-RENDERED="${ROOT}/.figma-section.${PHASE}.md"
+RENDERED="$(figma_section_path "$PHASE")"
 # Phase-specific machine marker emitted by figma-render-section.sh: decoupled
 # from the (translatable) heading text and able to detect a wrong-phase section.
 MARKER="speckit-figma:section phase=${PHASE}"

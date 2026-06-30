@@ -48,8 +48,8 @@ The installer copies the config example to `figma.projects.config.json`, copies
 the helper scripts (including `figma-ensure-context.sh`,
 `figma-render-section.sh` and `figma-verify-section.sh`) to
 `.specify/scripts/bash/`, installs the spec/plan/tasks section templates into
-`.specify/templates/`, git-ignores `.figma-context-snapshot.json` and
-`.figma-section.*.md`, and installs the design-rules memory into
+`.specify/templates/`, git-ignores the `.figma/` state directory (snapshot +
+rendered sections), and installs the design-rules memory into
 `.specify/memory/`. By **default it leaves the `/speckit.specify`,
 `/speckit.plan` and `/speckit.tasks` command prompts untouched** — automatic
 context runs through the `extension.yml` hooks. Pass `--prompt-hooks` to instead
@@ -158,7 +158,7 @@ the extension hooks (`before_specify` / `before_plan` / `before_tasks` in `exten
 invoke `/speckit.figma.ensure`, which runs
 `./.specify/scripts/bash/figma-ensure-context.sh` before generation, piping in the
 user's raw feature input (`--input -`). It re-introspects only when
-`.figma-context-snapshot.json` is missing or stale (older than 60 minutes, or
+`.figma/context-snapshot.json` is missing or stale (older than 60 minutes, or
 older than the config — override with `FIGMA_SNAPSHOT_MAX_AGE_MINUTES` or
 `--max-age-minutes`). Figma context is injected into `spec.md`, `plan.md` and `tasks.md`
 for front-end targets and skipped for excluded ones; any skip (no config,

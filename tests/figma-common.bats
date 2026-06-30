@@ -90,10 +90,22 @@ JSON
   [[ "$output" != "figd_b" ]]
 }
 
-@test "figma_cache_path points at the snapshot file in the workspace root" {
+@test "figma_cache_path points at the snapshot under the .figma state dir" {
   run figma_cache_path
   [ "$status" -eq 0 ]
-  [[ "$output" == *"/.figma-context-snapshot.json" ]]
+  [[ "$output" == *"/.figma/context-snapshot.json" ]]
+}
+
+@test "figma_state_dir is the .figma directory in the workspace root" {
+  run figma_state_dir
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"/.figma" ]]
+}
+
+@test "figma_section_path points at the per-phase section under .figma" {
+  run figma_section_path plan
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"/.figma/section.plan.md" ]]
 }
 
 @test "figma_context_source defaults to rest without a config" {

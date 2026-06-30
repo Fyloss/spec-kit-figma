@@ -145,7 +145,7 @@ For a **GitHub Cloud Agent** accessing Figma (future-proofing):
   variable, so no code change is needed.
 - Apply **least privilege** and rotate on a schedule; restrict the secret to the
   environments that actually run SpecKit.
-- Never write the token to `.figma-context-snapshot.json` (the snapshot stores
+- Never write the token to `.figma/context-snapshot.json` (the snapshot stores
   design structure only, no credentials).
 
 ## Troubleshooting — proxy vs. auth (read this before blaming the token)
@@ -194,4 +194,4 @@ after the auto-retry, the proxy/network — **not** the token — is at fault. T
   platform secret store.
 - Scripts MUST NOT echo the token. Validation rejects any `token`/`pat`/
   `accessToken` field found in the config.
-- `.figma-context-snapshot.json` MUST stay git-ignored.
+- `.figma/context-snapshot.json` MUST stay git-ignored.
