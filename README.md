@@ -35,6 +35,7 @@ submodules) layouts.
 ├── install.sh                          # optional manual installer (single/mono/multi-repo)
 ├── commands/                           # agent-agnostic command templates
 │   ├── speckit.figma.setup.md
+│   ├── speckit.figma.update.md         # re-sync assets/hooks + re-register commands (idempotent)
 │   ├── speckit.figma.ensure.md         # auto-context (before_specify/before_plan/before_tasks hooks)
 │   ├── speckit.figma.introspect.md
 │   └── speckit.figma.verify.md         # post-gen section check (after_* hooks; CI gate via --strict)
@@ -67,9 +68,10 @@ specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/arch
 # or from a local checkout
 specify extension add --dev /path/to/spec-kit-figma
 ```
-This registers the `/speckit.figma.setup`, `/speckit.figma.ensure`,
-`/speckit.figma.introspect` and `/speckit.figma.verify` commands with your
-agent. Then run `/speckit.figma.setup` once.
+This registers the `/speckit.figma.setup`, `/speckit.figma.update`,
+`/speckit.figma.ensure`, `/speckit.figma.introspect` and
+`/speckit.figma.verify` commands with your agent. Then run
+`/speckit.figma.setup` once.
 
 **Figma context is refreshed automatically:** the manifest's
 `before_specify` / `before_plan` / `before_tasks` hooks invoke
