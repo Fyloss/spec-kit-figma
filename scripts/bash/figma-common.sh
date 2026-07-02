@@ -26,7 +26,7 @@ figma_repo_root() {
 }
 
 # Per-workspace Figma directory. Committed content (the design-rules base
-# figma-design-rules.md and the user overlay figma-design-rules.local.md) lives at
+# figma-design-rules.md and the user overlay figma-design-rules.custom.md) lives at
 # its root; every generated/cached artifact (snapshot + rendered
 # sections) lives under cache/ so a single `.figma/cache/` entry in .gitignore
 # covers them all.

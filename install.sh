@@ -13,7 +13,7 @@
 #   - ensures the .figma/cache/ directory (generated/cached artifacts) is git-ignored
 #   - installs the design-rules constitution base into .figma/ (committed, next to
 #     cache/; extension-owned, always refreshed) and creates the user overlay
-#     .figma/figma-design-rules.local.md once (skip-if-exists; never overwritten,
+#     .figma/figma-design-rules.custom.md once (skip-if-exists; never overwritten,
 #     so project customizations survive updates)
 #   - by default LEAVES the /speckit.specify, /speckit.plan and /speckit.tasks
 #     prompts untouched (automatic Figma context runs via the extension.yml hooks
@@ -129,12 +129,12 @@ rm -f "$TARGET/.specify/memory/figma-design-rules.md" 2>/dev/null || true
 # overlay the base rules apply unchanged. Skipped when the target IS the extension
 # checkout, so its own repo is not polluted with an untracked overlay.
 if [[ "$TARGET_REAL" != "$EXT_DIR" ]]; then
-  LOCAL_DEST="$TARGET/.figma/figma-design-rules.local.md"
+  LOCAL_DEST="$TARGET/.figma/figma-design-rules.custom.md"
   if [[ -f "$LOCAL_DEST" ]]; then
-    echo "SKIP: .figma/figma-design-rules.local.md already exists (user overlay, not overwritten)."
+    echo "SKIP: .figma/figma-design-rules.custom.md already exists (user overlay, not overwritten)."
   else
-    cp "$EXT_DIR/config/figma-design-rules.local.example.md" "$LOCAL_DEST"
-    echo "ADDED: .figma/figma-design-rules.local.md (user overlay — customize freely; preserved across updates)."
+    cp "$EXT_DIR/config/figma-design-rules.custom.example.md" "$LOCAL_DEST"
+    echo "ADDED: .figma/figma-design-rules.custom.md (user overlay — customize freely; preserved across updates)."
   fi
 fi
 

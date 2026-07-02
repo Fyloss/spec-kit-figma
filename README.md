@@ -57,7 +57,7 @@ submodules) layouts.
 │   └── tasks-figma-section.template.md
 ├── .figma/
 │   ├── figma-design-rules.md           # non-negotiable agent rules (constitution base; overwritten on update)
-│   └── figma-design-rules.local.md     # your overlay — overrides the base, preserved across updates (cache/ stays git-ignored)
+│   └── figma-design-rules.custom.md     # your overlay — overrides the base, preserved across updates (cache/ stays git-ignored)
 └── docs/
     └── INSTALL.md  CREDENTIALS.md  MONOREPO.md
 ```

@@ -8,7 +8,8 @@ It is loaded by the agent **immediately after** the extension-owned base
 adds to, refines, or overrides the matching base rule. When this file is empty,
 only the base rules apply.
 
-Commit this file — it is part of your project's design contract.
+**Commit this file** — it is part of your project's design contract, and CI /
+GitHub Cloud Agents only see committed files. Do NOT git-ignore it.
 
 Add your own rules below. A few common overrides are shown, commented out; delete
 the comment markers on the ones you want, and add sections of your own.

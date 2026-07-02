@@ -8,7 +8,7 @@ You are the design-context agent. Operate autonomously across the mapped pages,
 but respect the explicit human-confirmation checkpoints below. Always load and
 obey `./.figma/figma-design-rules.md` (same path in a consumer workspace and in
 the extension checkout), then load the optional user overlay
-`./.figma/figma-design-rules.local.md` if it exists. The overlay MAY add, refine
+`./.figma/figma-design-rules.custom.md` if it exists. The overlay MAY add, refine
 or override any base rule; **on conflict, the overlay wins**.
 
 > **Automatic invocation:** the extension hooks (`before_specify` /
@@ -135,7 +135,7 @@ default to "authentication required":
 - **Responsive policy is project-specific** (design-rules base rule 4). Implement the
   breakpoints the design provides; do not invent a layout for a breakpoint the mockups
   do not show. Follow any responsive policy declared in the overlay
-  (`.figma/figma-design-rules.local.md`) or the project constitution — e.g. a
+  (`.figma/figma-design-rules.custom.md`) or the project constitution — e.g. a
   mobile-first policy may require interpolating an absent tablet breakpoint. Whenever
   you interpolate, state it explicitly. Absent a declared policy, cover exactly the
   breakpoints the mockups define and flag any gap instead of guessing.
@@ -185,7 +185,7 @@ For every component, decide placement and record an explicit justification:
   - Ask whether the Design System should be updated. The agent NEVER mutates the
     Design System directly; the DS update follows the project's own process (e.g. a
     CI pipeline, or review by the DS owner), as declared in the overlay
-    (`.figma/figma-design-rules.local.md`) or the project constitution.
+    (`.figma/figma-design-rules.custom.md`) or the project constitution.
   - Until resolved, output the raw value flagged as a tokenization candidate.
 
 ## 6. UI component changes → tests (and component docs)
