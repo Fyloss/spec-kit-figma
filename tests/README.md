@@ -15,7 +15,7 @@ Automated tests for the bash scripts of the SpecKit Figma extension, written wit
 - `figma-ensure-context.bats` — automatic pre-specify/plan/tasks hook (skip reasons, snapshot freshness, target auto-resolution, link-scope classification, stale-section cleanup).
 - `figma-render-section.bats` — ready-to-paste section rendering (placeholder substitution, pages/frames/candidate-frame tables, machine marker).
 - `figma-verify-section.bats` — post-generation section verification (phase-specific marker detection, strict-mode CI gate, document resolution).
-- `install.bats` — installer (file copies, idempotency, auto-context hook injection).
+- `install.bats` — installer (file copies, idempotency, auto-context hook injection, workspace docs + managed README section).
 
 The suite is offline: no test calls the Figma API. Network-dependent paths
 (`figma_api` retries, `figma-introspect.sh` traversal) are exercised against

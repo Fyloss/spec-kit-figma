@@ -13,9 +13,12 @@ version.
 Updating an extension is two complementary jobs, and they are NOT the same tool:
 
 - **Assets + hooks** (`.specify/scripts`, `.specify/templates`, the design-rules
-  base `.figma/figma-design-rules.md`, the prompt hooks) → the extension's own
-  `install.sh`. The base is always refreshed; the user overlay
-  `.figma/figma-design-rules.custom.md` is created once and never overwritten.
+  base `.figma/figma-design-rules.md`, the local guides `.figma/docs/`, the
+  managed figma section of the workspace `README.md`, the prompt hooks) → the
+  extension's own `install.sh`. The base, guides and README section are always
+  refreshed (the README outside the marked block is never touched); the user
+  overlay `.figma/figma-design-rules.custom.md` is created once and never
+  overwritten.
 - **Slash-command registration** (the `speckit.figma.*` command files, per agent
   format) → SpecKit's native `specify extension add`. This is also what records
   the installed version at `.specify/extensions/figma/extension.yml`.
