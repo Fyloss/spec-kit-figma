@@ -54,7 +54,8 @@ submodules) layouts.
 ├── templates/
 │   ├── spec-figma-section.template.md
 │   ├── plan-figma-section.template.md
-│   └── tasks-figma-section.template.md
+│   ├── tasks-figma-section.template.md
+│   └── figma-readme-block.template.md  # managed section install.sh appends to the workspace README
 ├── .figma/
 │   ├── figma-design-rules.md           # non-negotiable agent rules (constitution base; overwritten on update)
 │   └── figma-design-rules.custom.md     # your overlay — overrides the base, preserved across updates (cache/ stays git-ignored)
@@ -142,6 +143,14 @@ removes any block injected by a previous extension version.
 # then edit figma.projects.config.json, add credentials, and:
 ./.specify/scripts/bash/figma-validate-config.sh
 ```
+The installer also copies these guides into the workspace at `.figma/docs/`
+(refreshed on every update, so they match the installed version) and appends a
+short managed **figma section** to the workspace `README.md` (created if
+missing): extension version + layout mode, the read-only PAT setup every
+developer needs, and links to the local guides. Only the marked block is ever
+touched, and it is refreshed in place on re-runs — pass `--no-readme` to opt
+out.
+
 See [docs/INSTALL.md](docs/INSTALL.md), [docs/CREDENTIALS.md](docs/CREDENTIALS.md)
 and [docs/MONOREPO.md](docs/MONOREPO.md).
 

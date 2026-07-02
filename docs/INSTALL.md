@@ -50,7 +50,14 @@ the helper scripts (including `figma-ensure-context.sh`,
 `.specify/scripts/bash/`, installs the spec/plan/tasks section templates into
 `.specify/templates/`, git-ignores the `.figma/cache/` directory (snapshot +
 rendered sections), and installs the design-rules constitution into `.figma/`
-(committed, next to the git-ignored `cache/`). By **default it leaves the `/speckit.specify`,
+(committed, next to the git-ignored `cache/`). It also copies these user guides
+(CREDENTIALS / INSTALL / MONOREPO) into **`.figma/docs/`** (always refreshed, so
+the workspace docs match the installed version) and appends a short managed
+**figma section** to the workspace `README.md` (created if missing) — extension
+version and layout mode, the read-only PAT setup, and links to the local
+`.figma/docs/` guides. The section sits between `SPECKIT-FIGMA README` markers
+and is refreshed in place on re-runs; the rest of the README is never touched.
+Pass `--no-readme` to skip it. By **default it leaves the `/speckit.specify`,
 `/speckit.plan` and `/speckit.tasks` command prompts untouched** — automatic
 context runs through the `extension.yml` hooks. Pass `--prompt-hooks` to instead
 append a managed **auto-context block** to those three prompts (for agents
@@ -65,7 +72,7 @@ different tools, and you need both, exactly as on first install:
 
 | What | Tool | Notes |
 | --- | --- | --- |
-| Assets + hooks (`.specify/scripts`, `.specify/templates`, `.figma/figma-design-rules.md`, prompt hooks) | `install.sh` | idempotent; never overwrites `figma.projects.config.json` or the design-rules overlay `.figma/figma-design-rules.custom.md` |
+| Assets + hooks (`.specify/scripts`, `.specify/templates`, `.figma/figma-design-rules.md`, `.figma/docs/`, the README figma section, prompt hooks) | `install.sh` | idempotent; never overwrites `figma.projects.config.json` or the design-rules overlay `.figma/figma-design-rules.custom.md`; only the managed block of `README.md` is touched |
 | Slash-command registration (`speckit.figma.*`, per agent format) | `specify extension add figma` | agent-format aware; the **only** thing that registers commands, and what records the installed version at `.specify/extensions/figma/extension.yml` |
 
 The new files come from an updated extension source, so first **re-acquire** it

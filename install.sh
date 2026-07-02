@@ -4,7 +4,7 @@
 # =============================================================================
 # Usage:
 #   ./install.sh [--target <workspace-root>] [--mode single-repo|mono-repo|multi-repo]
-#                [--prompt-hooks | --no-hooks]
+#                [--prompt-hooks | --no-hooks] [--no-readme]
 # What it does (idempotent):
 #   - copies the figma.projects.config example to <root>/figma.projects.config.json
 #   - copies the helper scripts to <root>/.specify/scripts/bash/ (docs and
@@ -15,6 +15,14 @@
 #     cache/; extension-owned, always refreshed) and creates the user overlay
 #     .figma/figma-design-rules.custom.md once (skip-if-exists; never overwritten,
 #     so project customizations survive updates)
+#   - copies the user guides (CREDENTIALS / INSTALL / MONOREPO) to .figma/docs/
+#     (extension-owned, always refreshed — the workspace docs match the
+#     installed version, and work offline)
+#   - appends/refreshes a managed "Figma design context" section in the
+#     workspace README.md (created if missing): extension version + layout mode,
+#     the read-only PAT setup, and links to the local .figma/docs/ guides.
+#     Same marker mechanism as the prompt auto-context block; the rest of the
+#     README is never touched. --no-readme skips it entirely.
 #   - by default LEAVES the /speckit.specify, /speckit.plan and /speckit.tasks
 #     prompts untouched (automatic Figma context runs via the extension.yml hooks
 #     before_specify/before_plan/before_tasks -> /speckit.figma.ensure) and removes any
@@ -35,6 +43,22 @@ yaml_version() {
   sed -n "s/^[[:space:]]*version:[[:space:]]*['\"]\{0,1\}\([0-9][0-9.]*\)['\"]\{0,1\}.*/\1/p" "$1" 2>/dev/null | head -1
 }
 
+# Strip a managed block (markers included) from a file, collapsing the
+# trailing blank lines so repeated runs do not accumulate whitespace
+# ($(cat) strips them, printf restores one newline). Shared by the prompt
+# auto-context hook and the workspace README section.
+strip_managed_block() {
+  local file="$1" begin="$2" end="$3"
+  local tmp; tmp="$(mktemp)"
+  awk -v b="$begin" -v e="$end" '
+    index($0, b) { skip = 1; next }
+    index($0, e) { skip = 0; next }
+    !skip { print }
+  ' "$file" > "$tmp"
+  printf '%s\n' "$(cat "$tmp")" > "$file"
+  rm -f "$tmp"
+}
+
 # Extension id and version, read from the extension's own manifest. The id drives
 # the SpecKit paths we inspect later, so we derive it rather than hardcoding it.
 EXT_VERSION="$(yaml_version "$EXT_DIR/extension.yml")"
@@ -52,12 +76,14 @@ AGENT_CMD_DIRS=(.claude/commands .github/prompts .cursor/commands .windsurf/work
 TARGET="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 MODE="single-repo"
 HOOKS="clean"
+README_BLOCK="on"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --target) TARGET="$2"; shift 2 ;;
     --mode) MODE="$2"; shift 2 ;;
     --prompt-hooks) HOOKS="inject"; shift ;;
     --no-hooks) HOOKS="off"; shift ;;
+    --no-readme) README_BLOCK="off"; shift ;;
     *) echo "ERROR: unknown arg '$1'" >&2; exit 1 ;;
   esac
 done
@@ -153,6 +179,81 @@ if [[ "$TARGET_REAL" != "$EXT_DIR" ]]; then
   fi
 fi
 
+# The user guides ship with the workspace so the README section below can link
+# to LOCAL copies that match the installed version — a link to the upstream
+# GitHub main would document a potentially different version and break offline.
+# Extension-owned, always refreshed — like the design-rules base.
+if [[ "$TARGET_REAL" != "$EXT_DIR" ]]; then
+  mkdir -p "$TARGET/.figma/docs"
+  # Guarded like the section-templates glob: a partial checkout must warn, not
+  # abort the installer under set -e.
+  if cp "$EXT_DIR/docs/"*.md "$TARGET/.figma/docs/" 2>/dev/null; then
+    echo "ADDED: .figma/docs/ (CREDENTIALS / INSTALL / MONOREPO guides, synced to this version)"
+  else
+    echo "WARN: no guides found in ${EXT_DIR}/docs/ — the README links to .figma/docs/ will dangle." >&2
+  fi
+fi
+
+# -----------------------------------------------------------------------------
+# Workspace README section. The project's README gets a short managed block —
+# same marker mechanism as the prompt auto-context hook — telling every
+# developer that the extension is active (version + layout mode), how to set up
+# their read-only Figma PAT, and where the full local guides live (.figma/docs/,
+# synced above). Created if the README does not exist; refreshed in place on
+# re-runs; the rest of the file is never touched. --no-readme skips all of it
+# (no injection, no cleanup — the block, if any, is the user's to keep).
+# Skipped when the target IS the extension checkout: its README is the
+# extension's own documentation, not a consumer workspace's.
+# -----------------------------------------------------------------------------
+README_MARKER_BEGIN="BEGIN SPECKIT-FIGMA README"
+README_MARKER_END="END SPECKIT-FIGMA README"
+README_TEMPLATE="$EXT_DIR/templates/figma-readme-block.template.md"
+
+if [[ "$README_BLOCK" == "on" && "$TARGET_REAL" != "$EXT_DIR" ]]; then
+  if [[ ! -f "$README_TEMPLATE" ]]; then
+    echo "WARN: templates/figma-readme-block.template.md missing from ${EXT_DIR} — README section not installed." >&2
+  else
+    # The block advertises the layout mode. An existing config is the source of
+    # truth — an update run usually omits --mode, which must not silently
+    # relabel a mono-/multi-repo workspace as single-repo. Fall back to --mode.
+    CONFIG_MODE="$(sed -n 's/^[[:space:]]*"mode"[[:space:]]*:[[:space:]]*"\([a-z-]\{1,\}\)".*/\1/p' "$CONFIG_DEST" 2>/dev/null | head -1)"
+    README_MODE="${CONFIG_MODE:-$MODE}"
+    EXT_REPO_URL="$(sed -n "s/^[[:space:]]*repository:[[:space:]]*['\"]\{0,1\}\([^'\"[:space:]]\{1,\}\)['\"]\{0,1\}.*/\1/p" "$EXT_DIR/extension.yml" 2>/dev/null | head -1)"
+    [[ -n "$EXT_REPO_URL" ]] || EXT_REPO_URL="https://github.com/Fyloss/spec-kit-figma"
+
+    # Respect an existing README whatever its case; create README.md otherwise.
+    README_DEST=""
+    for readme_name in README.md Readme.md readme.md; do
+      [[ -f "$TARGET/$readme_name" ]] && { README_DEST="$TARGET/$readme_name"; break; }
+    done
+    README_ACTION="ADDED"
+    if [[ -z "$README_DEST" ]]; then
+      README_DEST="$TARGET/README.md"
+      printf '# %s\n' "$(basename "$TARGET_REAL")" > "$README_DEST"
+      echo "ADDED: README.md (workspace had none — created with a title and the figma section)"
+    elif grep -qF "$README_MARKER_BEGIN" "$README_DEST"; then
+      strip_managed_block "$README_DEST" "$README_MARKER_BEGIN" "$README_MARKER_END"
+      README_ACTION="UPDATED"
+    fi
+    # sed replacement values: neutralize the two metacharacters of the `s|…|…|`
+    # form (& = whole match, | = our delimiter) so an exotic repository URL
+    # cannot corrupt the rendered block.
+    ESC_REPO_URL="${EXT_REPO_URL//&/\\&}"; ESC_REPO_URL="${ESC_REPO_URL//|/%7C}"
+    {
+      printf '\n'
+      sed -e "s|{{EXTENSION_VERSION}}|${EXT_VERSION}|g" \
+          -e "s|{{MODE}}|${README_MODE}|g" \
+          -e "s|{{REPOSITORY_URL}}|${ESC_REPO_URL}|g" \
+          "$README_TEMPLATE"
+    } >> "$README_DEST"
+    if [[ "$README_ACTION" == "UPDATED" ]]; then
+      echo "UPDATED: figma section in ${README_DEST#"$TARGET"/} (refreshed to v${EXT_VERSION})"
+    else
+      echo "ADDED: figma section in ${README_DEST#"$TARGET"/} (PAT setup + local guide links; --no-readme to opt out)"
+    fi
+  fi
+fi
+
 # -----------------------------------------------------------------------------
 # Version coherence. SpecKit records the *registered* extension — and thus the
 # version whose slash-commands are wired — written by `specify extension add`.
@@ -216,19 +317,8 @@ fi
 HOOK_MARKER_BEGIN="BEGIN SPECKIT-FIGMA AUTO-CONTEXT"
 HOOK_MARKER_END="END SPECKIT-FIGMA AUTO-CONTEXT"
 
-# Strip the managed block (markers included) from a prompt file, collapsing
-# the trailing blank lines so repeated runs do not accumulate whitespace
-# ($(cat) strips them, printf restores one newline).
 strip_hook_block() {
-  local file="$1"
-  local tmp; tmp="$(mktemp)"
-  awk -v b="$HOOK_MARKER_BEGIN" -v e="$HOOK_MARKER_END" '
-    index($0, b) { skip = 1; next }
-    index($0, e) { skip = 0; next }
-    !skip { print }
-  ' "$file" > "$tmp"
-  printf '%s\n' "$(cat "$tmp")" > "$file"
-  rm -f "$tmp"
+  strip_managed_block "$1" "$HOOK_MARKER_BEGIN" "$HOOK_MARKER_END"
 }
 
 remove_hook() {
@@ -349,7 +439,8 @@ cat <<EOF
 Next steps:
   1. Edit figma.projects.config.json — list targets, fill excluded[], replace REPLACE_WITH_* ids.
   2. Local dev: store your READ-ONLY Figma PAT in the OS keychain and export FIGMA_PAT_COMMAND
-     in your shell profile, e.g. in ~/.zshrc (see docs/CREDENTIALS.md):
+     in your shell profile, e.g. in ~/.zshrc (full guide: .figma/docs/CREDENTIALS.md,
+     also linked from the figma section of your README):
        security add-generic-password -s figma-pat -a "\$USER" -w 'figd_xxxxxxxx'
        echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"' >> ~/.zshrc
      CI / Cloud Agent: set credentials.source = "ci-secret" and inject a platform secret.

@@ -327,6 +327,126 @@ OLD
   [[ "$output" == *".claude/commands"* ]]
 }
 
+# --- Workspace docs + README section -----------------------------------------
+
+@test "install copies the user guides into .figma/docs/" {
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/.figma/docs/CREDENTIALS.md" ]
+  [ -f "${WORKSPACE}/.figma/docs/INSTALL.md" ]
+  [ -f "${WORKSPACE}/.figma/docs/MONOREPO.md" ]
+}
+
+@test "re-running install refreshes the local guides (extension-owned)" {
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  printf 'tampered guide\n' > "${WORKSPACE}/.figma/docs/CREDENTIALS.md"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  ! grep -qxF "tampered guide" "${WORKSPACE}/.figma/docs/CREDENTIALS.md"
+}
+
+@test "install creates a README with the managed figma section when none exists" {
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/README.md" ]
+  # Created README opens with a title derived from the workspace directory.
+  head -1 "${WORKSPACE}/README.md" | grep -q "^# "
+  grep -q "BEGIN SPECKIT-FIGMA README" "${WORKSPACE}/README.md"
+  grep -q "END SPECKIT-FIGMA README" "${WORKSPACE}/README.md"
+  grep -q "FIGMA_PAT_COMMAND" "${WORKSPACE}/README.md"
+  grep -q ".figma/docs/CREDENTIALS.md" "${WORKSPACE}/README.md"
+}
+
+@test "install appends the figma section to an existing README without touching its content" {
+  printf '# My project\n\nSome intro.\n' > "${WORKSPACE}/README.md"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  head -1 "${WORKSPACE}/README.md" | grep -q "^# My project"
+  grep -qF "Some intro." "${WORKSPACE}/README.md"
+  grep -q "BEGIN SPECKIT-FIGMA README" "${WORKSPACE}/README.md"
+}
+
+@test "re-running install keeps a single refreshed copy of the README figma section" {
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"UPDATED: figma section"* ]]
+  count="$(grep -c "BEGIN SPECKIT-FIGMA README" "${WORKSPACE}/README.md")"
+  [ "$count" -eq 1 ]
+}
+
+@test "install refreshes an outdated README figma section in place" {
+  cat > "${WORKSPACE}/README.md" <<'OLD'
+# My project
+
+<!-- BEGIN SPECKIT-FIGMA README (managed by spec-kit-figma v0.9.0) -->
+old readme section body
+<!-- END SPECKIT-FIGMA README -->
+OLD
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  head -1 "${WORKSPACE}/README.md" | grep -q "^# My project"
+  ! grep -q "old readme section body" "${WORKSPACE}/README.md"
+  grep -q "FIGMA_PAT_COMMAND" "${WORKSPACE}/README.md"
+  count="$(grep -c "BEGIN SPECKIT-FIGMA README" "${WORKSPACE}/README.md")"
+  [ "$count" -eq 1 ]
+}
+
+@test "the README figma section embeds the extension version from extension.yml" {
+  src_ver="$(sed -n "s/^[[:space:]]*version:[[:space:]]*['\"]\{0,1\}\([0-9][0-9.]*\)['\"]\{0,1\}.*/\1/p" "${REPO_ROOT}/extension.yml" | head -1)"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  grep -qF "v${src_ver}" "${WORKSPACE}/README.md"
+  # No placeholder may survive the rendering.
+  ! grep -q "{{" "${WORKSPACE}/README.md"
+}
+
+@test "an update run without --mode keeps the mode advertised by the existing config" {
+  run "$INSTALL" --target "$WORKSPACE" --mode mono-repo
+  [ "$status" -eq 0 ]
+  # Update runs typically omit --mode; the config must win over the default.
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  grep -qF "(mono-repo layout)" "${WORKSPACE}/README.md"
+  ! grep -qF "(single-repo layout)" "${WORKSPACE}/README.md"
+}
+
+@test "install appends the figma section to a lowercase readme.md" {
+  printf '# my project\n' > "${WORKSPACE}/readme.md"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  grep -q "BEGIN SPECKIT-FIGMA README" "${WORKSPACE}/readme.md"
+}
+
+@test "--no-readme leaves an existing README strictly untouched" {
+  cat > "${WORKSPACE}/README.md" <<'OLD'
+# My project
+
+<!-- BEGIN SPECKIT-FIGMA README (managed by spec-kit-figma v0.9.0) -->
+old readme section body
+<!-- END SPECKIT-FIGMA README -->
+OLD
+  run "$INSTALL" --target "$WORKSPACE" --no-readme
+  [ "$status" -eq 0 ]
+  grep -q "old readme section body" "${WORKSPACE}/README.md"
+  count="$(grep -c "BEGIN SPECKIT-FIGMA README" "${WORKSPACE}/README.md")"
+  [ "$count" -eq 1 ]
+}
+
+@test "--no-readme does not create a README" {
+  run "$INSTALL" --target "$WORKSPACE" --no-readme
+  [ "$status" -eq 0 ]
+  [ ! -e "${WORKSPACE}/README.md" ]
+}
+
+@test "the readme block template is not copied to .specify/templates/ (section templates only)" {
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [ ! -e "${WORKSPACE}/.specify/templates/figma-readme-block.template.md" ]
+}
+
 @test "install does not warn about command drift when figma commands are present" {
   mkdir -p "${WORKSPACE}/.claude/commands"
   echo "# specify" > "${WORKSPACE}/.claude/commands/speckit.specify.md"
