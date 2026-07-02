@@ -67,6 +67,13 @@ stamp.
    <spec-kit-figma>/install.sh --target "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
    ```
 
+   On Windows (PowerShell 7+), run the installer's port instead — same flags,
+   same output:
+
+   ```powershell
+   <spec-kit-figma>/install.ps1 --target (git rev-parse --show-toplevel)
+   ```
+
    Add `--prompt-hooks` only if this workspace relies on prompt injection rather
    than SpecKit extension hooks (the same flag used at install time).
 

@@ -120,16 +120,28 @@ else
   echo "ADDED: $CONFIG_DEST (from $MODE example) — edit it and replace REPLACE_WITH_* ids."
 fi
 
-# The docs and slash-commands run ./.specify/scripts/bash/*.sh from the workspace
-# root (the SpecKit convention, alongside .specify/memory/), so the helper scripts
-# must live in the workspace, not only in this checkout.
+# The docs and slash-commands run ./.specify/scripts/bash/*.sh (or the
+# ./.specify/scripts/powershell/*.ps1 ports on Windows) from the workspace root
+# (the SpecKit convention, alongside .specify/memory/), so the helper scripts
+# must live in the workspace, not only in this checkout. BOTH families are
+# installed regardless of the platform the installer runs on: the workspace is
+# committed and shared, so a macOS/Linux teammate installing must not strand a
+# Windows teammate without the .ps1 helpers (and vice versa).
 # Always refreshed: they are extension-owned code, not user-edited files.
 if [[ "$TARGET_REAL" == "$EXT_DIR" ]]; then
-  echo "SKIP: .specify/scripts/bash/ (target is the extension checkout itself; scripts already at scripts/bash/)."
+  echo "SKIP: .specify/scripts/ (target is the extension checkout itself; scripts already at scripts/)."
 else
   mkdir -p "$TARGET/.specify/scripts/bash"
   cp "$EXT_DIR/scripts/bash/"*.sh "$TARGET/.specify/scripts/bash/"
   echo "ADDED: .specify/scripts/bash/ (figma-*.sh helpers)"
+  # Guarded like the templates glob: a checkout without the PowerShell ports
+  # must warn, not abort the installer under set -e.
+  mkdir -p "$TARGET/.specify/scripts/powershell"
+  if cp "$EXT_DIR/scripts/powershell/"*.ps1 "$TARGET/.specify/scripts/powershell/" 2>/dev/null; then
+    echo "ADDED: .specify/scripts/powershell/ (figma-*.ps1 helpers for Windows / PowerShell 7+)"
+  else
+    echo "WARN: no figma-*.ps1 found in ${EXT_DIR}/scripts/powershell/ — Windows teammates will lack the PowerShell helpers." >&2
+  fi
 fi
 
 GI="$TARGET/.gitignore"
@@ -357,20 +369,28 @@ inject_hook() {
   fi
   cat >> "$file" <<'HOOK'
 
-<!-- BEGIN SPECKIT-FIGMA AUTO-CONTEXT (managed by spec-kit-figma; re-running install.sh refreshes this block) -->
+<!-- BEGIN SPECKIT-FIGMA AUTO-CONTEXT (managed by spec-kit-figma; re-running install.sh or install.ps1 refreshes this block) -->
 ## Figma design context (automatic)
 
 Before generating, refresh the Figma design context:
 
-1. From the workspace root, run `./.specify/scripts/bash/figma-ensure-context.sh`,
-   piping the user's RAW feature input (description, arguments, any pasted
-   links — verbatim) via `--input -` (pass the target package name as the
-   first argument in mono-/multi-repo workspaces):
+1. From the workspace root, run `./.specify/scripts/bash/figma-ensure-context.sh`
+   (or, on Windows, the PowerShell 7+ port
+   `./.specify/scripts/powershell/figma-ensure-context.ps1` — same flags, same
+   output), piping the user's RAW feature input (description, arguments, any
+   pasted links — verbatim) via `--input -` (pass the target package name as
+   the first argument in mono-/multi-repo workspaces):
 
    ```bash
    ./.specify/scripts/bash/figma-ensure-context.sh --input - <<'SPECKIT_FIGMA_INPUT'
    <the user's verbatim feature input>
    SPECKIT_FIGMA_INPUT
+   ```
+
+   ```powershell
+   @'
+   <the user's verbatim feature input>
+   '@ | ./.specify/scripts/powershell/figma-ensure-context.ps1 --input -
    ```
 
    Any direct Figma link in the input is detected and introspected
@@ -457,13 +477,19 @@ cat <<EOF
 
 Next steps:
   1. Edit figma.projects.config.json — list targets, fill excluded[], replace REPLACE_WITH_* ids.
-  2. Local dev: store your READ-ONLY Figma PAT in the OS keychain and export FIGMA_PAT_COMMAND
-     in your shell profile, e.g. in ~/.zshrc (full guide: .figma/docs/CREDENTIALS.md,
-     also linked from the figma section of your README):
+  2. Local dev: store your READ-ONLY Figma PAT in the OS credential store and export
+     FIGMA_PAT_COMMAND in your shell profile (full guide: .figma/docs/CREDENTIALS.md,
+     also linked from the figma section of your README).
+     macOS (keychain), e.g. in ~/.zshrc:
        security add-generic-password -s figma-pat -a "\$USER" -w 'figd_xxxxxxxx'
        echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"' >> ~/.zshrc
+     Windows (PowerShell 7+ SecretManagement), in your PowerShell profile:
+       Set-Secret -Name figma-pat -Secret 'figd_xxxxxxxx'
+       \$env:FIGMA_PAT_COMMAND = 'Get-Secret figma-pat -AsPlainText'
      CI / Cloud Agent: set credentials.source = "ci-secret" and inject a platform secret.
-  3. Validate (from the workspace root):  ./.specify/scripts/bash/figma-validate-config.sh
+  3. Validate (from the workspace root):
+       macOS/Linux:  ./.specify/scripts/bash/figma-validate-config.sh
+       Windows:      pwsh -File ./.specify/scripts/powershell/figma-validate-config.ps1
   4. Register the extension commands (commands/speckit.figma.*.md)
      with your SpecKit agent of choice — or install natively with
      'specify extension add' (see extension.yml / docs/INSTALL.md), which registers

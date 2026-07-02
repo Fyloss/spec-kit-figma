@@ -15,6 +15,11 @@ Run these from the workspace root. The short names used below map to:
 - `detect` → `./.specify/scripts/bash/figma-detect-target.sh`
 - `resolve` → `./.specify/scripts/bash/figma-resolve-source.sh`
 
+On Windows, use the PowerShell 7+ ports instead — same flags, same JSON output:
+replace `./.specify/scripts/bash/<name>.sh` with
+`./.specify/scripts/powershell/<name>.ps1` (run from `pwsh`). The Windows
+installer is `install.ps1` wherever the steps below mention `install.sh`.
+
 ## Steps
 
 1. **Detect topology.** Inspect the workspace. If a `.gitmodules` file exists and
@@ -47,11 +52,20 @@ Run these from the workspace root. The short names used below map to:
      team/project enumeration fails with `403`/`404`. Instruct the user to select
      all three scopes when any project/team id is used (see `docs/CREDENTIALS.md`).
    - `env` for local development → instruct the user to store their own
-     **read-only** Figma PAT in the OS keychain and export `FIGMA_PAT_COMMAND`
-     from their shell profile (NOT in the workspace — there is no `.env`), e.g.:
+     **read-only** Figma PAT in the OS credential store and export
+     `FIGMA_PAT_COMMAND` from their shell profile (NOT in the workspace — there
+     is no `.env`). macOS keychain:
      ```bash
      security add-generic-password -s figma-pat -a "$USER" -w 'figd_xxxxxxxx'
      echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"' >> ~/.zshrc
+     ```
+     Windows (PowerShell SecretManagement + SecretStore, backed by the OS):
+     ```powershell
+     Install-Module Microsoft.PowerShell.SecretManagement, Microsoft.PowerShell.SecretStore
+     Register-SecretVault -Name SecretStore -ModuleName Microsoft.PowerShell.SecretStore -DefaultVault
+     Set-Secret -Name figma-pat -Secret 'figd_xxxxxxxx'
+     # in $PROFILE:
+     $env:FIGMA_PAT_COMMAND = 'Get-Secret figma-pat -AsPlainText'
      ```
      Confirm `.figma/cache/context-snapshot.json` is git-ignored. Never write a token
      to any workspace file (see `docs/CREDENTIALS.md`).

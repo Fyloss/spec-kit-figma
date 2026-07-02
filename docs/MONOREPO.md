@@ -21,6 +21,11 @@ The page-to-package mapping, routing rules, 3-level component resolution, shared
 mockups, token mapping, responsive rules and credential handling are **the same**
 in every mode. Only the topology wrapper differs.
 
+> **Windows note:** every command below has a PowerShell 7+ twin — replace
+> `./install.sh` with `./install.ps1` and
+> `./.specify/scripts/bash/<name>.sh` with
+> `./.specify/scripts/powershell/<name>.ps1` (same flags, same JSON output).
+
 ## Single-repo setup
 
 1. Install in single-repo mode (the default):

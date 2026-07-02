@@ -29,6 +29,12 @@ From the workspace root, run the verifier with the matching phase (substitute
 ./.specify/scripts/bash/figma-verify-section.sh --phase <phase>
 ```
 
+On Windows, run the PowerShell 7+ port instead (same flags, same JSON output):
+
+```powershell
+./.specify/scripts/powershell/figma-verify-section.ps1 --phase <phase>
+```
+
 Pass `--doc <path>` if you know the exact document path; otherwise it resolves
 `specs/<current-branch>/<phase>.md`, or the single `specs/*/<phase>.md` when
 exactly one exists. With several candidates it refuses (reason `doc-not-found`)
