@@ -420,6 +420,54 @@ OLD
   grep -q "BEGIN SPECKIT-FIGMA README" "${WORKSPACE}/readme.md"
 }
 
+@test "install leaves a README with an unterminated figma section untouched (no data loss)" {
+  cat > "${WORKSPACE}/README.md" <<'OLD'
+# My project
+
+<!-- BEGIN SPECKIT-FIGMA README (managed by spec-kit-figma v0.9.0) -->
+user content after an unterminated marker
+OLD
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  # Everything from BEGIN to EOF must survive: the block has no END marker, so
+  # stripping it would clobber user content.
+  grep -qF "user content after an unterminated marker" "${WORKSPACE}/README.md"
+  [[ "$output" == *"unterminated"* ]]
+  # And nothing is re-appended on top of the broken block.
+  count="$(grep -c "BEGIN SPECKIT-FIGMA README" "${WORKSPACE}/README.md")"
+  [ "$count" -eq 1 ]
+}
+
+@test "a default install leaves a prompt with an unterminated auto-context block untouched" {
+  mkdir -p "${WORKSPACE}/.claude/commands"
+  cat > "${WORKSPACE}/.claude/commands/speckit.specify.md" <<'OLD'
+# specify
+
+<!-- BEGIN SPECKIT-FIGMA AUTO-CONTEXT (managed by spec-kit-figma) -->
+user content after an unterminated marker
+OLD
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  grep -qF "user content after an unterminated marker" "${WORKSPACE}/.claude/commands/speckit.specify.md"
+  [[ "$output" == *"unterminated"* ]]
+}
+
+@test "--prompt-hooks leaves a prompt with an unterminated auto-context block untouched" {
+  mkdir -p "${WORKSPACE}/.claude/commands"
+  cat > "${WORKSPACE}/.claude/commands/speckit.specify.md" <<'OLD'
+# specify
+
+<!-- BEGIN SPECKIT-FIGMA AUTO-CONTEXT (managed by spec-kit-figma) -->
+user content after an unterminated marker
+OLD
+  run "$INSTALL" --target "$WORKSPACE" --prompt-hooks
+  [ "$status" -eq 0 ]
+  grep -qF "user content after an unterminated marker" "${WORKSPACE}/.claude/commands/speckit.specify.md"
+  [[ "$output" == *"unterminated"* ]]
+  count="$(grep -c "BEGIN SPECKIT-FIGMA AUTO-CONTEXT" "${WORKSPACE}/.claude/commands/speckit.specify.md")"
+  [ "$count" -eq 1 ]
+}
+
 @test "--no-readme leaves an existing README strictly untouched" {
   cat > "${WORKSPACE}/README.md" <<'OLD'
 # My project

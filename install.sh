@@ -49,6 +49,12 @@ yaml_version() {
 # auto-context hook and the workspace README section.
 strip_managed_block() {
   local file="$1" begin="$2" end="$3"
+  # An unterminated block (BEGIN without END — e.g. a manually-edited file)
+  # would strip to EOF and clobber user content. Refuse (status 1) so the
+  # caller warns and leaves the file untouched instead.
+  if grep -qF "$begin" "$file" && ! grep -qF "$end" "$file"; then
+    return 1
+  fi
   local tmp; tmp="$(mktemp)"
   awk -v b="$begin" -v e="$end" '
     index($0, b) { skip = 1; next }
@@ -57,6 +63,11 @@ strip_managed_block() {
   ' "$file" > "$tmp"
   printf '%s\n' "$(cat "$tmp")" > "$file"
   rm -f "$tmp"
+}
+
+# Shared caller-side message for the strip_managed_block refusal above.
+warn_unterminated() {
+  echo "WARN: unterminated SPECKIT-FIGMA block in ${1#"$TARGET"/} (BEGIN without END marker) — left untouched; restore the END marker and re-run install.sh." >&2
 }
 
 # Extension id and version, read from the extension's own manifest. The id drives
@@ -232,24 +243,32 @@ if [[ "$README_BLOCK" == "on" && "$TARGET_REAL" != "$EXT_DIR" ]]; then
       printf '# %s\n' "$(basename "$TARGET_REAL")" > "$README_DEST"
       echo "ADDED: README.md (workspace had none — created with a title and the figma section)"
     elif grep -qF "$README_MARKER_BEGIN" "$README_DEST"; then
-      strip_managed_block "$README_DEST" "$README_MARKER_BEGIN" "$README_MARKER_END"
-      README_ACTION="UPDATED"
+      # An unterminated block is refused by strip_managed_block: warn, keep the
+      # file byte-for-byte intact and skip the append (no second BEGIN marker).
+      if strip_managed_block "$README_DEST" "$README_MARKER_BEGIN" "$README_MARKER_END"; then
+        README_ACTION="UPDATED"
+      else
+        warn_unterminated "$README_DEST"
+        README_ACTION="skip"
+      fi
     fi
-    # sed replacement values: neutralize the two metacharacters of the `s|…|…|`
-    # form (& = whole match, | = our delimiter) so an exotic repository URL
-    # cannot corrupt the rendered block.
-    ESC_REPO_URL="${EXT_REPO_URL//&/\\&}"; ESC_REPO_URL="${ESC_REPO_URL//|/%7C}"
-    {
-      printf '\n'
-      sed -e "s|{{EXTENSION_VERSION}}|${EXT_VERSION}|g" \
-          -e "s|{{MODE}}|${README_MODE}|g" \
-          -e "s|{{REPOSITORY_URL}}|${ESC_REPO_URL}|g" \
-          "$README_TEMPLATE"
-    } >> "$README_DEST"
-    if [[ "$README_ACTION" == "UPDATED" ]]; then
-      echo "UPDATED: figma section in ${README_DEST#"$TARGET"/} (refreshed to v${EXT_VERSION})"
-    else
-      echo "ADDED: figma section in ${README_DEST#"$TARGET"/} (PAT setup + local guide links; --no-readme to opt out)"
+    if [[ "$README_ACTION" != "skip" ]]; then
+      # sed replacement values: neutralize the two metacharacters of the `s|…|…|`
+      # form (& = whole match, | = our delimiter) so an exotic repository URL
+      # cannot corrupt the rendered block.
+      ESC_REPO_URL="${EXT_REPO_URL//&/\\&}"; ESC_REPO_URL="${ESC_REPO_URL//|/%7C}"
+      {
+        printf '\n'
+        sed -e "s|{{EXTENSION_VERSION}}|${EXT_VERSION}|g" \
+            -e "s|{{MODE}}|${README_MODE}|g" \
+            -e "s|{{REPOSITORY_URL}}|${ESC_REPO_URL}|g" \
+            "$README_TEMPLATE"
+      } >> "$README_DEST"
+      if [[ "$README_ACTION" == "UPDATED" ]]; then
+        echo "UPDATED: figma section in ${README_DEST#"$TARGET"/} (refreshed to v${EXT_VERSION})"
+      else
+        echo "ADDED: figma section in ${README_DEST#"$TARGET"/} (PAT setup + local guide links; --no-readme to opt out)"
+      fi
     fi
   fi
 fi
@@ -324,7 +343,7 @@ strip_hook_block() {
 remove_hook() {
   local file="$1"
   grep -qF "$HOOK_MARKER_BEGIN" "$file" || return 0
-  strip_hook_block "$file"
+  strip_hook_block "$file" || { warn_unterminated "$file"; return 0; }
   echo "CLEANED: ${file#"$TARGET"/} (auto-context now runs via the extension hooks; use --prompt-hooks to reinstate prompt injection)"
 }
 
@@ -333,7 +352,7 @@ inject_hook() {
   if grep -qF "$HOOK_MARKER_BEGIN" "$file"; then
     # Managed block: strip the previous copy and re-append the current one,
     # so re-running install.sh upgrades existing workspaces.
-    strip_hook_block "$file"
+    strip_hook_block "$file" || { warn_unterminated "$file"; return 0; }
     action="UPDATED"
   fi
   cat >> "$file" <<'HOOK'
