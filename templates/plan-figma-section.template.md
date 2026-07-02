@@ -8,7 +8,7 @@
 
 ## Figma Design Plan *(extension: figma)*
 
-- **Mode**: {{multi-repo | mono-repo}}
+- **Mode**: {{single-repo | mono-repo | multi-repo}}
 - **Figma file**: `{{FIGMA_FILE_ID}}`  ·  **Project**: `{{FIGMA_PROJECT_ID | n/a}}`
 - **Design-context engine**: {{rest | mcp}} (REST is the portable baseline; MCP, when reachable, yields more faithful implementation)
 - **Snapshot**: `.figma/context-snapshot.json` @ {{GENERATED_AT}}  ·  Figma `lastModified`: {{LAST_MODIFIED}}

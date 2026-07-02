@@ -114,6 +114,7 @@ substitute() {
     -e "s@{{FIGMA_PROJECT_ID | n/a}}@${PROJECT_ID_E}@g" \
     -e "s@{{GENERATED_AT}}@${GENERATED_AT_E}@g" \
     -e "s@{{LAST_MODIFIED}}@${LAST_MODIFIED_E}@g" \
+    -e "s@{{single-repo | mono-repo | multi-repo}}@${MODE_E}@g" \
     -e "s@{{multi-repo | mono-repo}}@${MODE_E}@g" \
     -e "s@{{rest | mcp}}@${CONTEXT_SOURCE_E}@g" \
     "$1"

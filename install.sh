@@ -294,26 +294,26 @@ fi
 # gap and tell the user exactly what to run. The command stems are derived from
 # the extension's own commands/ directory so new commands are covered for free.
 # -----------------------------------------------------------------------------
-FIGMA_STEMS=()
-for cmd_file in "$EXT_DIR/commands/"speckit.figma.*.md; do
+EXT_STEMS=()
+for cmd_file in "$EXT_DIR/commands/speckit.${EXT_ID}."*.md; do
   [[ -e "$cmd_file" ]] || continue
-  stem="$(basename "$cmd_file")"; stem="${stem#speckit.figma.}"; stem="${stem%.md}"
-  FIGMA_STEMS+=("$stem")
+  stem="$(basename "$cmd_file")"; stem="${stem#speckit.${EXT_ID}.}"; stem="${stem%.md}"
+  EXT_STEMS+=("$stem")
 done
 
-if [[ ${#FIGMA_STEMS[@]} -gt 0 ]]; then
+if [[ ${#EXT_STEMS[@]} -gt 0 ]]; then
   for dir in "${AGENT_CMD_DIRS[@]}"; do
     [[ -d "$TARGET/$dir" ]] || continue
     # Only a dir that already holds a speckit command counts as a configured
     # agent — otherwise an empty/unrelated dir would trigger a false warning.
     ls "$TARGET/$dir/"speckit.* >/dev/null 2>&1 || continue
     missing=()
-    for stem in "${FIGMA_STEMS[@]}"; do
-      [[ -f "$TARGET/$dir/speckit.figma.${stem}.md" || -f "$TARGET/$dir/speckit.figma.${stem}.prompt.md" ]] && continue
+    for stem in "${EXT_STEMS[@]}"; do
+      [[ -f "$TARGET/$dir/speckit.${EXT_ID}.${stem}.md" || -f "$TARGET/$dir/speckit.${EXT_ID}.${stem}.prompt.md" ]] && continue
       missing+=("$stem")
     done
     if [[ ${#missing[@]} -gt 0 ]]; then
-      echo "WARN: figma command(s) not registered for ${dir}: ${missing[*]} — run 'specify extension add figma' to (re)register them for this agent." >&2
+      echo "WARN: ${EXT_ID} command(s) not registered for ${dir}: ${missing[*]} — run 'specify extension add ${EXT_ID}' to (re)register them for this agent." >&2
     fi
   done
 fi

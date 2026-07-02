@@ -74,7 +74,7 @@ status_json() {
   [ "$status" -ne 0 ]
 }
 
-@test "resolves the newest specs/*/<phase>.md when --doc is omitted" {
+@test "resolves specs/*/<phase>.md when exactly one exists and --doc is omitted" {
   printf 'rendered\n' > "$RENDERED"
   mkdir -p "${WORKSPACE}/specs/001-feat"
   printf '# Spec\n\n## Figma Design Context *(extension: figma)*\n' > "${WORKSPACE}/specs/001-feat/spec.md"

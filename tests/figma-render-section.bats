@@ -104,6 +104,30 @@ JSON
   grep -qiE 'engine.*: *mcp' "$output"           # filled with the snapshot value
 }
 
+@test "substitutes the full-enum mode placeholder {{single-repo | mono-repo | multi-repo}}" {
+  # The schema enum is single-repo|mono-repo|multi-repo; the renderer must fill
+  # the placeholder that spells out the full enum, wherever the template lives.
+  mkdir -p "${WORKSPACE}/.specify/templates"
+  printf '## Figma Design Plan *(extension: figma)*\n\n- **Mode**: {{single-repo | mono-repo | multi-repo}}\n' \
+    > "${WORKSPACE}/.specify/templates/plan-figma-section.template.md"
+  run "$SCRIPT" --phase plan --snapshot "$SNAP"
+  [ "$status" -eq 0 ]
+  ! grep -qF '{{single-repo | mono-repo | multi-repo}}' "$output"   # placeholder filled
+  grep -qF '**Mode**: single-repo' "$output"                        # schema default applied
+}
+
+@test "still substitutes the legacy mode placeholder {{multi-repo | mono-repo}}" {
+  # Workspaces installed before the enum was completed may still carry the old
+  # placeholder in <root>/.specify/templates/ — the renderer must keep filling it.
+  mkdir -p "${WORKSPACE}/.specify/templates"
+  printf '## Figma Design Plan *(extension: figma)*\n\n- **Mode**: {{multi-repo | mono-repo}}\n' \
+    > "${WORKSPACE}/.specify/templates/plan-figma-section.template.md"
+  run "$SCRIPT" --phase plan --snapshot "$SNAP"
+  [ "$status" -eq 0 ]
+  ! grep -qF '{{multi-repo | mono-repo}}' "$output"
+  grep -qF '**Mode**: single-repo' "$output"
+}
+
 @test "rejects a non-array --candidate-frames" {
   run "$SCRIPT" --phase spec --snapshot "$SNAP" --candidate-frames '{"not":"an array"}'
   [ "$status" -ne 0 ]
