@@ -1,4 +1,4 @@
-<!-- BEGIN SPECKIT-FIGMA README (managed by spec-kit-figma v{{EXTENSION_VERSION}}; re-running install.sh refreshes this section — edits inside will be lost) -->
+<!-- BEGIN SPECKIT-FIGMA README (managed by spec-kit-figma v{{EXTENSION_VERSION}}; re-running install.sh or install.ps1 refreshes this section — edits inside will be lost) -->
 ## Figma design context (SpecKit extension)
 
 This workspace uses [spec-kit-figma]({{REPOSITORY_URL}}) v{{EXTENSION_VERSION}}

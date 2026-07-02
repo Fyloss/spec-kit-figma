@@ -365,7 +365,7 @@ $hookMarkerEnd = 'END SPECKIT-FIGMA AUTO-CONTEXT'
 
 $hookBlock = @'
 
-<!-- BEGIN SPECKIT-FIGMA AUTO-CONTEXT (managed by spec-kit-figma; re-running install.sh refreshes this block) -->
+<!-- BEGIN SPECKIT-FIGMA AUTO-CONTEXT (managed by spec-kit-figma; re-running install.sh or install.ps1 refreshes this block) -->
 ## Figma design context (automatic)
 
 Before generating, refresh the Figma design context:

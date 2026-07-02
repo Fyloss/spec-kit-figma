@@ -100,12 +100,16 @@ jobs:
             # Exit 2 (unresolved REPLACE_WITH_ placeholders) is expected for
             # shipped examples; only structural errors (exit 1) must fail CI.
             & ./scripts/powershell/figma-validate-config.ps1 $example.FullName
-            if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
-              Write-Output "FAIL: $($example.Name) (exit $LASTEXITCODE)"
+            $rc = $LASTEXITCODE
+            if ($rc -ne 0 -and $rc -ne 2) {
+              Write-Output "FAIL: $($example.Name) (exit $rc)"
               $failed = $true
             }
           }
           if ($failed) { exit 1 }
+          # The GitHub pwsh shell appends `exit $LASTEXITCODE`, so the last
+          # validator's expected exit 2 would fail the step without this.
+          exit 0
 
   config-examples:
     name: Validate example configs
