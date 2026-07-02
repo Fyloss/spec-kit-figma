@@ -36,6 +36,7 @@ submodules) layouts.
 .
 ├── extension.yml                        # SpecKit extension manifest (read by `specify extension add`)
 ├── install.sh                          # optional manual installer (single/mono/multi-repo)
+├── install.ps1                         # the same installer for Windows (PowerShell 7+)
 ├── commands/                           # agent-agnostic command templates
 │   ├── speckit.figma.setup.md
 │   ├── speckit.figma.update.md         # re-sync assets/hooks + re-register commands (idempotent)
@@ -49,8 +50,9 @@ submodules) layouts.
 │   ├── figma.projects.config.monorepo.example.json
 │   └── figma.projects.config.organization.example.json
 ├── scripts/
-│   └── bash/                           # curl + jq, 429 backoff, keychain token loading
-├── tests/                              # bats test suite + fixtures
+│   ├── bash/                           # curl + jq, 429 backoff, keychain token loading (macOS/Linux)
+│   └── powershell/                     # PowerShell 7+ ports — same flags/JSON/exit codes (Windows)
+├── tests/                              # bats test suite + Pester (PowerShell) suite + fixtures
 ├── templates/
 │   ├── spec-figma-section.template.md
 │   ├── plan-figma-section.template.md
@@ -143,6 +145,12 @@ removes any block injected by a previous extension version.
 # then edit figma.projects.config.json, add credentials, and:
 ./.specify/scripts/bash/figma-validate-config.sh
 ```
+
+On **Windows**, run the PowerShell 7+ port instead — same flags, same output
+(`./install.ps1`, then `./.specify/scripts/powershell/figma-validate-config.ps1`).
+Both installers copy **both** script families into the workspace
+(`.specify/scripts/bash/` and `.specify/scripts/powershell/`), so a mixed
+macOS/Linux/Windows team shares one committed setup.
 The installer also copies these guides into the workspace at `.figma/docs/`
 (refreshed on every update, so they match the installed version) and appends a
 short managed **figma section** to the workspace `README.md` (created if
@@ -155,7 +163,12 @@ See [docs/INSTALL.md](docs/INSTALL.md), [docs/CREDENTIALS.md](docs/CREDENTIALS.m
 and [docs/MONOREPO.md](docs/MONOREPO.md).
 
 ## Requirements
-- `bash` 4+, `curl`, `jq`, `git`.
+- `git`, plus one script toolchain per developer machine:
+  - **macOS / Linux**: `bash` 4+, `curl`, `jq` (runs `scripts/bash/*.sh`);
+  - **Windows**: PowerShell 7+ (`pwsh`) — runs the `scripts/powershell/*.ps1`
+    ports, which use PowerShell's built-in JSON and HTTP support (no `curl`,
+    no `jq`). Same flags, same JSON output, same exit codes as the bash
+    helpers, so commands, hooks and CI gates behave identically.
 - A **read-only** Figma PAT (local) or a CI/Cloud secret (pipelines). Scopes scale
   with the introspection level: a single file needs `file_content:read` +
   `file_metadata:read`; **project- or team-level introspection

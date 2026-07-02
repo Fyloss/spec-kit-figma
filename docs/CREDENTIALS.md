@@ -4,8 +4,9 @@ This document defines the policy for storing and loading the Figma Personal
 Access Token (PAT) across local, CI and GitHub Cloud Agent contexts.
 
 ## TL;DR
-- **Local development → use the OS keychain.** Store the PAT in your OS keychain
-  (macOS `security`, 1Password, `pass`, …) and export `FIGMA_PAT_COMMAND` in your
+- **Local development → use the OS credential store.** Store the PAT in your OS
+  secret store (macOS keychain via `security`, Windows via PowerShell
+  SecretManagement, 1Password, `pass`, …) and export `FIGMA_PAT_COMMAND` in your
   shell profile so the scripts fetch it at call time. **No `.env` file** — the
   token never touches a file in the workspace.
 - **CI / GitHub Cloud Agent → use the platform secret store**
@@ -34,6 +35,8 @@ entirely:
 Store the PAT in the OS keychain, then export the retrieval command from your
 shell profile (NOT from the workspace):
 
+macOS (keychain):
+
 ```bash
 # 1. one-time: store the READ-ONLY PAT in the macOS keychain
 security add-generic-password -s figma-pat -a "$USER" -w 'figd_xxxxxxxx'
@@ -43,6 +46,23 @@ echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"'
 
 # 3. reload the shell so FIGMA_PAT_COMMAND is set
 source ~/.zshrc
+```
+
+Windows (PowerShell 7+ with the
+[SecretManagement](https://learn.microsoft.com/powershell/utility-modules/secretmanagement/overview)
+and SecretStore modules — the store is encrypted at rest by the OS):
+
+```powershell
+# 1. one-time: install the secret store and save the READ-ONLY PAT
+Install-Module Microsoft.PowerShell.SecretManagement, Microsoft.PowerShell.SecretStore
+Register-SecretVault -Name SecretStore -ModuleName Microsoft.PowerShell.SecretStore -DefaultVault
+Set-Secret -Name figma-pat -Secret 'figd_xxxxxxxx'
+
+# 2. add the retrieval command to your PowerShell profile
+Add-Content $PROFILE "`n`$env:FIGMA_PAT_COMMAND = 'Get-Secret figma-pat -AsPlainText'"
+
+# 3. reload the profile so FIGMA_PAT_COMMAND is set
+. $PROFILE
 ```
 
 Generate the PAT at <https://www.figma.com/developers/api#access-tokens>. **The
@@ -72,9 +92,14 @@ long as the token is printed on stdout, e.g.:
 | Secret manager | `FIGMA_PAT_COMMAND` value |
 |---|---|
 | macOS keychain | `security find-generic-password -s figma-pat -w` |
+| Windows / cross-platform (PowerShell SecretManagement) | `Get-Secret figma-pat -AsPlainText` (PowerShell scripts) |
 | 1Password CLI  | `op read op://Private/figma-pat/credential` |
 | `pass`         | `pass show figma/pat` |
 | `secret-tool`  | `secret-tool lookup service figma-pat` |
+
+(The bash helpers execute `FIGMA_PAT_COMMAND` as an external program, so give
+them a CLI like `op`/`pass`/`security`; the PowerShell helpers can additionally
+invoke a PowerShell cmdlet such as `Get-Secret` directly.)
 
 Resolution order in the scripts: the environment variable named by
 `credentials.envVar` (default `FIGMA_PAT`) > `FIGMA_PAT_COMMAND`. There is **no
@@ -97,7 +122,8 @@ level, deny the agent access to the token sources, e.g. for Claude Code in
 {
   "permissions": {
     "deny": [
-      "Bash(security find-generic-password*)"
+      "Bash(security find-generic-password*)",
+      "Bash(*Get-Secret*)"
     ]
   }
 }
@@ -164,14 +190,19 @@ problem is a **corporate proxy** that cannot reach figma.com.
 | HTTP `401` / `403` | missing/invalid PAT or insufficient scope | `AUTH/SCOPE error` (code `AUTH`) |
 | HTTP `404` | wrong key, or PAT owner not a team member | `NOT FOUND` (code `NOT_FOUND`) |
 
-**Self-healing:** the single curl chokepoint (`figma_curl_get` in
-`figma-common.sh`) detects a proxy-connection failure (exit 5, or exit 6 / HTTP
-000 with a proxy configured) and **retries once with every proxy variable
-stripped**:
+**Self-healing:** the single HTTP chokepoint (`figma_curl_get` in
+`figma-common.sh`; `Invoke-FigmaHttpGet` in the PowerShell port
+`figma-common.ps1`) detects a proxy-connection failure (exit 5, or exit 6 / HTTP
+000 with a proxy configured; a transport failure with a proxy configured on
+PowerShell) and **retries once with the proxy bypassed**:
 
 ```bash
 env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
     "no_proxy=*" "NO_PROXY=*" curl ...
+```
+
+```powershell
+Invoke-WebRequest -NoProxy ...
 ```
 
 This works in **both** topologies without configuration:
@@ -191,8 +222,8 @@ after the auto-retry, the proxy/network — **not** the token — is at fault. T
 - The token MUST NOT appear in any committed file (`figma.projects.config.json`,
   scripts, snapshots, logs).
 - The token MUST NOT be written to any file in the workspace — locally it lives
-  in the OS keychain, fetched via `FIGMA_PAT_COMMAND`; in CI it comes from the
-  platform secret store.
+  in the OS credential store (macOS keychain, Windows SecretManagement, …),
+  fetched via `FIGMA_PAT_COMMAND`; in CI it comes from the platform secret store.
 - Scripts MUST NOT echo the token. Validation rejects any `token`/`pat`/
   `accessToken` field found in the config.
 - `.figma/cache/context-snapshot.json` MUST stay git-ignored.

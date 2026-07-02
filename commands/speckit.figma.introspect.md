@@ -33,6 +33,10 @@ Run these from the workspace root. The short names used below map to:
   hook: introspects only when the snapshot is missing or stale; safe no-op
   otherwise)
 
+On Windows, use the PowerShell 7+ ports instead — same flags, same JSON output:
+replace `./.specify/scripts/bash/<name>.sh` with
+`./.specify/scripts/powershell/<name>.ps1` (run from `pwsh`).
+
 ## 0. Inputs & direct Figma links
 
 - First, scan the user-provided input for direct Figma links. Run the `parse`
@@ -204,7 +208,8 @@ regardless of the agent model. Do not hand-assemble it from scratch:
 
 1. Run the renderer for the phase you are generating, e.g.
    `./.specify/scripts/bash/figma-render-section.sh --phase spec` (or `plan` /
-   `tasks`). It fills every deterministic placeholder from the snapshot (file,
+   `tasks`; on Windows `./.specify/scripts/powershell/figma-render-section.ps1`).
+   It fills every deterministic placeholder from the snapshot (file,
    pages, top-level frames, components/styles, context engine, input links) and
    writes `.figma/cache/section.<phase>.md`. The `ensure` hook already does this and
    reports the path in `specSection` / `planSection` / `tasksSection`.
@@ -215,5 +220,5 @@ regardless of the agent model. Do not hand-assemble it from scratch:
    sub-tasks) using the rules above.
 
 The templates live at `./.specify/templates/{spec,plan,tasks}-figma-section.template.md`
-(installed by `install.sh`) — used by the renderer and as a manual fallback if it
-fails. Never omit the section when a Figma creation applies.
+(installed by `install.sh` / `install.ps1`) — used by the renderer and as a manual
+fallback if it fails. Never omit the section when a Figma creation applies.

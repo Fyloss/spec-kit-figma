@@ -6,7 +6,17 @@ Gemini, Cursor, …) on a **single-repo** (default), **mono-repo** or **multi-re
 
 ## Prerequisites
 - A SpecKit workspace (`.specify/` present).
-- `bash` 4+, `curl`, `jq`, `git`.
+- `git`, plus one of the two script toolchains (both are installed into the
+  workspace, so a mixed team shares one setup):
+  - **macOS / Linux**: `bash` 4+, `curl`, `jq` — runs the
+    `.specify/scripts/bash/*.sh` helpers;
+  - **Windows**: [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows)
+    (`pwsh`) — runs the `.specify/scripts/powershell/*.ps1` ports (built-in JSON
+    and HTTP support: no `curl`, no `jq` needed). Every `figma-*.sh` helper has
+    a `figma-*.ps1` twin with the same flags, the same JSON output and the same
+    exit codes; anywhere this guide shows
+    `./.specify/scripts/bash/<name>.sh`, Windows users run
+    `./.specify/scripts/powershell/<name>.ps1` from `pwsh`.
 - A read-only Figma Personal Access Token (local) or a CI secret (pipelines).
 
 ## 1. Install
@@ -44,10 +54,24 @@ With this option you can skip the manual command registration in step 4.
 # multi-repo (git submodules)
 ./install.sh --mode multi-repo
 ```
+
+On Windows, run the PowerShell 7+ port instead — same flags, same behaviour,
+same output:
+
+```powershell
+# from pwsh, in the target workspace root (or pass --target <workspace-root>)
+./install.ps1
+./install.ps1 --mode mono-repo
+./install.ps1 --mode multi-repo
+```
+
 The installer copies the config example to `figma.projects.config.json`, copies
 the helper scripts (including `figma-ensure-context.sh`,
 `figma-render-section.sh` and `figma-verify-section.sh`) to
-`.specify/scripts/bash/`, installs the spec/plan/tasks section templates into
+`.specify/scripts/bash/` **and their PowerShell ports to
+`.specify/scripts/powershell/`** (both families, whatever the platform the
+installer runs on, so macOS/Linux and Windows teammates share one committed
+workspace), installs the spec/plan/tasks section templates into
 `.specify/templates/`, git-ignores the `.figma/cache/` directory (snapshot +
 rendered sections), and installs the design-rules constitution into `.figma/`
 (committed, next to the git-ignored `cache/`). It also copies these user guides
@@ -84,6 +108,8 @@ no uninstall is required, both tools are self-healing:
 specify extension add figma --from <source>   # re-register commands (picks up NEW commands)
 <spec-kit-figma>/install.sh                    # re-sync assets + hooks; reports coherence (in sync / mismatch)
 ```
+
+(On Windows: `<spec-kit-figma>/install.ps1` from `pwsh`, same flags.)
 
 SpecKit records the install across two files (the extension keeps no parallel
 stamp of its own):
@@ -168,12 +194,21 @@ component catalog mandatory, or add naming conventions). Commit both files.
 ./.specify/scripts/bash/figma-detect-target.sh <an-excluded-target>
 ```
 
+Windows (PowerShell 7+):
+
+```powershell
+./.specify/scripts/powershell/figma-validate-config.ps1
+./.specify/scripts/powershell/figma-detect-target.ps1 <a-front-end-target>
+./.specify/scripts/powershell/figma-detect-target.ps1 <an-excluded-target>
+```
+
 ## 6. Use in the SpecKit flow
 Run `/speckit.figma.setup` once. From then on, Figma context is **automatic**:
 the extension hooks (`before_specify` / `before_plan` / `before_tasks` in `extension.yml`)
 invoke `/speckit.figma.ensure`, which runs
-`./.specify/scripts/bash/figma-ensure-context.sh` before generation, piping in the
-user's raw feature input (`--input -`). It re-introspects only when
+`./.specify/scripts/bash/figma-ensure-context.sh` (on Windows:
+`./.specify/scripts/powershell/figma-ensure-context.ps1`) before generation,
+piping in the user's raw feature input (`--input -`). It re-introspects only when
 `.figma/cache/context-snapshot.json` is missing or stale (older than 60 minutes, or
 older than the config — override with `FIGMA_SNAPSHOT_MAX_AGE_MINUTES` or
 `--max-age-minutes`). Figma context is injected into `spec.md`, `plan.md` and `tasks.md`

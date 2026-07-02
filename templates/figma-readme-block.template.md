@@ -9,12 +9,23 @@ automatically ground the generated documents in the Figma mockups declared in
 ### One-time setup per developer — read-only Figma PAT
 
 Generate a **read-only** personal access token in your Figma account settings,
-store it in your OS keychain, and export the retrieval command from your shell
-profile — never commit the token, never put it in a `.env` (macOS example):
+store it in your OS credential store, and export the retrieval command from
+your shell profile — never commit the token, never put it in a `.env`.
+
+macOS (keychain):
 
 ```bash
 security add-generic-password -s figma-pat -a "$USER" -w 'figd_xxxxxxxx'
 echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"' >> ~/.zshrc
+```
+
+Windows (PowerShell 7+ with the SecretManagement + SecretStore modules; the
+`.ps1` helper twins live in `.specify/scripts/powershell/`):
+
+```powershell
+Set-Secret -Name figma-pat -Secret 'figd_xxxxxxxx'
+# in $PROFILE:
+$env:FIGMA_PAT_COMMAND = 'Get-Secret figma-pat -AsPlainText'
 ```
 
 CI / Cloud Agents use an injected platform secret instead

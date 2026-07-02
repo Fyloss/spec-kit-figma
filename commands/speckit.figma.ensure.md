@@ -22,6 +22,16 @@ in mono-/multi-repo workspaces:
 SPECKIT_FIGMA_INPUT
 ```
 
+On Windows, use the PowerShell 7+ port instead — same flags, same JSON output
+(every `figma-*.sh` helper has a `figma-*.ps1` twin under
+`./.specify/scripts/powershell/`):
+
+```powershell
+@'
+<the user's verbatim feature input>
+'@ | ./.specify/scripts/powershell/figma-ensure-context.ps1 --input -
+```
+
 Any direct Figma link in the input is detected and introspected automatically —
 the linked file/frames become the authoritative design targets (node-level
 detail included), so no manual `/speckit.figma.introspect` run is needed. The

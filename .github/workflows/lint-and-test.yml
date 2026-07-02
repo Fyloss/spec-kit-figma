@@ -43,6 +43,70 @@ jobs:
       - name: Run test suite
         run: bats --print-output-on-failure tests/
 
+  psscriptanalyzer:
+    name: PSScriptAnalyzer (lint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lint the PowerShell ports
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $results = @(Invoke-ScriptAnalyzer -Path scripts/powershell -Recurse) +
+                     @(Invoke-ScriptAnalyzer -Path install.ps1)
+          $results | Format-Table RuleName, Severity, ScriptName, Line -AutoSize
+          $errors = @($results | Where-Object Severity -eq 'Error')
+          if ($errors.Count -gt 0) {
+            Write-Error "PSScriptAnalyzer found $($errors.Count) error(s)."
+            exit 1
+          }
+
+  test-powershell:
+    name: PowerShell tests (Pester, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Pester 5
+        shell: pwsh
+        run: |
+          Install-Module Pester -Force -Scope CurrentUser -SkipPublisherCheck -MinimumVersion 5.5.0
+          Import-Module Pester -MinimumVersion 5.5.0
+          (Get-Module Pester).Version
+
+      - name: Run Pester suite
+        shell: pwsh
+        run: |
+          Import-Module Pester -MinimumVersion 5.5.0
+          $config = New-PesterConfiguration
+          $config.Run.Path = 'tests/powershell'
+          $config.Run.Exit = $true
+          $config.Output.Verbosity = 'Detailed'
+          Invoke-Pester -Configuration $config
+
+      - name: Run the PowerShell validator on the shipped examples
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($example in Get-ChildItem 'config/figma.projects.config.*.example.json') {
+            Write-Output "Checking $($example.Name)"
+            # Exit 2 (unresolved REPLACE_WITH_ placeholders) is expected for
+            # shipped examples; only structural errors (exit 1) must fail CI.
+            & ./scripts/powershell/figma-validate-config.ps1 $example.FullName
+            if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+              Write-Output "FAIL: $($example.Name) (exit $LASTEXITCODE)"
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
   config-examples:
     name: Validate example configs
     runs-on: ubuntu-latest
