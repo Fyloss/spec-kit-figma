@@ -129,11 +129,11 @@ rm -f "$TARGET/.specify/memory/figma-design-rules.md" 2>/dev/null || true
 # overlay the base rules apply unchanged. Skipped when the target IS the extension
 # checkout, so its own repo is not polluted with an untracked overlay.
 if [[ "$TARGET_REAL" != "$EXT_DIR" ]]; then
-  LOCAL_DEST="$TARGET/.figma/figma-design-rules.custom.md"
-  if [[ -f "$LOCAL_DEST" ]]; then
+  CUSTOM_DEST="$TARGET/.figma/figma-design-rules.custom.md"
+  if [[ -f "$CUSTOM_DEST" ]]; then
     echo "SKIP: .figma/figma-design-rules.custom.md already exists (user overlay, not overwritten)."
   else
-    cp "$EXT_DIR/config/figma-design-rules.custom.example.md" "$LOCAL_DEST"
+    cp "$EXT_DIR/config/figma-design-rules.custom.example.md" "$CUSTOM_DEST"
     echo "ADDED: .figma/figma-design-rules.custom.md (user overlay — customize freely; preserved across updates)."
   fi
 fi

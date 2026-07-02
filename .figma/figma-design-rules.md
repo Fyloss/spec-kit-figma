@@ -8,9 +8,12 @@
   the extension creates once and NEVER overwrites. See "Layering & precedence".
 -->
 
-These rules are non-negotiable constraints the agent MUST apply during spec, plan,
-task and implementation generation whenever the Figma extension is active. They
-complement the project constitution; on conflict, the stricter rule wins.
+These rules are the agent's default design constraints during spec, plan, task and
+implementation generation whenever the Figma extension is active. A project tailors
+them through the overlay (see "Layering & precedence" below): the base plus the
+overlay form the **effective ruleset**, which the agent MUST apply. That effective
+ruleset complements the project constitution; where they overlap, the stricter rule
+wins.
 
 ## Layering & precedence
 - This file is the **extension-owned base**. A sibling **user overlay**,

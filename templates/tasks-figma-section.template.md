@@ -11,7 +11,7 @@
 ## Figma-derived tasks *(extension: figma)*
 
 ### {{COMPONENT_NAME}} — {{reuse | create-ds | create-app | create-lib}}
-- **Placement justification**: {{WHY}} (level: {{1 reuse | 2 create-ds | 3 create-app}})
+- **Placement justification**: {{WHY}} (level: {{1 reuse | 2 create-ds | 3 create-app/lib}})
 - **Design references**: {{FRAME_LINKS}} (one per provided breakpoint)
 - **Responsive**: breakpoints {{LIST_PROVIDED_BREAKPOINTS}}; policy {{from overlay/constitution | none declared}}.
 - **Tokens**: {{TOKEN_LIST}} ({{mapped | raw-candidate}})

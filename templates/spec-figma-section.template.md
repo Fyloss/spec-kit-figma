@@ -23,7 +23,7 @@
 ### Components & placement
 | Component | Placement | Level | Justification | Frames (per breakpoint) |
 |-----------|-----------|-------|---------------|-------------------------|
-| {{NAME}} | {{DS | lib | app}} | {{reuse | create-ds | create-app}} | {{WHY}} | {{LINKS}} |
+| {{NAME}} | {{DS | lib | app}} | {{reuse | create-ds | create-app | create-lib}} | {{WHY}} | {{LINKS}} |
 
 > No Design System configured? `DS` / `create-ds` does not apply — route to the app or a shared lib.
 
@@ -32,7 +32,7 @@
 ### Responsiveness
 - Breakpoints provided by the design: {{LIST_PROVIDED_BREAKPOINTS}}.
 - Responsive policy: {{from project overlay/constitution | none declared — cover provided breakpoints only}}.
-  {{If interpolating an absent breakpoint, name it and state the interpolation explicitly.}}
+<!-- If interpolating an absent breakpoint, name it and state the interpolation explicitly. -->
 
 ### Design token mapping
 | Figma value | Property | Token (DS / theme / CSS var) | Status |
