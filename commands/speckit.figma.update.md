@@ -1,5 +1,5 @@
 ---
-description: Update an already-installed Figma extension in this workspace to a newer version — re-sync the helper scripts, templates, design-rules memory and hooks, re-register slash-commands, and report what changed. Idempotent; no uninstall required.
+description: Update an already-installed Figma extension in this workspace to a newer version — re-sync the helper scripts, templates, design-rules constitution and hooks, re-register slash-commands, and report what changed. Idempotent; no uninstall required.
 ---
 
 # /speckit.figma.update — Update the Figma extension in this workspace
@@ -10,8 +10,8 @@ preserved. This command only re-applies the extension's code at a newer version.
 
 Updating an extension is two complementary jobs, and they are NOT the same tool:
 
-- **Assets + hooks** (`.specify/scripts`, `.specify/templates`, `.specify/memory`,
-  the prompt hooks) → the extension's own `install.sh`.
+- **Assets + hooks** (`.specify/scripts`, `.specify/templates`,
+  `.figma/figma-design-rules.md`, the prompt hooks) → the extension's own `install.sh`.
 - **Slash-command registration** (the `speckit.figma.*` command files, per agent
   format) → SpecKit's native `specify extension add`. This is also what records
   the installed version at `.specify/extensions/figma/extension.yml`.
@@ -51,7 +51,7 @@ stamp.
 
 3. **Re-sync assets and hooks.** From the workspace root, run the new source's
    installer. It is idempotent: it refreshes the helper scripts, section
-   templates and design-rules memory, re-wires the hooks, and reports coherence
+   templates and design-rules constitution, re-wires the hooks, and reports coherence
    against SpecKit's registered version — `in sync at <version>` once step 2 has
    re-registered, or `WARN: figma version mismatch …` if registration was skipped
    or failed:

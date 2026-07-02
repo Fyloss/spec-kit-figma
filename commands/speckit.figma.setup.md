@@ -26,7 +26,7 @@ Run these from the workspace root. The short names used below map to:
 2. **Sync assets, then scaffold config.** Always run the extension's
    `install.sh --mode <mode>` first — it is idempotent and is what keeps an
    already-installed workspace up to date: it refreshes the helper scripts,
-   section templates and design-rules memory, re-wires the hooks, checks the
+   section templates and design-rules constitution, re-wires the hooks, checks the
    synced asset version against the version SpecKit has registered (at
    `.specify/extensions/figma/extension.yml`) and flags a mismatch, and warns if
    any figma slash-command is missing for a configured agent (run `specify
@@ -53,7 +53,7 @@ Run these from the workspace root. The short names used below map to:
      security add-generic-password -s figma-pat -a "$USER" -w 'figd_xxxxxxxx'
      echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"' >> ~/.zshrc
      ```
-     Confirm `.figma/context-snapshot.json` is git-ignored. Never write a token
+     Confirm `.figma/cache/context-snapshot.json` is git-ignored. Never write a token
      to any workspace file (see `docs/CREDENTIALS.md`).
    - `ci-secret` for CI / GitHub Cloud Agent → set `secretName` (and `envVar`
      when the variable injected at runtime differs from the secret name) and

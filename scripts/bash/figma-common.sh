@@ -9,6 +9,7 @@
 #   figma_load_token           -> prints the Figma PAT (env > keychain), never echoes it elsewhere
 #   figma_api <PATH>           -> GET against the Figma API with 429/5xx exponential backoff
 #   figma_state_dir            -> prints the per-workspace Figma state directory (.figma/)
+#   figma_cache_dir            -> prints the generated/cached-artifacts directory (.figma/cache/)
 #   figma_cache_path           -> prints the snapshot cache path
 #   figma_section_path <phase> -> prints the rendered-section path for a phase
 # Dependencies: bash 4+, curl, jq
@@ -24,20 +25,25 @@ figma_repo_root() {
   git rev-parse --show-toplevel 2>/dev/null || pwd
 }
 
-# Per-workspace directory holding every generated/cached Figma artifact
-# (snapshot + rendered sections). Keeping them under one hidden directory keeps
-# the repo root clean; a single `.figma/` entry in .gitignore covers them all.
+# Per-workspace Figma directory. Committed content (e.g. figma-design-rules.md)
+# lives at its root; every generated/cached artifact (snapshot + rendered
+# sections) lives under cache/ so a single `.figma/cache/` entry in .gitignore
+# covers them all.
 figma_state_dir() {
   echo "$(figma_repo_root)/.figma"
 }
 
+figma_cache_dir() {
+  echo "$(figma_state_dir)/cache"
+}
+
 figma_cache_path() {
-  echo "$(figma_state_dir)/context-snapshot.json"
+  echo "$(figma_cache_dir)/context-snapshot.json"
 }
 
 # Path of the rendered, ready-to-paste section for a phase (spec|plan|tasks).
 figma_section_path() {
-  echo "$(figma_state_dir)/section.$1.md"
+  echo "$(figma_cache_dir)/section.$1.md"
 }
 
 # Default config path. Precedence: FIGMA_CONFIG env override > <root>/figma.projects.config.json.

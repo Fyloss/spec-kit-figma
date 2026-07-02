@@ -7,7 +7,7 @@ setup() {
   SCRIPT="${SCRIPTS_DIR}/figma-verify-section.sh"
   WORKSPACE="$(make_temp_workspace)"
   cd "$WORKSPACE"
-  RENDERED="${WORKSPACE}/.figma/section.spec.md"
+  RENDERED="${WORKSPACE}/.figma/cache/section.spec.md"
   DOC="${WORKSPACE}/spec.md"
 }
 
@@ -45,7 +45,7 @@ status_json() {
   [ "$status" -eq 0 ]   # non-blocking by default
   [[ "$(status_json | jq -r '.reason')" == "section-missing" ]]
   [[ "$(status_json | jq -r '.verified')" == "false" ]]
-  [[ "$(status_json | jq -r '.remedy')" == *".figma/section.spec.md"* ]]
+  [[ "$(status_json | jq -r '.remedy')" == *".figma/cache/section.spec.md"* ]]
 }
 
 @test "strict mode exits non-zero on a missing section" {
@@ -123,7 +123,7 @@ status_json() {
 
 @test "a legacy heading from the WRONG phase is not accepted (no cross-phase false-ok)" {
   # plan-phase verification is applicable (a plan section was rendered this run)...
-  printf 'rendered\n' > "${WORKSPACE}/.figma/section.plan.md"
+  printf 'rendered\n' > "${WORKSPACE}/.figma/cache/section.plan.md"
   # ...but the document only carries the SPEC heading (legacy, no machine marker).
   # The old phase-agnostic "(extension: figma)" suffix matched it and reported ok.
   printf '# Plan\n\n## Figma Design Context *(extension: figma)*\n\nbody\n' > "${WORKSPACE}/plan.md"
@@ -134,7 +134,7 @@ status_json() {
 }
 
 @test "a legacy heading for the MATCHING phase is still accepted (backward compat)" {
-  printf 'rendered\n' > "${WORKSPACE}/.figma/section.plan.md"
+  printf 'rendered\n' > "${WORKSPACE}/.figma/cache/section.plan.md"
   printf '# Plan\n\n## Figma Design Plan *(extension: figma)*\n\nbody\n' > "${WORKSPACE}/plan.md"
   run "$SCRIPT" --phase plan --doc "${WORKSPACE}/plan.md"
   [ "$status" -eq 0 ]

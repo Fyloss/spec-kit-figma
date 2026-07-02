@@ -28,7 +28,7 @@ With this option you can skip the manual command registration in step 4.
 
 > Option A registers the **commands** only. Also run the manual installer
 > (Option B) once so the helper scripts (`.specify/scripts/bash/`), the config
-> example and the design-rules memory are copied into the workspace — the
+> example and the design-rules constitution are copied into the workspace — the
 > commands invoke `./.specify/scripts/bash/*.sh` from the workspace root (the
 > SpecKit convention, alongside `.specify/memory/`).
 
@@ -48,9 +48,9 @@ The installer copies the config example to `figma.projects.config.json`, copies
 the helper scripts (including `figma-ensure-context.sh`,
 `figma-render-section.sh` and `figma-verify-section.sh`) to
 `.specify/scripts/bash/`, installs the spec/plan/tasks section templates into
-`.specify/templates/`, git-ignores the `.figma/` state directory (snapshot +
-rendered sections), and installs the design-rules memory into
-`.specify/memory/`. By **default it leaves the `/speckit.specify`,
+`.specify/templates/`, git-ignores the `.figma/cache/` directory (snapshot +
+rendered sections), and installs the design-rules constitution into `.figma/`
+(committed, next to the git-ignored `cache/`). By **default it leaves the `/speckit.specify`,
 `/speckit.plan` and `/speckit.tasks` command prompts untouched** — automatic
 context runs through the `extension.yml` hooks. Pass `--prompt-hooks` to instead
 append a managed **auto-context block** to those three prompts (for agents
@@ -65,7 +65,7 @@ different tools, and you need both, exactly as on first install:
 
 | What | Tool | Notes |
 | --- | --- | --- |
-| Assets + hooks (`.specify/scripts`, `.specify/templates`, `.specify/memory`, prompt hooks) | `install.sh` | idempotent; never overwrites `figma.projects.config.json` |
+| Assets + hooks (`.specify/scripts`, `.specify/templates`, `.figma/figma-design-rules.md`, prompt hooks) | `install.sh` | idempotent; never overwrites `figma.projects.config.json` |
 | Slash-command registration (`speckit.figma.*`, per agent format) | `specify extension add figma` | agent-format aware; the **only** thing that registers commands, and what records the installed version at `.specify/extensions/figma/extension.yml` |
 
 The new files come from an updated extension source, so first **re-acquire** it
@@ -141,8 +141,8 @@ Map them to your agent's command location, e.g.:
 | Claude | `.claude/commands/speckit.figma.setup.md`, `…/speckit.figma.introspect.md` |
 | Gemini / others | the agent's command/prompt directory |
 
-The installer already copies `memory/figma-design-rules.md` into
-`.specify/memory/` so the rules are loaded with the constitution; copy it
+The installer already copies the design-rules constitution to
+`.figma/figma-design-rules.md` so the rules ship with the workspace; copy it
 manually only if you skipped `install.sh`.
 
 ## 5. Validate the setup
@@ -158,7 +158,7 @@ the extension hooks (`before_specify` / `before_plan` / `before_tasks` in `exten
 invoke `/speckit.figma.ensure`, which runs
 `./.specify/scripts/bash/figma-ensure-context.sh` before generation, piping in the
 user's raw feature input (`--input -`). It re-introspects only when
-`.figma/context-snapshot.json` is missing or stale (older than 60 minutes, or
+`.figma/cache/context-snapshot.json` is missing or stale (older than 60 minutes, or
 older than the config — override with `FIGMA_SNAPSHOT_MAX_AGE_MINUTES` or
 `--max-age-minutes`). Figma context is injected into `spec.md`, `plan.md` and `tasks.md`
 for front-end targets and skipped for excluded ones; any skip (no config,

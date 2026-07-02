@@ -23,10 +23,19 @@ teardown() {
   [ -f "${WORKSPACE}/.specify/scripts/bash/figma-common.sh" ]
 }
 
-@test "install creates .specify/memory and installs the design rules" {
+@test "install puts the design-rules constitution in .figma/" {
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
-  [ -f "${WORKSPACE}/.specify/memory/figma-design-rules.md" ]
+  [ -f "${WORKSPACE}/.figma/figma-design-rules.md" ]
+}
+
+@test "install removes a legacy .specify/memory design-rules copy" {
+  mkdir -p "${WORKSPACE}/.specify/memory"
+  printf 'legacy\n' > "${WORKSPACE}/.specify/memory/figma-design-rules.md"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [ ! -e "${WORKSPACE}/.specify/memory/figma-design-rules.md" ]
+  [ -f "${WORKSPACE}/.figma/figma-design-rules.md" ]
 }
 
 @test "install never creates a .env or .env.example file" {
@@ -36,11 +45,25 @@ teardown() {
   [ ! -e "${WORKSPACE}/.env.example" ]
 }
 
-@test "install git-ignores the .figma state directory but not .env" {
+@test "install git-ignores .figma/cache/ but not .env" {
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
-  grep -qxF ".figma/" "${WORKSPACE}/.gitignore"
+  grep -qxF ".figma/cache/" "${WORKSPACE}/.gitignore"
   ! grep -qxF ".env" "${WORKSPACE}/.gitignore"
+}
+
+@test "install migrates a legacy .figma/ gitignore entry to .figma/cache/" {
+  printf '.figma/\n' > "${WORKSPACE}/.gitignore"
+  printf '{}' > "${WORKSPACE}/.figma/context-snapshot.json"
+  printf 'stale\n' > "${WORKSPACE}/.figma/section.spec.md"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  ! grep -qxF ".figma/" "${WORKSPACE}/.gitignore"
+  grep -qxF ".figma/cache/" "${WORKSPACE}/.gitignore"
+  # Legacy root-level cached artifacts are dropped; the constitution remains.
+  [ ! -e "${WORKSPACE}/.figma/context-snapshot.json" ]
+  [ ! -e "${WORKSPACE}/.figma/section.spec.md" ]
+  [ -f "${WORKSPACE}/.figma/figma-design-rules.md" ]
 }
 
 @test "re-running install reports SKIP for files already present" {
