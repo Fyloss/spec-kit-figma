@@ -15,7 +15,9 @@
 
 ### Component strategy (3-level resolution)
 For every UI element the feature touches, the plan MUST state the target location
-and why, applying the Design System purity rule (DS = purely presentational):
+and why. When a Design System is configured, apply the DS purity rule (DS = purely
+presentational); when none is configured, the resolution collapses to *reuse → app
+/ lib* and `create-ds` does not apply.
 
 | Component | Decision | Level | Target path | Justification |
 |-----------|----------|-------|-------------|---------------|
@@ -25,18 +27,22 @@ and why, applying the Design System purity rule (DS = purely presentational):
 > (DS if pure UI, else shared lib) and consumed by each app — never duplicated.
 
 ### Responsiveness strategy
-- Mobile-first. Tablet behavior: {{from tablet frame | interpolated from mobile+desktop}}.
-  Even without a tablet mockup, the implementation MUST be tablet-responsive — state
-  the interpolation here.
+- Breakpoints provided by the design: {{LIST_PROVIDED_BREAKPOINTS}}.
+- Responsive policy: {{from project overlay/constitution | none declared — cover provided breakpoints only}}.
+  If a policy requires an absent breakpoint, name it and state the interpolation here.
 
 ### Design tokens & gaps
-- Token mapping approach: {{map to existing DS tokens | raw candidates flagged}}.
-- Token gaps (Figma value with no DS token) are recorded in the spec and the DS
-  update is triggered via **CI**, not by the agent. CI trigger: **[NEEDS VERIFICATION]**.
+- Token mapping approach: {{map to DS / theme / CSS-var tokens | raw candidates flagged}}.
+- **With a Design System:** token gaps (Figma value with no DS token) are recorded in
+  the spec; the agent never edits the DS directly — any update follows the project's
+  own process ({{overlay/constitution: CI pipeline | DS-owner review | …}}).
+- **Without a Design System:** there are no gaps — map to the project's `tokenSource`
+  or keep raw values; do not open a token-gaps section.
 
 ### Required engineering gates (UI changes)
-- Every UI component created/modified MUST ship **automated tests** + a **Storybook**
-  story. The task breakdown enforces these as explicit sub-tasks.
+- Every UI component created/modified MUST ship **automated tests**. When the project
+  maintains a component catalog (e.g. Storybook), it MUST also ship the matching
+  entry. The task breakdown enforces these as explicit sub-tasks.
 
 ### Open confirmations (human-in-the-loop)
 {{#each PENDING}}- ⏳ {{message}}{{/each}}

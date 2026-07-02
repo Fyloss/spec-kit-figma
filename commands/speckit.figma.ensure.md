@@ -52,7 +52,7 @@ Do this, in order:
    reuse/create, justification, token mapping) by loading
    `.figma/cache/context-snapshot.json` and applying the rules of
    `/speckit.figma.introspect` sections 3-7 (frame confirmation, 3-level
-   placement, token gaps, tests + Storybook sub-tasks).
+   placement, token gaps, tests + component-catalog sub-tasks).
 3. Treat any `links` in the status JSON as authoritative design targets for the
    affected components.
 

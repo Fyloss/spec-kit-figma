@@ -7,7 +7,9 @@ description: Autonomously introspect the mapped Figma pages for the target packa
 You are the design-context agent. Operate autonomously across the mapped pages,
 but respect the explicit human-confirmation checkpoints below. Always load and
 obey `./.figma/figma-design-rules.md` (same path in a consumer workspace and in
-the extension checkout).
+the extension checkout), then load the optional user overlay
+`./.figma/figma-design-rules.local.md` if it exists. The overlay MAY add, refine
+or override any base rule; **on conflict, the overlay wins**.
 
 > **Automatic invocation:** the extension hooks (`before_specify` /
 > `before_tasks`) invoke `/speckit.figma.ensure`, which runs
@@ -123,33 +125,46 @@ default to "authentication required":
   cached `.figma/cache/context-snapshot.json` within the session; rely on the
   script's backoff for HTTP 429.
 
-## 3. Creative identification checkpoint (mobile + desktop)
+## 3. Creative identification checkpoint
 
-- For each component, identify the candidate **mobile** and **desktop** frames you
-  believe correspond to it. Before producing tasks from them, send the developer
-  the Figma deep links for both and ask them to confirm you targeted the right
-  creative. Proceed once confirmed; if the developer corrects you, re-introspect
+- For each component, identify the candidate frames you believe correspond to it,
+  across whatever breakpoints the design provides. Before producing tasks from them,
+  send the developer the Figma deep links and ask them to confirm you targeted the
+  right creative. Proceed once confirmed; if the developer corrects you, re-introspect
   the corrected node.
-- The project is **mobile-first**. Even when no tablet frame exists, the resulting
-  implementation MUST be responsive on tablet breakpoints — interpolate the tablet
-  layout from the mobile and desktop frames and state this explicitly.
+- **Responsive policy is project-specific** (design-rules base rule 4). Implement the
+  breakpoints the design provides; do not invent a layout for a breakpoint the mockups
+  do not show. Follow any responsive policy declared in the overlay
+  (`.figma/figma-design-rules.local.md`) or the project constitution — e.g. a
+  mobile-first policy may require interpolating an absent tablet breakpoint. Whenever
+  you interpolate, state it explicitly. Absent a declared policy, cover exactly the
+  breakpoints the mockups define and flag any gap instead of guessing.
 
 ## 4. Component placement (3-level resolution)
 
+First determine whether the project **has a Design System**: a package/path with
+`role: "design-system"` (mono/multi-repo) or a `designSystem` entry (single-repo) in
+`figma.projects.config.json`. **No DS configured?** Skip level 2 below — the
+resolution collapses to *reuse (from a shared lib) → create in app/lib*; never
+invent a Design System.
+
 For every component, decide placement and record an explicit justification:
 
-1. **Reuse** — query the Design System file/inventory (`designSystem`). If an
-   equivalent exists, generate a *reuse* task. Never duplicate it.
-2. **Create in Design System** — only if the component is **purely presentational
-   (no business logic, no data fetching, no routing, no domain state)** AND is used
-   across multiple apps. If business logic is present, it MUST NOT go to the DS.
-3. **Create in app / shared lib** — app-specific → app package; shared logic →
-   domain lib.
+1. **Reuse** — query the Design System inventory (`designSystem`) when configured,
+   else any shared lib. If an equivalent exists, generate a *reuse* task. Never
+   duplicate it.
+2. **Create in Design System** — only when a DS is configured AND the component is
+   **purely presentational (no business logic, no data fetching, no routing, no
+   domain state)** AND is reused (or clearly intended for reuse) beyond a single
+   feature or app. If business logic is present, it MUST NOT go to the DS. With no DS
+   configured, skip this level.
+3. **Create in app / shared lib** — feature/app-specific → app package; shared logic
+   → domain lib. This is the default target when there is no Design System.
 
 - **Shared mockups:** when a page is `shared: true` / `sharedAcross` lists several
-  apps (e.g. a product detail page add-to-cart, or a header with the user account icon shared by
-  several apps), route the component once to the shared location (DS if pure UI,
-  else shared lib) and reference it from each consuming app — never duplicate.
+  apps (e.g. a header, a navigation bar, or an authentication dialog reused by
+  several apps or features), route the component once to the shared location (DS if
+  pure UI, else shared lib) and reference it from each consumer — never duplicate.
 - **Doubt about the level:** if you are unsure where a component belongs, **ask the
   developer**, explaining precisely what is causing the doubt (e.g. "this card
   contains a price-formatting rule, which looks like business logic → DS is not
@@ -159,22 +174,28 @@ For every component, decide placement and record an explicit justification:
 
 ## 5. Token-gap detection
 
+- **No Design System / token source configured?** There are no token gaps to detect:
+  map values to whatever `tokenSource` the project declares (theme file, CSS
+  variables, …), or emit raw values as the norm. Do NOT open a "Design System Token
+  Gaps" section — a gap only exists relative to an existing DS/token source.
 - When mapping extracted Figma values to Design System tokens, if a value has no
   matching DS token (a **token gap**), do not silently invent one:
   - Record the gap in the spec under a **"Design System Token Gaps"** section
     (Figma value, nearest DS token if any, affected component).
-  - Ask whether the Design System should be updated. The DS update itself MUST be
-    triggered via CI (a pipeline job), not performed directly by the agent.
-    > NOTE: the exact CI trigger mechanism is **[NEEDS VERIFICATION]** — flag it.
+  - Ask whether the Design System should be updated. The agent NEVER mutates the
+    Design System directly; the DS update follows the project's own process (e.g. a
+    CI pipeline, or review by the DS owner), as declared in the overlay
+    (`.figma/figma-design-rules.local.md`) or the project constitution.
   - Until resolved, output the raw value flagged as a tokenization candidate.
 
-## 6. UI component changes → tests + Storybook
+## 6. UI component changes → tests (and component docs)
 
-- Whenever a task creates or modifies a UI component, it MUST also:
-  - add or update automated tests (unit/interaction) for that component, and
-  - create or update the corresponding **Storybook** story.
-- Emit these as explicit sub-tasks; a UI change without tests + Storybook is
-  considered incomplete.
+- Whenever a task creates or modifies a UI component, it MUST also add or update
+  automated tests (unit/interaction) for that component. Emit these as explicit
+  sub-tasks; a UI change without tests is incomplete.
+- When the project maintains a component catalog/workbench (e.g. Storybook), also
+  emit a sub-task to create or update the corresponding entry. Follow any overlay
+  rule that makes a specific catalog mandatory.
 
 ## 7. Output — render the section deterministically, then complete it
 
@@ -189,8 +210,9 @@ regardless of the agent model. Do not hand-assemble it from scratch:
    reports the path in `specSection` / `planSection` / `tasksSection`.
 2. **Paste that rendered block verbatim** into the generated document.
 3. **Complete the judgement fields** it leaves open (per-component placement +
-   justification, mobile/desktop frame links, tablet-responsive note, token
-   mappings, token gaps, tests/Storybook sub-tasks) using the rules above.
+   justification, frame links across the provided breakpoints, responsive note per
+   the project's policy, token mappings, token gaps, tests and component-catalog
+   sub-tasks) using the rules above.
 
 The templates live at `./.specify/templates/{spec,plan,tasks}-figma-section.template.md`
 (installed by `install.sh`) — used by the renderer and as a manual fallback if it

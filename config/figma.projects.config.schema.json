@@ -171,7 +171,7 @@
         "designSystem": {
           "type": "object",
           "additionalProperties": false,
-          "description": "Cross-reference to the Design System used for component-reuse resolution and token mapping.",
+          "description": "OPTIONAL cross-reference to the Design System used for component-reuse resolution and token mapping. Omit it for projects without a Design System: placement collapses to reuse -> app/lib and token gaps are not raised.",
           "properties": {
             "ref": { "type": "string", "description": "Key of the Design System target (multi-repo) it refers to." },
             "submodulePath": { "type": "string" },

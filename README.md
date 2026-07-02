@@ -23,10 +23,13 @@ submodules) layouts.
   is absent.
 - Enforces a **3-level component resolution** (reuse → create-in-DS → create-in-app)
   with the Design System kept **purely presentational** (no business logic).
+  **Works with or without a Design System**: when none is configured, the
+  resolution collapses to *reuse → app/lib* and token gaps are not raised.
 - Honors review remarks: direct Figma links in the input, shared mockups across
-  apps, mobile-first **tablet responsiveness** without a tablet mockup, **creative
-  confirmation** checkpoints, **token-gap** detection (DS update via CI), and
-  mandatory **tests + Storybook** on UI changes.
+  apps or features, a **project-defined responsive policy** (declared in the
+  overlay), **creative confirmation** checkpoints, **token-gap** detection (the
+  agent never edits the DS directly), and mandatory **automated tests** on UI
+  changes (plus a component-catalog entry when the project uses one, e.g. Storybook).
 
 ## Layout
 ```
@@ -53,7 +56,8 @@ submodules) layouts.
 │   ├── plan-figma-section.template.md
 │   └── tasks-figma-section.template.md
 ├── .figma/
-│   └── figma-design-rules.md           # non-negotiable agent rules (constitution; cache/ stays git-ignored)
+│   ├── figma-design-rules.md           # non-negotiable agent rules (constitution base; overwritten on update)
+│   └── figma-design-rules.local.md     # your overlay — overrides the base, preserved across updates (cache/ stays git-ignored)
 └── docs/
     └── INSTALL.md  CREDENTIALS.md  MONOREPO.md
 ```
