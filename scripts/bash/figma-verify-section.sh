@@ -6,7 +6,7 @@
 # section and guarantees the FILE exists, but it cannot guarantee the agent
 # actually PASTED it into the generated spec.md / plan.md / tasks.md. This
 # verification runs AFTER generation and checks that — when a Figma mockup was
-# detected for the run (i.e. the rendered `.figma/section.<phase>.md` exists) —
+# detected for the run (i.e. the rendered `.figma/cache/section.<phase>.md` exists) —
 # the corresponding document really contains the Figma section marker.
 #
 # Designed as a SAFE NO-OP by default: when Figma does not apply, the document

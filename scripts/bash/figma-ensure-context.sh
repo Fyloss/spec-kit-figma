@@ -195,7 +195,7 @@ snapshot_covers_links() {
 
 # Stale rendered sections from a previous run must not outlive it: the verifier
 # (figma-verify-section.sh) keys "Figma applied to this run" on the existence of
-# .figma/section.<phase>.md. clear_rendered_sections drops them so only THIS
+# .figma/cache/section.<phase>.md. clear_rendered_sections drops them so only THIS
 # run's renders remain.
 #
 # It is called on the paths where Figma DEFINITIVELY does not apply (no/invalid
@@ -206,7 +206,7 @@ snapshot_covers_links() {
 # for a run where Figma genuinely applies; leaving the prior render keeps the
 # gate honest (fail-closed, consistent with verify's own --strict policy).
 clear_rendered_sections() {
-  rm -f "$(figma_state_dir)"/section.*.md 2>/dev/null || true
+  rm -f "$(figma_cache_dir)"/section.*.md 2>/dev/null || true
 }
 
 if [[ ! -f "$CONFIG" ]]; then

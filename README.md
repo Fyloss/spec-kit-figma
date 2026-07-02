@@ -52,8 +52,8 @@ submodules) layouts.
 │   ├── spec-figma-section.template.md
 │   ├── plan-figma-section.template.md
 │   └── tasks-figma-section.template.md
-├── memory/
-│   └── figma-design-rules.md           # non-negotiable agent rules
+├── .figma/
+│   └── figma-design-rules.md           # non-negotiable agent rules (constitution; cache/ stays git-ignored)
 └── docs/
     └── INSTALL.md  CREDENTIALS.md  MONOREPO.md
 ```

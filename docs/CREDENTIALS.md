@@ -87,7 +87,8 @@ silently continue without a token.
 
 The agent **never needs the token**: the scripts load it internally, send it
 only as an `X-Figma-Token` header to `https://*.figma.com` (enforced), and
-never echo it. The design-rules memory and the commands instruct the agent to
+never echo it. The design-rules constitution (`.figma/figma-design-rules.md`)
+and the commands instruct the agent to
 rely exclusively on the scripts' JSON output. To enforce this at the harness
 level, deny the agent access to the token sources, e.g. for Claude Code in
 `.claude/settings.json`:
@@ -145,7 +146,7 @@ For a **GitHub Cloud Agent** accessing Figma (future-proofing):
   variable, so no code change is needed.
 - Apply **least privilege** and rotate on a schedule; restrict the secret to the
   environments that actually run SpecKit.
-- Never write the token to `.figma/context-snapshot.json` (the snapshot stores
+- Never write the token to `.figma/cache/context-snapshot.json` (the snapshot stores
   design structure only, no credentials).
 
 ## Troubleshooting — proxy vs. auth (read this before blaming the token)
@@ -194,4 +195,4 @@ after the auto-retry, the proxy/network — **not** the token — is at fault. T
   platform secret store.
 - Scripts MUST NOT echo the token. Validation rejects any `token`/`pat`/
   `accessToken` field found in the config.
-- `.figma/context-snapshot.json` MUST stay git-ignored.
+- `.figma/cache/context-snapshot.json` MUST stay git-ignored.

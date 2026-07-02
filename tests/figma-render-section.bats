@@ -7,7 +7,7 @@ setup() {
   SCRIPT="${SCRIPTS_DIR}/figma-render-section.sh"
   WORKSPACE="$(make_temp_workspace)"
   cd "$WORKSPACE"
-  SNAP="${WORKSPACE}/.figma/context-snapshot.json"
+  SNAP="${WORKSPACE}/.figma/cache/context-snapshot.json"
   cat > "$SNAP" <<'JSON'
 {
   "fileId": "AbC123",
@@ -43,11 +43,11 @@ teardown() {
   ! grep -q '{{FIGMA_FILE_ID}}' "$out"   # scalar placeholder is gone
 }
 
-@test "writes .figma/section.<phase>.md for each phase" {
+@test "writes .figma/cache/section.<phase>.md for each phase" {
   for phase in spec plan tasks; do
     run "$SCRIPT" --phase "$phase" --snapshot "$SNAP"
     [ "$status" -eq 0 ]
-    [ -f "${WORKSPACE}/.figma/section.${phase}.md" ]
+    [ -f "${WORKSPACE}/.figma/cache/section.${phase}.md" ]
   done
 }
 

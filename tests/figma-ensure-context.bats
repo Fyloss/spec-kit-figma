@@ -90,7 +90,7 @@ JSON
 
 @test "a fresh snapshot skips introspection" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
-  echo '{}' > "${WORKSPACE}/.figma/context-snapshot.json"
+  echo '{}' > "${WORKSPACE}/.figma/cache/context-snapshot.json"
   run "$SCRIPT"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.ran')" == "false" ]]
@@ -99,8 +99,8 @@ JSON
 
 @test "a config newer than the snapshot forces re-introspection" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
-  echo '{}' > "${WORKSPACE}/.figma/context-snapshot.json"
-  touch -t 202601010000 "${WORKSPACE}/.figma/context-snapshot.json"
+  echo '{}' > "${WORKSPACE}/.figma/cache/context-snapshot.json"
+  touch -t 202601010000 "${WORKSPACE}/.figma/cache/context-snapshot.json"
   run "$SCRIPT" --dry-run
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "dry-run" ]]
@@ -194,7 +194,7 @@ JSON
 
 @test "a direct link bypasses a fresh snapshot that does not cover its node" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
-  echo '{}' > "${WORKSPACE}/.figma/context-snapshot.json"
+  echo '{}' > "${WORKSPACE}/.figma/cache/context-snapshot.json"
   run "$SCRIPT" --dry-run --input \
     "https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
   [ "$status" -eq 0 ]
@@ -204,7 +204,7 @@ JSON
 @test "a fresh snapshot already covering the linked node stays fresh" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   echo '{"fileId":"LinkFILE999","nodes":{"nodes":{"12:345":{}}}}' \
-    > "${WORKSPACE}/.figma/context-snapshot.json"
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
   run "$SCRIPT" --dry-run --input \
     "https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
   [ "$status" -eq 0 ]
@@ -216,37 +216,37 @@ JSON
 @test "an applicable run marks the section mandatory and renders spec/plan/tasks" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   echo '{"fileId":"single123FILE","pages":[{"id":"0:1","name":"Home","frames":[{"id":"1:2","name":"Hero","type":"FRAME"}]}],"components":{},"styles":{}}' \
-    > "${WORKSPACE}/.figma/context-snapshot.json"
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
   run "$SCRIPT"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
   [[ "$(status_json | jq -r '.mustInject')" == "true" ]]
-  [[ "$(status_json | jq -r '.specSection')" == *".figma/section.spec.md" ]]
-  [[ "$(status_json | jq -r '.planSection')" == *".figma/section.plan.md" ]]
-  [[ "$(status_json | jq -r '.tasksSection')" == *".figma/section.tasks.md" ]]
-  [ -f "${WORKSPACE}/.figma/section.spec.md" ]
-  [ -f "${WORKSPACE}/.figma/section.plan.md" ]
-  [ -f "${WORKSPACE}/.figma/section.tasks.md" ]
-  grep -q "Hero" "${WORKSPACE}/.figma/section.spec.md"
+  [[ "$(status_json | jq -r '.specSection')" == *".figma/cache/section.spec.md" ]]
+  [[ "$(status_json | jq -r '.planSection')" == *".figma/cache/section.plan.md" ]]
+  [[ "$(status_json | jq -r '.tasksSection')" == *".figma/cache/section.tasks.md" ]]
+  [ -f "${WORKSPACE}/.figma/cache/section.spec.md" ]
+  [ -f "${WORKSPACE}/.figma/cache/section.plan.md" ]
+  [ -f "${WORKSPACE}/.figma/cache/section.tasks.md" ]
+  grep -q "Hero" "${WORKSPACE}/.figma/cache/section.spec.md"
 }
 
 @test "a broad link (file/page, no node-id) flags linkScope broad with candidate frames" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   echo '{"fileId":"BroadFILE","pages":[{"id":"0:1","name":"Home","frames":[{"id":"1:2","name":"Hero","type":"FRAME"},{"id":"1:3","name":"Footer","type":"FRAME"}]}]}' \
-    > "${WORKSPACE}/.figma/context-snapshot.json"
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
   run "$SCRIPT" --input "Build the home page https://www.figma.com/design/BroadFILE/Home"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
   [[ "$(status_json | jq -r '.linkScope')" == "broad" ]]
   [[ "$(status_json | jq -r '.candidateFrames | length')" == "2" ]]
   [[ "$(status_json | jq -r '.mustInject')" == "true" ]]
-  grep -qi "confirm which of these frames" "${WORKSPACE}/.figma/section.spec.md"
+  grep -qi "confirm which of these frames" "${WORKSPACE}/.figma/cache/section.spec.md"
 }
 
 @test "a link pinned to a top-level frame reports linkScope frame" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   echo '{"fileId":"PinFILE","nodes":{"nodes":{"9:9":{}}},"pages":[{"id":"0:1","name":"P","frames":[{"id":"9:9","name":"Card","type":"FRAME"}]}]}' \
-    > "${WORKSPACE}/.figma/context-snapshot.json"
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
   run "$SCRIPT" --input "https://www.figma.com/design/PinFILE/X?node-id=9-9"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
@@ -256,15 +256,15 @@ JSON
 # --- Review fixes: stale-section cleanup & broad/frame classification ----------
 
 @test "ensure clears stale rendered sections when Figma no longer applies" {
-  # No config -> no-config skip path. A leftover .figma/section.*.md from a prior
+  # No config -> no-config skip path. A leftover .figma/cache/section.*.md from a prior
   # run must be removed so the verifier does not treat this run as 'applicable'.
-  printf 'stale\n' > "${WORKSPACE}/.figma/section.tasks.md"
-  printf 'stale\n' > "${WORKSPACE}/.figma/section.spec.md"
+  printf 'stale\n' > "${WORKSPACE}/.figma/cache/section.tasks.md"
+  printf 'stale\n' > "${WORKSPACE}/.figma/cache/section.spec.md"
   run "$SCRIPT"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "no-config" ]]
-  [ ! -f "${WORKSPACE}/.figma/section.tasks.md" ]
-  [ ! -f "${WORKSPACE}/.figma/section.spec.md" ]
+  [ ! -f "${WORKSPACE}/.figma/cache/section.tasks.md" ]
+  [ ! -f "${WORKSPACE}/.figma/cache/section.spec.md" ]
 }
 
 @test "ensure preserves a prior rendered section on a transient introspect-failure" {
@@ -274,19 +274,19 @@ JSON
   # report not-applicable and let a --strict CI gate silently pass for a run where
   # Figma genuinely applies. Unlike no-config, this skip is transient -> keep it.
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
-  printf 'prior render\n' > "${WORKSPACE}/.figma/section.tasks.md"
+  printf 'prior render\n' > "${WORKSPACE}/.figma/cache/section.tasks.md"
   unset FIGMA_PAT
   run "$SCRIPT"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "introspect-failed" ]]
-  [ -f "${WORKSPACE}/.figma/section.tasks.md" ]
+  [ -f "${WORKSPACE}/.figma/cache/section.tasks.md" ]
 }
 
 @test "a link to a deep-fetched node that is not a top-level frame stays pinned (linkScope frame)" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   # 50:9 is deep-fetched into .nodes.nodes but is NOT a top-level page frame.
   echo '{"fileId":"DeepFILE","nodes":{"nodes":{"50:9":{}}},"pages":[{"id":"0:1","name":"P","frames":[{"id":"1:2","name":"Hero","type":"FRAME"}]}]}' \
-    > "${WORKSPACE}/.figma/context-snapshot.json"
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
   run "$SCRIPT" --input "https://www.figma.com/design/DeepFILE/X?node-id=50-9"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
@@ -297,7 +297,7 @@ JSON
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   # 0:1 IS a page id in the snapshot, not a specific frame.
   echo '{"fileId":"PageFILE","nodes":{"nodes":{"0:1":{}}},"pages":[{"id":"0:1","name":"Home","frames":[{"id":"1:2","name":"Hero","type":"FRAME"},{"id":"1:3","name":"Footer","type":"FRAME"}]}]}' \
-    > "${WORKSPACE}/.figma/context-snapshot.json"
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
   run "$SCRIPT" --input "https://www.figma.com/design/PageFILE/Home?node-id=0-1"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
@@ -311,7 +311,7 @@ JSON
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   # 7:7 is deep-fetched with type CANVAS but is NOT in .pages[].id.
   echo '{"fileId":"CanvFILE","nodes":{"nodes":{"7:7":{"document":{"type":"CANVAS"}}}},"pages":[{"id":"0:1","name":"P","frames":[{"id":"1:2","name":"Hero","type":"FRAME"}]}]}' \
-    > "${WORKSPACE}/.figma/context-snapshot.json"
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
   run "$SCRIPT" --input "https://www.figma.com/design/CanvFILE/X?node-id=7-7"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
@@ -321,7 +321,7 @@ JSON
 @test "a link to a SECTION-type node stays pinned (linkScope frame)" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   echo '{"fileId":"SecFILE","nodes":{"nodes":{"8:8":{"document":{"type":"SECTION"}}}},"pages":[{"id":"0:1","name":"P","frames":[{"id":"1:2","name":"Hero","type":"FRAME"}]}]}' \
-    > "${WORKSPACE}/.figma/context-snapshot.json"
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
   run "$SCRIPT" --input "https://www.figma.com/design/SecFILE/X?node-id=8-8"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "fresh" ]]

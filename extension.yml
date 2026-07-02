@@ -29,7 +29,7 @@ provides:
 
     - name: speckit.figma.update
       file: commands/speckit.figma.update.md
-      description: "Update an already-installed Figma extension to a newer version: re-sync the helper scripts, templates, design-rules memory and hooks, re-register the slash-commands, and report old -> new. Idempotent; preserves figma.projects.config.json and needs no uninstall."
+      description: "Update an already-installed Figma extension to a newer version: re-sync the helper scripts, templates, design-rules constitution and hooks, re-register the slash-commands, and report old -> new. Idempotent; preserves figma.projects.config.json and needs no uninstall."
 
     - name: speckit.figma.ensure
       file: commands/speckit.figma.ensure.md
