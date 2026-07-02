@@ -29,6 +29,42 @@ teardown() {
   [ -f "${WORKSPACE}/.figma/figma-design-rules.md" ]
 }
 
+@test "install scaffolds the design-rules custom overlay in .figma/" {
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/.figma/figma-design-rules.custom.md" ]
+}
+
+@test "re-running install preserves user edits to the custom overlay (skip-if-exists)" {
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  printf '\n## My project rule\n- custom line\n' >> "${WORKSPACE}/.figma/figma-design-rules.custom.md"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  grep -qF "My project rule" "${WORKSPACE}/.figma/figma-design-rules.custom.md"
+  [[ "$output" == *"figma-design-rules.custom.md already exists"* ]]
+}
+
+@test "install always refreshes the base but never overwrites the custom overlay" {
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  # User tampers with both files.
+  printf 'tampered base\n' > "${WORKSPACE}/.figma/figma-design-rules.md"
+  printf 'tampered custom\n' > "${WORKSPACE}/.figma/figma-design-rules.custom.md"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  # The base is extension-owned: it is restored.
+  ! grep -qxF "tampered base" "${WORKSPACE}/.figma/figma-design-rules.md"
+  # The overlay is user-owned: it is left untouched.
+  grep -qxF "tampered custom" "${WORKSPACE}/.figma/figma-design-rules.custom.md"
+}
+
+@test "install never git-ignores the custom overlay (CI / Cloud Agents must see it)" {
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  ! grep -q "figma-design-rules.custom.md" "${WORKSPACE}/.gitignore"
+}
+
 @test "install removes a legacy .specify/memory design-rules copy" {
   mkdir -p "${WORKSPACE}/.specify/memory"
   printf 'legacy\n' > "${WORKSPACE}/.specify/memory/figma-design-rules.md"

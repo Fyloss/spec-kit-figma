@@ -65,7 +65,7 @@ different tools, and you need both, exactly as on first install:
 
 | What | Tool | Notes |
 | --- | --- | --- |
-| Assets + hooks (`.specify/scripts`, `.specify/templates`, `.figma/figma-design-rules.md`, prompt hooks) | `install.sh` | idempotent; never overwrites `figma.projects.config.json` |
+| Assets + hooks (`.specify/scripts`, `.specify/templates`, `.figma/figma-design-rules.md`, prompt hooks) | `install.sh` | idempotent; never overwrites `figma.projects.config.json` or the design-rules overlay `.figma/figma-design-rules.custom.md` |
 | Slash-command registration (`speckit.figma.*`, per agent format) | `specify extension add figma` | agent-format aware; the **only** thing that registers commands, and what records the installed version at `.specify/extensions/figma/extension.yml` |
 
 The new files come from an updated extension source, so first **re-acquire** it
@@ -144,6 +144,15 @@ Map them to your agent's command location, e.g.:
 The installer already copies the design-rules constitution to
 `.figma/figma-design-rules.md` so the rules ship with the workspace; copy it
 manually only if you skipped `install.sh`.
+
+### Customizing the design rules (persists across updates)
+`.figma/figma-design-rules.md` is the **extension-owned base**: it is overwritten
+on every `/speckit.figma.update`, so never edit it. To customize the rules, edit
+the **user overlay** `.figma/figma-design-rules.custom.md`, which the installer
+creates once from a template and **never** overwrites. The agent loads the overlay
+right after the base and, **on conflict, the overlay wins** — so it can add, refine
+or override any base rule (e.g. declare your responsive policy, make a specific
+component catalog mandatory, or add naming conventions). Commit both files.
 
 ## 5. Validate the setup
 ```bash

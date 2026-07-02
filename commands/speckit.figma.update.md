@@ -5,13 +5,17 @@ description: Update an already-installed Figma extension in this workspace to a 
 # /speckit.figma.update — Update the Figma extension in this workspace
 
 You are updating, not configuring. Do NOT re-run the interactive setup flow and
-do NOT touch `figma.projects.config.json` — the user's configuration is
-preserved. This command only re-applies the extension's code at a newer version.
+do NOT touch `figma.projects.config.json` or the design-rules overlay
+`.figma/figma-design-rules.custom.md` — the user's configuration and customizations
+are preserved. This command only re-applies the extension's code at a newer
+version.
 
 Updating an extension is two complementary jobs, and they are NOT the same tool:
 
-- **Assets + hooks** (`.specify/scripts`, `.specify/templates`,
-  `.figma/figma-design-rules.md`, the prompt hooks) → the extension's own `install.sh`.
+- **Assets + hooks** (`.specify/scripts`, `.specify/templates`, the design-rules
+  base `.figma/figma-design-rules.md`, the prompt hooks) → the extension's own
+  `install.sh`. The base is always refreshed; the user overlay
+  `.figma/figma-design-rules.custom.md` is created once and never overwritten.
 - **Slash-command registration** (the `speckit.figma.*` command files, per agent
   format) → SpecKit's native `specify extension add`. This is also what records
   the installed version at `.specify/extensions/figma/extension.yml`.

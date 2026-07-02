@@ -25,8 +25,9 @@ figma_repo_root() {
   git rev-parse --show-toplevel 2>/dev/null || pwd
 }
 
-# Per-workspace Figma directory. Committed content (e.g. figma-design-rules.md)
-# lives at its root; every generated/cached artifact (snapshot + rendered
+# Per-workspace Figma directory. Committed content (the design-rules base
+# figma-design-rules.md and the user overlay figma-design-rules.custom.md) lives at
+# its root; every generated/cached artifact (snapshot + rendered
 # sections) lives under cache/ so a single `.figma/cache/` entry in .gitignore
 # covers them all.
 figma_state_dir() {

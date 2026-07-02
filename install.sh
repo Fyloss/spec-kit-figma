@@ -11,7 +11,10 @@
 #     commands invoke ./.specify/scripts/bash/*.sh from the workspace root, the
 #     SpecKit convention — alongside .specify/memory/)
 #   - ensures the .figma/cache/ directory (generated/cached artifacts) is git-ignored
-#   - installs the design-rules constitution into .figma/ (committed, next to cache/)
+#   - installs the design-rules constitution base into .figma/ (committed, next to
+#     cache/; extension-owned, always refreshed) and creates the user overlay
+#     .figma/figma-design-rules.custom.md once (skip-if-exists; never overwritten,
+#     so project customizations survive updates)
 #   - by default LEAVES the /speckit.specify, /speckit.plan and /speckit.tasks
 #     prompts untouched (automatic Figma context runs via the extension.yml hooks
 #     before_specify/before_plan/before_tasks -> /speckit.figma.ensure) and removes any
@@ -119,6 +122,21 @@ echo "ADDED: .figma/figma-design-rules.md"
 # Earlier versions installed it under .specify/memory/; drop that copy so a
 # single canonical file remains.
 rm -f "$TARGET/.specify/memory/figma-design-rules.md" 2>/dev/null || true
+
+# The user overlay is created ONCE and NEVER overwritten: it holds project-specific
+# customizations that must survive every update. On conflict with the base above,
+# the overlay wins (see "Layering & precedence" in the base file). Without an
+# overlay the base rules apply unchanged. Skipped when the target IS the extension
+# checkout, so its own repo is not polluted with an untracked overlay.
+if [[ "$TARGET_REAL" != "$EXT_DIR" ]]; then
+  CUSTOM_DEST="$TARGET/.figma/figma-design-rules.custom.md"
+  if [[ -f "$CUSTOM_DEST" ]]; then
+    echo "SKIP: .figma/figma-design-rules.custom.md already exists (user overlay, not overwritten)."
+  else
+    cp "$EXT_DIR/config/figma-design-rules.custom.example.md" "$CUSTOM_DEST"
+    echo "ADDED: .figma/figma-design-rules.custom.md (user overlay — customize freely; preserved across updates)."
+  fi
+fi
 
 # The section templates MUST be installed so figma-render-section.sh can produce
 # the ready-to-paste spec/plan/tasks blocks in the workspace (not only from the
