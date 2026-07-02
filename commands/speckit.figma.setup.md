@@ -23,14 +23,29 @@ Run these from the workspace root. The short names used below map to:
    multiple apps, propose `mode: "mono-repo"`. Otherwise default to
    `mode: "single-repo"` (one repository, one front-end app). Ask the user to confirm.
 
-2. **Scaffold config.** If `figma.projects.config.json` does not exist at the
-   workspace root, run the extension's `install.sh --mode <mode>` (it copies the
-   matching `figma.projects.config.{singlerepo|monorepo|multirepo}.example.json`
-   from the extension checkout's `config/` directory) and adapt the result: list
-   the front-end targets, mark back-end / infra / BFF targets under `excluded`,
-   and fill `pageToPackageMapping` and `routingRules`.
+2. **Sync assets, then scaffold config.** Always run the extension's
+   `install.sh --mode <mode>` first — it is idempotent and is what keeps an
+   already-installed workspace up to date: it refreshes the helper scripts,
+   section templates and design-rules memory, re-wires the hooks, checks the
+   synced asset version against the version SpecKit has registered (at
+   `.specify/extensions/figma/extension.yml`) and flags a mismatch, and warns if
+   any figma slash-command is missing for a configured agent (run `specify
+   extension add figma` to (re)register those). Do NOT gate this on whether the config already
+   exists — that was the bug that left re-runs stale. `install.sh` only
+   *scaffolds* `figma.projects.config.json` (from the matching
+   `figma.projects.config.{singlerepo|monorepo|multirepo}.example.json` in the
+   extension checkout's `config/`) when it is absent, and never overwrites an
+   existing one. When it has just been scaffolded, adapt it: list the front-end
+   targets, mark back-end / infra / BFF targets under `excluded`, and fill
+   `pageToPackageMapping` and `routingRules`. If the config already existed,
+   leave it untouched unless the user asks to reconfigure a specific field.
 
 3. **Credentials.** Ensure `credentials.source` is set:
+   - **Scopes (read-only).** A single-file setup needs `file_content:read` +
+     `file_metadata:read`. A `figmaProjectId` or `figmaTeamId(s)` setup (the
+     org-level granularity) **additionally requires `projects:read`** — without it the
+     team/project enumeration fails with `403`/`404`. Instruct the user to select
+     all three scopes when any project/team id is used (see `docs/CREDENTIALS.md`).
    - `env` for local development → instruct the user to store their own
      **read-only** Figma PAT in the OS keychain and export `FIGMA_PAT_COMMAND`
      from their shell profile (NOT in the workspace — there is no `.env`), e.g.:
@@ -38,7 +53,7 @@ Run these from the workspace root. The short names used below map to:
      security add-generic-password -s figma-pat -a "$USER" -w 'figd_xxxxxxxx'
      echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"' >> ~/.zshrc
      ```
-     Confirm `.figma-context-snapshot.json` is git-ignored. Never write a token
+     Confirm `.figma/context-snapshot.json` is git-ignored. Never write a token
      to any workspace file (see `docs/CREDENTIALS.md`).
    - `ci-secret` for CI / GitHub Cloud Agent → set `secretName` (and `envVar`
      when the variable injected at runtime differs from the secret name) and
@@ -56,6 +71,22 @@ Run these from the workspace root. The short names used below map to:
      `mcp.fallbackToRest: true` (default) so the extension degrades gracefully to
      REST when the server is absent. Only set it to `false` when MCP is mandatory
      for the run. Recommend keeping `rest` in CI.
+   - **If the user is on Claude Code, recommend the official Figma plugin** as the
+     simplest MCP path: `claude plugin install figma@claude-plugins-official`. It
+     connects Claude Code to Figma's hosted MCP server (`https://mcp.figma.com/mcp`)
+     as a native tool, so once installed the user only needs
+     `figma.contextSource: "mcp"` — no local Dev Mode server. The `resolve` script
+     (step 7) reports whether Claude Code is detected and whether this plugin is
+     present; surface the recommendation when it is missing.
+   - **If the user is on VS Code, recommend adding the same hosted server**
+     (`https://mcp.figma.com/mcp`) to whatever VS Code agent they use. With
+     **GitHub Copilot (agent mode)**, which consumes VS Code's native MCP support,
+     use **MCP: Add Server…** (HTTP) or a `.vscode/mcp.json` entry
+     `{"servers":{"figma":{"type":"http","url":"https://mcp.figma.com/mcp"}}}`.
+     Other VS Code agents (Cline, Continue, the Claude Code extension…) read their
+     own MCP config — add the same URL there instead. Then set
+     `figma.contextSource: "mcp"`. Auto-detection is Claude-Code-only, so in VS
+     Code this step is manual.
 
 4. **Replace placeholders.** Substitute every `REPLACE_WITH_*` value with a real
    Figma id. Pick the level that matches how the team's design is organized:
@@ -65,7 +96,8 @@ Run these from the workspace root. The short names used below map to:
      → a whole team (the agent enumerates every project, then every file). Use the
      `config/figma.projects.config.organization.example.json` example as a
      starting point for an org-with-multiple-teams setup. At least one of these
-     ids MUST be set per enabled target.
+     ids MUST be set per enabled target. **Reminder:** `figmaProjectId` /
+     `figmaTeamId(s)` require the PAT to carry the `projects:read` scope (step 3).
 
 5. **Validate.** Run the `validate` script. If it exits non-zero, surface the
    exact error and stop — do not proceed to spec generation with an invalid config.
@@ -76,6 +108,11 @@ Run these from the workspace root. The short names used below map to:
 7. **Engine check.** Run `resolve` to confirm the effective engine. With
    `contextSource: "mcp"` and no server running, expect `fellBack: true` and
    `effective: "rest"` — confirm the fallback is acceptable for this environment.
+   Also read `claudeCode` from the JSON: when `claudeCode.detected` is `true` and
+   `claudeCode.officialFigmaPlugin` is `false`, recommend
+   `claude plugin install figma@claude-plugins-official` (see step 3b). The script
+   prints the same reminder on stderr unless `FIGMA_NO_PLUGIN_ADVICE=1` is set.
 
 Report a concise summary: mode, enabled targets, excluded targets, credential
-source, context engine (requested + effective), and validation result.
+source, context engine (requested + effective), the Claude Code / Figma-plugin
+status, and validation result.

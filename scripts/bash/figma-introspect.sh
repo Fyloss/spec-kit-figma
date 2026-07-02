@@ -17,7 +17,7 @@
 # --config points at a custom figma.projects.config.json (defaults to
 # $FIGMA_CONFIG, then <root>/figma.projects.config.json) — same contract as the
 # sibling validate/detect/resolve scripts.
-# Output: writes <root>/.figma-context-snapshot.json and prints an index.
+# Output: writes <root>/.figma/context-snapshot.json and prints an index.
 #
 # API responses are staged in temp files and handed to jq via --slurpfile:
 # real Figma files easily exceed the kernel's per-argument size limit, so they
@@ -62,6 +62,7 @@ if [[ -n "${FIGMA_CONFIG:-}" && ! -f "$FIGMA_CONFIG" ]]; then
 fi
 
 CACHE="$(figma_cache_path)"
+mkdir -p "$(dirname "$CACHE")"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 

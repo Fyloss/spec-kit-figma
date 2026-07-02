@@ -45,8 +45,22 @@ echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"'
 source ~/.zshrc
 ```
 
-Generate the PAT at <https://www.figma.com/developers/api#access-tokens> with the
-minimal scopes: `file_content:read`, `file_metadata:read`.
+Generate the PAT at <https://www.figma.com/developers/api#access-tokens>. **The
+scopes depend on the introspection level declared in `figma.projects.config.json`**
+— the documented minimum (`file_content:read`, `file_metadata:read`) only covers a
+**single file**. Team / project enumeration additionally needs **`projects:read`**:
+
+| Config level | Endpoints used | Required read-only scopes |
+|---|---|---|
+| `figmaFileId` (single file) | `GET /files/:key`, `GET /files/:key/nodes` | `file_content:read`, `file_metadata:read` |
+| `figmaProjectId` (whole project) | `+ GET /projects/:project_id/files` | `+ projects:read` |
+| `figmaTeamId` / `figmaTeamIds` (whole team / org) | `+ GET /teams/:team_id/projects` | `+ projects:read` |
+
+> **Org-level setups (the `figmaTeamId(s)` granularity):** select **all three** scopes —
+> `file_content:read`, `file_metadata:read`, `projects:read`. Without `projects:read`
+> the team/project enumeration returns `403`/`404` (the introspection then fails with a
+> `projects:read`-scope hint) even though individual files would read fine. The PAT
+> owner must also be a **member of every team** being enumerated.
 
 The scripts run `FIGMA_PAT_COMMAND` at call time and read the token from its
 stdout. It is executed **without a shell** (tokenized exec), so pipes or
@@ -62,9 +76,12 @@ long as the token is printed on stdout, e.g.:
 | `pass`         | `pass show figma/pat` |
 | `secret-tool`  | `secret-tool lookup service figma-pat` |
 
-Resolution order in the scripts: environment variable (`FIGMA_PAT`) >
-`FIGMA_PAT_COMMAND`. There is **no `.env` fallback** — if neither is set the
-scripts fail with an explicit error pointing back here.
+Resolution order in the scripts: the environment variable named by
+`credentials.envVar` (default `FIGMA_PAT`) > `FIGMA_PAT_COMMAND`. There is **no
+`.env` fallback** — if neither is set the scripts fail with an explicit error
+pointing back here. If `FIGMA_PAT_COMMAND` is set but its command fails or
+prints nothing, the scripts warn and then fail with that same error; they never
+silently continue without a token.
 
 ## Keeping the token away from the agent
 
@@ -128,8 +145,46 @@ For a **GitHub Cloud Agent** accessing Figma (future-proofing):
   variable, so no code change is needed.
 - Apply **least privilege** and rotate on a schedule; restrict the secret to the
   environments that actually run SpecKit.
-- Never write the token to `.figma-context-snapshot.json` (the snapshot stores
+- Never write the token to `.figma/context-snapshot.json` (the snapshot stores
   design structure only, no credentials).
+
+## Troubleshooting — proxy vs. auth (read this before blaming the token)
+
+The Figma REST API (`api.figma.com`) is a **public** endpoint. The single most
+common false diagnosis is reporting an **authentication** failure when the real
+problem is a **corporate proxy** that cannot reach figma.com.
+
+**HTTP 000 / `curl` exit 5 = proxy, not auth.** Concretely:
+
+| Symptom | Real cause | What the scripts report |
+|---|---|---|
+| `curl` exit `5` ("couldn't resolve proxy"), HTTP `000` | broken/unreachable proxy | `NETWORK/PROXY error` (code `NETWORK`) |
+| `curl` exit `6` with a proxy set | proxy DNS failure | `NETWORK/PROXY error` (code `NETWORK`) |
+| HTTP `401` / `403` | missing/invalid PAT or insufficient scope | `AUTH/SCOPE error` (code `AUTH`) |
+| HTTP `404` | wrong key, or PAT owner not a team member | `NOT FOUND` (code `NOT_FOUND`) |
+
+**Self-healing:** the single curl chokepoint (`figma_curl_get` in
+`figma-common.sh`) detects a proxy-connection failure (exit 5, or exit 6 / HTTP
+000 with a proxy configured) and **retries once with every proxy variable
+stripped**:
+
+```bash
+env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
+    "no_proxy=*" "NO_PROXY=*" curl ...
+```
+
+This works in **both** topologies without configuration:
+- **broken corporate proxy** (proxy → exit 5, direct → 200): the strip retry
+  reaches Figma directly;
+- **proxy-only egress** (CI / locked-down: direct fails, proxy is the only way
+  out): the first, proxy-configured attempt already succeeds, so the strip never
+  runs.
+
+The retry is transport-only: the PAT is still sent solely as the `X-Figma-Token`
+header to `https://*.figma.com`, never logged. If a `NETWORK` error persists
+after the auto-retry, the proxy/network — **not** the token — is at fault. The
+`figma.ensure` status JSON carries a machine-readable `code`
+(`NETWORK`/`AUTH`/`NOT_FOUND`) so the calling command reports the true cause.
 
 ## Hard rules
 - The token MUST NOT appear in any committed file (`figma.projects.config.json`,
@@ -139,4 +194,4 @@ For a **GitHub Cloud Agent** accessing Figma (future-proofing):
   platform secret store.
 - Scripts MUST NOT echo the token. Validation rejects any `token`/`pat`/
   `accessToken` field found in the config.
-- `.figma-context-snapshot.json` MUST stay git-ignored.
+- `.figma/context-snapshot.json` MUST stay git-ignored.

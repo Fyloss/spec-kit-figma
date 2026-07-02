@@ -65,8 +65,8 @@ FAKE
 
   run "$SCRIPT" --file BIGFILEKEY
   [ "$status" -eq 0 ]
-  [ -f "${WORKSPACE}/.figma-context-snapshot.json" ]
-  run jq -r '.pages | length' "${WORKSPACE}/.figma-context-snapshot.json"
+  [ -f "${WORKSPACE}/.figma/context-snapshot.json" ]
+  run jq -r '.pages | length' "${WORKSPACE}/.figma/context-snapshot.json"
   [ "$output" = "1" ]
 }
 

@@ -38,6 +38,17 @@ Run these from the workspace root. The short names used below map to:
   **authoritative design target**: use it directly (via `introspect --file <id>
   --node <nodeId>`) instead of, or in addition to, the page mapping. Direct links
   always take precedence over config mapping for the components they reference.
+- **Broad link (file/page, no specific frame).** When a link has **no `nodeId`**,
+  or its `nodeId` is a page/canvas rather than a top-level FRAME, the target
+  creative is NOT pinned down. Do **not** record "the creative was not explicitly
+  indicated" and stop. Instead introspect the file, **enumerate its top-level
+  frames as a numbered list** (frame name + node id, grouped by page) and **ask
+  the developer which frame(s)** the feature targets — this is the
+  creative-confirmation checkpoint (section 3). Proceed once they pick one, then
+  drill into that node. Only continue without a pinned creative if they do not
+  answer, and then surface a visible warning rather than a silent skip. (The
+  `ensure` hook reports this as `"linkScope": "broad"` with a `candidateFrames`
+  list ready to present.)
 
 ## 1. Gate
 
@@ -49,7 +60,7 @@ Run these from the workspace root. The short names used below map to:
 
 - Run the `resolve` script. It returns the **effective** engine for this run:
   - `effective: "rest"` — use the portable REST engine: drive `introspect` (curl +
-    jq) and reason over the resulting `.figma-context-snapshot.json`. This is the
+    jq) and reason over the resulting `.figma/context-snapshot.json`. This is the
     default and the only engine guaranteed in CI.
   - `effective: "mcp"` — a Figma **MCP server** is configured and reachable. Prefer
     its richer tools (e.g. code/variables/screenshot retrieval) for design context,
@@ -63,6 +74,23 @@ Run these from the workspace root. The short names used below map to:
 - Never assume MCP is present: portability (REST) is the contract; MCP is an
   opt-in enrichment for those who run the server.
 
+## 1c. When introspection fails — report the true cause, never guess
+
+If `introspect` exits non-zero, it has already classified the failure and printed
+a cause-specific diagnostic to **stderr**. Read it and report that cause — do not
+default to "authentication required":
+
+- `NETWORK/PROXY error` (curl exit 5, or exit 6 / HTTP `000` with a proxy set) —
+  a corporate proxy or the network cannot reach `api.figma.com`. The single curl
+  chokepoint already retried once with every proxy variable stripped; if it still
+  failed, the **proxy/network is at fault, not the token**. See docs/CREDENTIALS.md
+  → "Troubleshooting — proxy vs auth".
+- `AUTH/SCOPE error` (`401/403`) — the PAT is missing, expired, or lacks
+  `projects:read` / `file_content:read`. See docs/CREDENTIALS.md. Never suggest
+  exporting the token by hand or creating a `.env`.
+- `404` — the file/project/team key is wrong, or the PAT owner is not a member of
+  that team.
+
 ## 2. Autonomous traversal
 
 - Resolve the design source for the target from the strongest signal available
@@ -72,7 +100,7 @@ Run these from the workspace root. The short names used below map to:
   - `figmaTeamId` / `figmaTeamIds` set → run `introspect --team <teamId>` (repeat
     `--team` for each id). The script enumerates **every project of each team**,
     then **every file of each project**, writing a nested `teams[] → projects[] →
-    files[]` index into `.figma-context-snapshot.json`. Use it to autonomously
+    files[]` index into `.figma/context-snapshot.json`. Use it to autonomously
     pick the relevant files, then drill into their pages.
   - `figmaProjectId` set → run `introspect --project <projectId>` to enumerate all
     files of that single project.
@@ -92,7 +120,7 @@ Run these from the workspace root. The short names used below map to:
   --depth <N>` with a deeper tree and/or `introspect --file <id> --node
   <nodeId>` for each frame of interest — the raw node JSON (fills, typography,
   spacing, radius, shadows) lands in the snapshot's `nodes` field. Reuse the
-  cached `.figma-context-snapshot.json` within the session; rely on the
+  cached `.figma/context-snapshot.json` within the session; rely on the
   script's backoff for HTTP 429.
 
 ## 3. Creative identification checkpoint (mobile + desktop)
@@ -148,9 +176,22 @@ For every component, decide placement and record an explicit justification:
 - Emit these as explicit sub-tasks; a UI change without tests + Storybook is
   considered incomplete.
 
-## 7. Output
+## 7. Output — render the section deterministically, then complete it
 
-Produce a design-context block (using `templates/spec-figma-section.template.md` and
-`templates/tasks-figma-section.template.md`) containing: introspected pages, per-component
-placement + justification, mobile/desktop frame links, tablet-responsive note,
-token mappings, token gaps, and the required tests/Storybook sub-tasks.
+The design section is **mandatory** in spec/plan/tasks whenever Figma applies,
+regardless of the agent model. Do not hand-assemble it from scratch:
+
+1. Run the renderer for the phase you are generating, e.g.
+   `./.specify/scripts/bash/figma-render-section.sh --phase spec` (or `plan` /
+   `tasks`). It fills every deterministic placeholder from the snapshot (file,
+   pages, top-level frames, components/styles, context engine, input links) and
+   writes `.figma/section.<phase>.md`. The `ensure` hook already does this and
+   reports the path in `specSection` / `planSection` / `tasksSection`.
+2. **Paste that rendered block verbatim** into the generated document.
+3. **Complete the judgement fields** it leaves open (per-component placement +
+   justification, mobile/desktop frame links, tablet-responsive note, token
+   mappings, token gaps, tests/Storybook sub-tasks) using the rules above.
+
+The templates live at `./.specify/templates/{spec,plan,tasks}-figma-section.template.md`
+(installed by `install.sh`) — used by the renderer and as a manual fallback if it
+fails. Never omit the section when a Figma creation applies.

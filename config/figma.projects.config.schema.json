@@ -34,6 +34,11 @@
           "default": "rest",
           "description": "Design-context engine. 'rest' (default) is fully portable and CI-friendly (curl + jq against the Figma REST API). 'mcp' uses a Model Context Protocol Figma server for richer context when available, and automatically falls back to 'rest' when the MCP server is unreachable (unless mcp.fallbackToRest is false)."
         },
+        "verifyStrict": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, figma-verify-section.sh (run after generation, e.g. in CI) exits non-zero if a detected Figma mockup's design section is missing from the generated spec/plan/tasks document. Default false keeps the post-generation check non-blocking; the agent self-corrects instead."
+        },
         "mcp": {
           "type": "object",
           "additionalProperties": false,

@@ -6,10 +6,10 @@
 
 ## Figma Design Context *(extension: figma)*
 
-- **Mode**: {{multi-repo | mono-repo}}
+- **Mode**: {{single-repo | mono-repo | multi-repo}}
 - **Target package**: {{TARGET_PACKAGE}}  ·  **Role**: {{design-system | app-host | app | lib}}
 - **Figma file**: `{{FIGMA_FILE_ID}}`  ·  **Project**: `{{FIGMA_PROJECT_ID | n/a}}`
-- **Snapshot**: `.figma-context-snapshot.json` @ {{GENERATED_AT}}  ·  Figma `lastModified`: {{LAST_MODIFIED}}
+- **Snapshot**: `.figma/context-snapshot.json` @ {{GENERATED_AT}}  ·  Figma `lastModified`: {{LAST_MODIFIED}}
 
 ### Direct links provided in input
 {{#each DIRECT_LINKS}}- [{{url}}] → file `{{fileId}}`, node `{{nodeId}}`{{/each}}

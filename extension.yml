@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: figma
   name: "Spec Kit Figma"
-  version: "1.0.0"
+  version: "1.1.0"
   description: "Agent-agnostic Figma design-context extension for SpecKit. Grounds spec/plan/tasks/implement in Figma. Supports single-repo (default), mono-repo and multi-repo layouts, with a portable REST engine (default) and an optional MCP engine for more faithful mockup implementation."
   author: "Fyloss"
   repository: "https://github.com/Fyloss/spec-kit-figma"
@@ -27,13 +27,21 @@ provides:
       file: commands/speckit.figma.setup.md
       description: "Configure the SpecKit Figma extension for this workspace and validate connectivity before any spec/plan/tasks run. Selects the REST engine (portable, CI-friendly) or the MCP engine, which yields more faithful mockup implementation."
 
+    - name: speckit.figma.update
+      file: commands/speckit.figma.update.md
+      description: "Update an already-installed Figma extension to a newer version: re-sync the helper scripts, templates, design-rules memory and hooks, re-register the slash-commands, and report old -> new. Idempotent; preserves figma.projects.config.json and needs no uninstall."
+
     - name: speckit.figma.ensure
       file: commands/speckit.figma.ensure.md
-      description: "Automatically refresh the Figma design context (incl. direct Figma links pasted in the feature input) before spec/tasks generation. Safe no-op when Figma does not apply; invoked by the before_specify/before_tasks hooks."
+      description: "Automatically refresh the Figma design context (incl. direct Figma links pasted in the feature input) before spec/plan/tasks generation, and render the ready-to-paste design section so it is integrated regardless of agent model. Safe no-op when Figma does not apply; invoked by the before_specify/before_plan/before_tasks hooks."
 
     - name: speckit.figma.introspect
       file: commands/speckit.figma.introspect.md
       description: "Autonomously introspect the mapped Figma pages for the target package and produce design-grounded context for spec/plan/tasks."
+
+    - name: speckit.figma.verify
+      file: commands/speckit.figma.verify.md
+      description: "After generation, verify the Figma design section was integrated into spec/plan/tasks when a mockup was detected, and self-correct if missing. Strict mode (--strict / figma.verifyStrict) makes it a CI gate."
 
 hooks:
   before_specify:
@@ -41,10 +49,30 @@ hooks:
     optional: false
     description: "Automatically refresh and inject Figma design context (incl. direct links in the feature input) before specification generation; safe no-op when Figma does not apply"
 
+  before_plan:
+    command: speckit.figma.ensure
+    optional: false
+    description: "Automatically refresh and inject the Figma design plan section before plan generation; safe no-op when Figma does not apply. Mandatory (optional: false) so the step is auto-executed and the agent cannot decline it."
+
   before_tasks:
     command: speckit.figma.ensure
     optional: false
     description: "Automatically refresh and inject Figma design context (incl. direct links in the feature input) before task generation; safe no-op when Figma does not apply"
+
+  after_specify:
+    command: speckit.figma.verify
+    optional: false
+    description: "After spec generation, verify the Figma section was integrated (when a mockup was detected) and self-correct if missing. Mandatory (optional: false) so the verification always runs and the agent cannot skip the gate."
+
+  after_plan:
+    command: speckit.figma.verify
+    optional: false
+    description: "After plan generation, verify the Figma plan section was integrated (when a mockup was detected) and self-correct if missing. Mandatory (optional: false) so the verification always runs and the agent cannot skip the gate."
+
+  after_tasks:
+    command: speckit.figma.verify
+    optional: false
+    description: "After tasks generation, verify the Figma tasks section was integrated (when a mockup was detected) and self-correct if missing. Mandatory (optional: false) so the verification always runs and the agent cannot skip the gate."
 
 tags:
   - figma

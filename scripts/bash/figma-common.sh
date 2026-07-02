@@ -8,7 +8,9 @@
 #   figma_repo_root            -> prints the workspace root
 #   figma_load_token           -> prints the Figma PAT (env > keychain), never echoes it elsewhere
 #   figma_api <PATH>           -> GET against the Figma API with 429/5xx exponential backoff
+#   figma_state_dir            -> prints the per-workspace Figma state directory (.figma/)
 #   figma_cache_path           -> prints the snapshot cache path
+#   figma_section_path <phase> -> prints the rendered-section path for a phase
 # Dependencies: bash 4+, curl, jq
 # =============================================================================
 # NOTE: This file is meant to be sourced; do not set shell options here.
@@ -22,8 +24,20 @@ figma_repo_root() {
   git rev-parse --show-toplevel 2>/dev/null || pwd
 }
 
+# Per-workspace directory holding every generated/cached Figma artifact
+# (snapshot + rendered sections). Keeping them under one hidden directory keeps
+# the repo root clean; a single `.figma/` entry in .gitignore covers them all.
+figma_state_dir() {
+  echo "$(figma_repo_root)/.figma"
+}
+
 figma_cache_path() {
-  echo "$(figma_repo_root)/.figma-context-snapshot.json"
+  echo "$(figma_state_dir)/context-snapshot.json"
+}
+
+# Path of the rendered, ready-to-paste section for a phase (spec|plan|tasks).
+figma_section_path() {
+  echo "$(figma_state_dir)/section.$1.md"
 }
 
 # Default config path. Precedence: FIGMA_CONFIG env override > <root>/figma.projects.config.json.
@@ -168,6 +182,60 @@ figma_resolve_context_source() {
   figma_decide_context_source "$requested" "$reachable" "$fallback" "$(figma_mcp_url "$config")"
 }
 
+# -----------------------------------------------------------------------------
+# Claude Code / official Figma plugin advisory
+# -----------------------------------------------------------------------------
+# Inside Claude Code, the most reliable way to obtain rich MCP design context is
+# the official Figma plugin (`claude plugin install figma@claude-plugins-official`):
+# it wires Figma's *hosted* MCP server (https://mcp.figma.com/mcp) in as a native
+# Claude Code tool, so the agent reads structured node data directly — no local
+# Dev Mode server, no curl probe. These helpers detect that situation and nudge
+# the user toward the plugin; they are advisory only and never change behaviour.
+
+# True when running inside Claude Code. The CLI exports CLAUDECODE=1 for every
+# command it spawns (AI_AGENT=claude-code... is a secondary signal).
+figma_is_claude_code() {
+  [[ "${CLAUDECODE:-}" == "1" ]] && return 0
+  [[ "${AI_AGENT:-}" == claude-code* ]]
+}
+
+# Path to Claude Code's installed-plugins registry. Honours CLAUDE_CONFIG_DIR
+# (which relocates ~/.claude), so the probe follows a customised config home.
+figma_claude_plugins_file() {
+  echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/installed_plugins.json"
+}
+
+# True when ANY Figma plugin is installed in Claude Code (the official one or a
+# fork from another marketplace), matched on the `figma@<marketplace>` key the
+# CLI writes to installed_plugins.json. Returns non-zero — i.e. "not installed",
+# so the advice fires — when jq is missing or the registry is absent/unreadable.
+figma_claude_figma_plugin_installed() {
+  local file; file="$(figma_claude_plugins_file)"
+  [[ -f "$file" ]] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  jq -e 'any((.plugins // {}) | keys[]; startswith("figma@"))' "$file" >/dev/null 2>&1
+}
+
+# Print a recommendation to stderr when running in Claude Code WITHOUT a Figma
+# plugin. No-op for other agents, when a plugin is already present, or when
+# FIGMA_NO_PLUGIN_ADVICE=1 silences it. Always returns 0 so callers can chain it
+# without `set -e` aborting on the "no advice needed" path.
+figma_claude_plugin_advice() {
+  [[ "${FIGMA_NO_PLUGIN_ADVICE:-}" == "1" ]] && return 0
+  figma_is_claude_code || return 0
+  figma_claude_figma_plugin_installed && return 0
+  cat >&2 <<'EOF'
+TIP: Claude Code detected without the official Figma plugin. For the richest,
+     most faithful design context, install it:
+         claude plugin install figma@claude-plugins-official
+     It connects Claude Code to Figma's hosted MCP server
+     (https://mcp.figma.com/mcp) as a native tool — no local Dev Mode server
+     required — then set "figma.contextSource": "mcp" in
+     figma.projects.config.json. (Silence with FIGMA_NO_PLUGIN_ADVICE=1.)
+EOF
+  return 0
+}
+
 # Load the token: environment variable first, then FIGMA_PAT_COMMAND (a secret
 # manager such as the macOS keychain). There is deliberately NO plaintext .env
 # fallback — locally the token MUST be stored in the OS keychain and fetched via
@@ -198,12 +266,106 @@ figma_load_token() {
     fi
     echo "WARN: FIGMA_PAT_COMMAND failed or returned an empty token." >&2
   fi
-  echo "ERROR: ${var} not found. Set it in your environment (CI secret) or store the PAT in your OS keychain and export FIGMA_PAT_COMMAND locally (see docs/CREDENTIALS.md)." >&2
+  echo "ERROR: ${var} not found. Store the PAT in your OS keychain and export FIGMA_PAT_COMMAND locally (e.g. 'security find-generic-password -s figma-pat -w'), or inject ${var} as a CI secret. Do NOT 'export ${var}=...' by hand and do NOT create a .env file — the token must never be written to disk in the workspace (see docs/CREDENTIALS.md)." >&2
   return 1
 }
 
+# Map a 403/404 API path to the most likely cause, so org-level setups fail with
+# an actionable hint. Team/project enumeration needs the `projects:read` scope AND
+# team membership; a file read needs `file_content:read`. Prints to stdout (the
+# caller redirects to stderr); always exits 0.
+figma_scope_hint() {
+  local path="$1"
+  case "$path" in
+    /teams/*|/projects/*)
+      echo "HINT: listing team projects or project files requires a PAT with the 'projects:read' scope, and the token owner must be a member of that team. See docs/CREDENTIALS.md." ;;
+    /files/*)
+      echo "HINT: reading a file requires a PAT with the 'file_content:read' scope (and 'file_metadata:read' for metadata), and access to the file. See docs/CREDENTIALS.md." ;;
+  esac
+}
+
+# Classify a Figma HTTP status into a stable machine code the caller can switch
+# on and surface verbatim. Transport failures reach here as code 000. Pure
+# function: no network, no globals. Prints exactly one of:
+#   OK | NETWORK | AUTH | NOT_FOUND | RATE_LIMIT | SERVER | UNKNOWN
+figma_classify_status() {
+  case "$1" in
+    200|201|204)     echo "OK" ;;
+    000)             echo "NETWORK" ;;
+    401|403)         echo "AUTH" ;;
+    404)             echo "NOT_FOUND" ;;
+    429)             echo "RATE_LIMIT" ;;
+    500|502|503|504) echo "SERVER" ;;
+    *)               echo "UNKNOWN" ;;
+  esac
+}
+
+# Build the cause-specific diagnostic for a failed Figma call. The text IS the
+# instruction a weak LLM will copy verbatim, so each cause names its real remedy
+# and the NETWORK case explicitly forbids the "authentication" misdiagnosis.
+# Usage: figma_error_message <class> <path> <httpStatus>
+figma_error_message() {
+  local class="$1" path="$2" code="$3"
+  case "$class" in
+    NETWORK)
+      printf 'NETWORK/PROXY error: cannot reach api.figma.com (HTTP %s). A broken or unreachable proxy is the usual cause — the script already auto-retried directly without the proxy. This is a connectivity problem, NOT a credentials problem. HTTP 000 / curl exit 5 = proxy. If it persists, check network/proxy connectivity to api.figma.com.' "$code" ;;
+    AUTH)
+      printf 'AUTH/SCOPE error: Figma returned HTTP %s for %s. The PAT is missing, invalid, or lacks the required read-only scopes (team/project enumeration also needs projects:read). Store the PAT in the OS keychain and export FIGMA_PAT_COMMAND; do NOT export the token by hand and do NOT create a .env (see docs/CREDENTIALS.md). %s' "$code" "$path" "$(figma_scope_hint "$path")" ;;
+    NOT_FOUND)
+      printf 'NOT FOUND: Figma returned 404 for %s. Either the file/project/team key is wrong, or the PAT owner is not a member of that team/project. Verify the id and team membership (see docs/CREDENTIALS.md).' "$path" ;;
+    RATE_LIMIT)
+      printf 'RATE LIMIT: Figma returned HTTP %s for %s after retries; wait and retry later.' "$code" "$path" ;;
+    SERVER)
+      printf 'SERVER error: Figma returned HTTP %s for %s after retries; this is a Figma-side outage, retry later.' "$code" "$path" ;;
+    *)
+      printf 'Figma API error HTTP %s for %s.' "$code" "$path" ;;
+  esac
+}
+
+# Record a machine-readable failure cause for the calling process to read back
+# (set FIGMA_DIAG_FILE to a writable path). No-op when unset. Never contains the
+# token — only the class, the HTTP status and the request path.
+figma_record_diag() {
+  [[ -n "${FIGMA_DIAG_FILE:-}" ]] || return 0
+  jq -n --arg code "$1" --arg httpStatus "$2" --arg path "$3" \
+    '{code: $code, httpStatus: $httpStatus, path: $path}' > "$FIGMA_DIAG_FILE" 2>/dev/null || true
+}
+
+# Single Figma GET. Writes the body to $1 and prints the HTTP status to stdout
+# (transport failures print 000). The Figma REST API is a PUBLIC
+# endpoint, so on a proxy-connection failure — curl exit 5 ("couldn't resolve
+# proxy"), exit 6 ("couldn't resolve host") with a proxy configured, or a 000
+# transport failure with a proxy configured — it retries ONCE with every proxy
+# variable stripped. This self-heals BOTH a broken corporate proxy (direct works)
+# and is harmless where the proxy is the only egress (the first attempt succeeds
+# so the strip never runs). The token stays an X-Figma-Token header on both tries.
+figma_curl_get() {
+  local out="$1" url="$2" token="$3"
+  local code rc proxy_set=""
+  [[ -n "${HTTP_PROXY:-}${HTTPS_PROXY:-}${http_proxy:-}${https_proxy:-}" ]] && proxy_set="yes"
+  # `|| rc=$?` keeps the captured code intact under set -e and records curl's exit.
+  code="$(curl -sS -o "$out" -w '%{http_code}' \
+    -H "X-Figma-Token: ${token}" \
+    -H "Accept: application/json" \
+    "$url" 2>/dev/null)" && rc=0 || rc=$?
+  [[ -n "$code" ]] || code="000"
+  if [[ "$rc" -eq 5 || ( -n "$proxy_set" && ( "$rc" -eq 6 || "$code" == "000" ) ) ]]; then
+    echo "WARN: cannot reach Figma via the configured proxy (curl exit ${rc}); retrying directly without the proxy..." >&2
+    code="$(env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy "no_proxy=*" "NO_PROXY=*" \
+      curl -sS -o "$out" -w '%{http_code}' \
+      -H "X-Figma-Token: ${token}" \
+      -H "Accept: application/json" \
+      "$url" 2>/dev/null)" && rc=0 || rc=$?
+    [[ -n "$code" ]] || code="000"
+  fi
+  printf '%s' "$code"
+}
+
 # GET helper with retry. Usage: figma_api "/files/<key>?depth=1" [config-path]
-# Retries 429/5xx AND transport failures (code 000) with exponential backoff.
+# Retries 429/5xx AND transport failures (code 000) with exponential backoff;
+# each attempt self-heals a broken/mandatory proxy via figma_curl_get. On a
+# terminal failure it records a cause-specific diagnostic (NETWORK/AUTH/...) so
+# the caller reports the truth instead of guessing "authentication required".
 # FIGMA_API_MAX_ATTEMPTS / FIGMA_API_RETRY_DELAY override the retry policy (tests).
 figma_api() {
   figma_require curl
@@ -212,31 +374,36 @@ figma_api() {
   # Validate the base URL BEFORE touching the token: a rejected apiBaseUrl
   # must never get anywhere near the credential.
   local base; base="$(figma_api_base "$config")" || return 1
-  local token; token="$(figma_load_token "$config")" || return 1
+  # A missing/empty token is a credentials problem: record it as AUTH so the
+  # caller reports the truth (figma_load_token already printed the keychain hint).
+  local token; token="$(figma_load_token "$config")" || { figma_record_diag AUTH "" "$path"; return 1; }
   local url="${base}${path}"
   local attempt=0 max_attempts="${FIGMA_API_MAX_ATTEMPTS:-5}" delay="${FIGMA_API_RETRY_DELAY:-2}"
+  local last_code="000"
   while (( attempt < max_attempts )); do
     local tmp; tmp="$(mktemp)"
-    local code
-    # On a transport failure curl itself emits '000' via -w before exiting
-    # non-zero; the fallback assignment must REPLACE the captured output, not
-    # append to it (appending used to garble the code into '000000').
-    code="$(curl -sS -o "$tmp" -w '%{http_code}' \
-      -H "X-Figma-Token: ${token}" \
-      -H "Accept: application/json" \
-      "$url" 2>/dev/null)" || code="000"
+    local code; code="$(figma_curl_get "$tmp" "$url" "$token")"
+    last_code="$code"
     case "$code" in
-      200)
+      200|201|204)
+        # 2xx success (201/204 carry an empty body); stay consistent with
+        # figma_classify_status, which already classes these as OK.
         cat "$tmp"; rm -f "$tmp"; return 0 ;;
       000|429|500|502|503|504)
         rm -f "$tmp"
         echo "WARN: Figma API ${code} (attempt $((attempt+1))/${max_attempts}); backing off ${delay}s..." >&2
         sleep "$delay"; delay=$(( delay * 2 )); attempt=$(( attempt + 1 )) ;;
-      *)
-        echo "ERROR: Figma API ${code} for ${path}" >&2
+      401|403|404|*)
+        local class; class="$(figma_classify_status "$code")"
+        figma_record_diag "$class" "$code" "$path"
+        echo "ERROR: $(figma_error_message "$class" "$path" "$code")" >&2
         cat "$tmp" >&2; rm -f "$tmp"; return 1 ;;
     esac
   done
-  echo "ERROR: Figma API retries exhausted for ${path}" >&2
+  # Retries exhausted: classify by the LAST status so a network outage (000)
+  # never gets mislabelled as an auth failure.
+  local class; class="$(figma_classify_status "$last_code")"
+  figma_record_diag "$class" "$last_code" "$path"
+  echo "ERROR: $(figma_error_message "$class" "$path" "$last_code")" >&2
   return 1
 }

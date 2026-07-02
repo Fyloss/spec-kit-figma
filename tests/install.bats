@@ -36,10 +36,10 @@ teardown() {
   [ ! -e "${WORKSPACE}/.env.example" ]
 }
 
-@test "install git-ignores the snapshot but not .env" {
+@test "install git-ignores the .figma state directory but not .env" {
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
-  grep -qxF ".figma-context-snapshot.json" "${WORKSPACE}/.gitignore"
+  grep -qxF ".figma/" "${WORKSPACE}/.gitignore"
   ! grep -qxF ".env" "${WORKSPACE}/.gitignore"
 }
 
@@ -148,11 +148,133 @@ OLD
 @test "--prompt-hooks notes when no speckit command files exist to hook" {
   run "$INSTALL" --target "$WORKSPACE" --prompt-hooks
   [ "$status" -eq 0 ]
-  [[ "$output" == *"no /speckit.specify or /speckit.tasks command files found"* ]]
+  [[ "$output" == *"no /speckit.specify, /speckit.plan or /speckit.tasks command files found"* ]]
 }
 
 @test "install copies the ensure-context helper script" {
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
   [ -x "${WORKSPACE}/.specify/scripts/bash/figma-ensure-context.sh" ]
+}
+
+# --- Update / sync awareness -------------------------------------------------
+
+@test "re-running install restores a helper script removed from the workspace" {
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  rm -f "${WORKSPACE}/.specify/scripts/bash/figma-introspect.sh"
+  [ ! -f "${WORKSPACE}/.specify/scripts/bash/figma-introspect.sh" ]
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [ -x "${WORKSPACE}/.specify/scripts/bash/figma-introspect.sh" ]
+}
+
+@test "install keeps no parallel version stamp (SpecKit's manifest is the source of truth)" {
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [ ! -f "${WORKSPACE}/.specify/.figma-extension-version" ]
+}
+
+@test "install reports figma not yet registered when SpecKit has no manifest" {
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"not yet registered"* ]]
+}
+
+@test "install reports in sync when the registered version matches the assets" {
+  src_ver="$(sed -n 's/^[[:space:]]*version:[[:space:]]*"\{0,1\}\([0-9][0-9.]*\)"\{0,1\}.*/\1/p' "${REPO_ROOT}/extension.yml" | head -1)"
+  mkdir -p "${WORKSPACE}/.specify/extensions/figma"
+  printf 'extension:\n  id: figma\n  version: "%s"\n' "$src_ver" \
+    > "${WORKSPACE}/.specify/extensions/figma/extension.yml"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"in sync"* ]]
+}
+
+@test "install warns on version mismatch when the registered version is older" {
+  mkdir -p "${WORKSPACE}/.specify/extensions/figma"
+  printf 'extension:\n  id: figma\n  version: "0.9.0"\n' \
+    > "${WORKSPACE}/.specify/extensions/figma/extension.yml"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"mismatch"* ]]
+  [[ "$output" == *"0.9.0"* ]]
+}
+
+@test "install recognizes figma registered via the plural extensions.yml registry" {
+  mkdir -p "${WORKSPACE}/.specify"
+  printf 'installed:\n- agent-context\n- figma\n' > "${WORKSPACE}/.specify/extensions.yml"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"registered with SpecKit"* ]]
+  ! [[ "$output" == *"not yet registered"* ]]
+}
+
+@test "install recognizes figma registered via the singular extension.yml registry" {
+  mkdir -p "${WORKSPACE}/.specify"
+  printf 'installed:\n- figma\n' > "${WORKSPACE}/.specify/extension.yml"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"registered with SpecKit"* ]]
+  ! [[ "$output" == *"not yet registered"* ]]
+}
+
+@test "install parses a single-quoted manifest version (reports in sync)" {
+  src_ver="$(sed -n "s/^[[:space:]]*version:[[:space:]]*['\"]\{0,1\}\([0-9][0-9.]*\)['\"]\{0,1\}.*/\1/p" "${REPO_ROOT}/extension.yml" | head -1)"
+  mkdir -p "${WORKSPACE}/.specify/extensions/figma"
+  printf "extension:\n  id: figma\n  version: '%s'\n" "$src_ver" \
+    > "${WORKSPACE}/.specify/extensions/figma/extension.yml"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"in sync"* ]]
+}
+
+@test "a present manifest with an unparseable version still counts as registered (not 'not yet registered')" {
+  mkdir -p "${WORKSPACE}/.specify/extensions/figma"
+  printf 'extension:\n  id: figma\n  version: "latest"\n' \
+    > "${WORKSPACE}/.specify/extensions/figma/extension.yml"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"registered with SpecKit"* ]]
+  ! [[ "$output" == *"not yet registered"* ]]
+}
+
+@test "a '- figma' item outside the installed: block does not count as registered" {
+  mkdir -p "${WORKSPACE}/.specify"
+  printf 'installed:\n- agent-context\ndisabled:\n- figma\n' \
+    > "${WORKSPACE}/.specify/extensions.yml"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"not yet registered"* ]]
+}
+
+@test "the per-extension manifest version wins over the registry registration signal" {
+  mkdir -p "${WORKSPACE}/.specify/extensions/figma"
+  printf 'installed:\n- figma\n' > "${WORKSPACE}/.specify/extensions.yml"
+  printf 'extension:\n  id: figma\n  version: "0.9.0"\n' \
+    > "${WORKSPACE}/.specify/extensions/figma/extension.yml"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"mismatch"* ]]
+  [[ "$output" == *"0.9.0"* ]]
+}
+
+@test "install warns when figma commands are missing from a configured agent dir" {
+  mkdir -p "${WORKSPACE}/.claude/commands"
+  echo "# specify" > "${WORKSPACE}/.claude/commands/speckit.specify.md"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"not registered"* ]]
+  [[ "$output" == *".claude/commands"* ]]
+}
+
+@test "install does not warn about command drift when figma commands are present" {
+  mkdir -p "${WORKSPACE}/.claude/commands"
+  echo "# specify" > "${WORKSPACE}/.claude/commands/speckit.specify.md"
+  for stem in setup ensure introspect verify update; do
+    echo "# $stem" > "${WORKSPACE}/.claude/commands/speckit.figma.${stem}.md"
+  done
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  ! [[ "$output" == *"not registered"* ]]
 }

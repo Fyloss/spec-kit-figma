@@ -92,7 +92,7 @@ of three levels — pick the one that matches how the design org is structured:
 Use `figmaTeamId` (or `figmaTeamIds` when a target spans several teams) for a
 **Figma organization with multiple teams, each holding multiple projects**: the
 agent walks the full **organization > team > projects > files** tree and writes a
-nested index into `.figma-context-snapshot.json`. See
+nested index into `.figma/context-snapshot.json`. See
 `config/figma.projects.config.organization.example.json`. At least one of the
 three fields MUST be set per enabled target; the token must have access to any
 team it enumerates.
