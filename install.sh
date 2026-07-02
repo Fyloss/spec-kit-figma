@@ -297,7 +297,7 @@ fi
 EXT_STEMS=()
 for cmd_file in "$EXT_DIR/commands/speckit.${EXT_ID}."*.md; do
   [[ -e "$cmd_file" ]] || continue
-  stem="$(basename "$cmd_file")"; stem="${stem#speckit.${EXT_ID}.}"; stem="${stem%.md}"
+  stem="$(basename "$cmd_file")"; stem="${stem#speckit."${EXT_ID}".}"; stem="${stem%.md}"
   EXT_STEMS+=("$stem")
 done
 
