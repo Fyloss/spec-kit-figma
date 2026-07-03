@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: figma
   name: "Spec Kit Figma"
-  version: "1.4.0"
+  version: "1.5.0"
   description: "Agent-agnostic Figma design-context extension for SpecKit. Grounds spec/plan/tasks/implement in Figma. Supports single-repo (default), mono-repo and multi-repo layouts, with a portable REST engine (default) and an optional MCP engine for more faithful mockup implementation. Cross-platform: bash helpers for macOS/Linux and PowerShell 7+ ports for Windows."
   author: "Fyloss"
   repository: "https://github.com/Fyloss/spec-kit-figma"
@@ -35,7 +35,7 @@ provides:
 
     - name: speckit.figma.update
       file: commands/speckit.figma.update.md
-      description: "Update an already-installed Figma extension to a newer version: re-sync the helper scripts, templates, design-rules constitution and hooks, re-register the slash-commands, and report old -> new. Idempotent; preserves figma.projects.config.json and needs no uninstall."
+      description: "Update an already-installed Figma extension to a newer version fetched from the official repository: re-sync the helper scripts, templates, design-rules constitution and hooks, re-register the slash-commands, and report old -> new. Idempotent; preserves figma.projects.config.json and needs no uninstall."
 
     - name: speckit.figma.ensure
       file: commands/speckit.figma.ensure.md

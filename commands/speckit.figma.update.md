@@ -1,5 +1,5 @@
 ---
-description: Update an already-installed Figma extension in this workspace to a newer version — re-sync the helper scripts, templates, design-rules constitution and hooks, re-register slash-commands, and report what changed. Idempotent; no uninstall required.
+description: Update an already-installed Figma extension in this workspace to a newer version fetched from the official repository — re-sync the helper scripts, templates, design-rules constitution and hooks, re-register slash-commands, and report what changed. Idempotent; no uninstall required.
 ---
 
 # /speckit.figma.update — Update the Figma extension in this workspace
@@ -30,14 +30,30 @@ stamp.
 
 ## Steps
 
-1. **Re-acquire the new version.** The new files physically come from an updated
-   extension source — a project cannot pull them from nowhere. Make sure the
-   source is at the target version:
-   - Local checkout: `git -C <spec-kit-figma> pull`.
-   - Release zip: re-download the desired release.
-   If you do not know where the extension checkout is, ask the user for its path
-   (or the release URL). The currently-installed version is recorded by SpecKit
-   at `.specify/extensions/figma/extension.yml` (`extension.version`).
+1. **Acquire the new version from the official repository.** Updates come
+   exclusively from the extension's official repository. Do NOT search the
+   developer's machine for an existing spec-kit-figma checkout and do NOT ask
+   the user for a local path — always fetch a fresh copy. Shallow-clone the
+   official repo into a temporary directory and use that clone as the source
+   for steps 2 and 3:
+
+   ```bash
+   EXT_SRC="$(mktemp -d)/spec-kit-figma"
+   git clone --depth 1 https://github.com/Fyloss/spec-kit-figma "$EXT_SRC"
+   ```
+
+   On Windows (PowerShell 7+):
+
+   ```powershell
+   $extSrc = Join-Path ([IO.Path]::GetTempPath()) "spec-kit-figma-$([Guid]::NewGuid().ToString('N'))"
+   git clone --depth 1 https://github.com/Fyloss/spec-kit-figma $extSrc
+   ```
+
+   By default this fetches the latest version (`main`); to pin a specific
+   release, add `--branch <tag>` to the clone. The currently-installed version
+   is recorded by SpecKit at `.specify/extensions/figma/extension.yml`
+   (`extension.version`) — compare it with the clone's `extension.yml` to know
+   the before/after for the final report.
 
 2. **Re-register the slash-commands first.** Note the currently-installed
    version (from `.specify/extensions/figma/extension.yml`) so you can report the
@@ -48,7 +64,13 @@ stamp.
    it is on PATH:
 
    ```bash
-   specify extension add figma --from <source>
+   specify extension add figma --from "$EXT_SRC"
+   ```
+
+   On Windows (PowerShell 7+), same command with the step 1 variable:
+
+   ```powershell
+   specify extension add figma --from $extSrc
    ```
 
    This is idempotent; if your SpecKit version refuses to re-add an existing
@@ -56,22 +78,22 @@ stamp.
    `specify` is not available, report the exact command for the user to run and
    continue.
 
-3. **Re-sync assets and hooks.** From the workspace root, run the new source's
-   installer. It is idempotent: it refreshes the helper scripts, section
-   templates and design-rules constitution, re-wires the hooks, and reports coherence
-   against SpecKit's registered version — `in sync at <version>` once step 2 has
-   re-registered, or `WARN: figma version mismatch …` if registration was skipped
-   or failed:
+3. **Re-sync assets and hooks.** From the workspace root, run the freshly
+   cloned source's installer. It is idempotent: it refreshes the helper scripts,
+   section templates and design-rules constitution, re-wires the hooks, and reports
+   coherence against SpecKit's registered version — `in sync at <version>` once
+   step 2 has re-registered, or `WARN: figma version mismatch …` if registration
+   was skipped or failed:
 
    ```bash
-   <spec-kit-figma>/install.sh --target "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+   "$EXT_SRC"/install.sh --target "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
    ```
 
    On Windows (PowerShell 7+), run the installer's port instead — same flags,
    same output:
 
    ```powershell
-   <spec-kit-figma>/install.ps1 --target (git rev-parse --show-toplevel)
+   & (Join-Path $extSrc 'install.ps1') --target ((git rev-parse --show-toplevel 2>$null) ?? $PWD)
    ```
 
    Add `--prompt-hooks` only if this workspace relies on prompt injection rather
@@ -80,6 +102,7 @@ stamp.
 4. **Report.** Summarize concisely: the registered version before (captured in
    step 2) vs after, which assets were refreshed (from `install.sh`'s `ADDED:`
    lines), the final coherence line (`in sync` vs `mismatch`), and any command
-   that still needs `specify extension add` for a given agent. Do not run
-   spec/plan/tasks
+   that still needs `specify extension add` for a given agent. The temporary
+   clone from step 1 is disposable — it lives in the system temp directory and
+   can be left for the OS to clean up. Do not run spec/plan/tasks
    generation — this command's job ends at a clean, up-to-date install.

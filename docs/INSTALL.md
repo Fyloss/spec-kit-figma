@@ -99,17 +99,24 @@ different tools, and you need both, exactly as on first install:
 | Assets + hooks (`.specify/scripts`, `.specify/templates`, `.figma/figma-design-rules.md`, `.figma/docs/`, the README figma section, prompt hooks) | `install.sh` | idempotent; never overwrites `figma.projects.config.json` or the design-rules overlay `.figma/figma-design-rules.custom.md`; only the managed block of `README.md` is touched |
 | Slash-command registration (`speckit.figma.*`, per agent format) | `specify extension add figma` | agent-format aware; the **only** thing that registers commands, and what records the installed version at `.specify/extensions/figma/extension.yml` |
 
-The new files come from an updated extension source, so first **re-acquire** it
-(`git pull` the checkout, or re-download the release zip), then **re-apply** it —
-no uninstall is required, both tools are self-healing:
+The new files come **exclusively from the official repository** — do not reuse
+a local checkout lying around on the developer's machine. First **fetch** a
+fresh copy (shallow clone into a temp directory), then **re-apply** it — no
+uninstall is required, both tools are self-healing:
 
 ```bash
 # from the target workspace root
-specify extension add figma --from <source>   # re-register commands (picks up NEW commands)
-<spec-kit-figma>/install.sh                    # re-sync assets + hooks; reports coherence (in sync / mismatch)
+EXT_SRC="$(mktemp -d)/spec-kit-figma"
+git clone --depth 1 https://github.com/Fyloss/spec-kit-figma "$EXT_SRC"   # add --branch <tag> to pin a release
+specify extension add figma --from "$EXT_SRC"   # re-register commands (picks up NEW commands)
+"$EXT_SRC"/install.sh                            # re-sync assets + hooks; reports coherence (in sync / mismatch)
 ```
 
-(On Windows: `<spec-kit-figma>/install.ps1` from `pwsh`, same flags.)
+(On Windows: clone the same way into `$env:TEMP`, then run `install.ps1` from
+`pwsh`, same flags.)
+
+This is exactly what the `/speckit.figma.update` slash-command does for you —
+prefer it over the manual sequence above.
 
 SpecKit records the install across two files (the extension keeps no parallel
 stamp of its own):
