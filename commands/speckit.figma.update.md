@@ -67,6 +67,12 @@ stamp.
    specify extension add figma --from "$EXT_SRC"
    ```
 
+   On Windows (PowerShell 7+), same command with the step 1 variable:
+
+   ```powershell
+   specify extension add figma --from $extSrc
+   ```
+
    This is idempotent; if your SpecKit version refuses to re-add an existing
    extension, remove then re-add (`specify extension remove figma` first). If
    `specify` is not available, report the exact command for the user to run and
@@ -87,7 +93,7 @@ stamp.
    same output:
 
    ```powershell
-   & (Join-Path $extSrc 'install.ps1') --target (git rev-parse --show-toplevel)
+   & (Join-Path $extSrc 'install.ps1') --target ((git rev-parse --show-toplevel 2>$null) ?? $PWD)
    ```
 
    Add `--prompt-hooks` only if this workspace relies on prompt injection rather
