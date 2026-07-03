@@ -31,6 +31,13 @@ $env:FIGMA_PAT_COMMAND = 'Get-Secret figma-pat -AsPlainText'
 CI / Cloud Agents use an injected platform secret instead
 (`figma.credentials.source: "ci-secret"` in the config).
 
+### Updating
+
+Run `/speckit.figma.update` in your agent: it fetches the new version directly
+from the [official repository]({{REPOSITORY_URL}}) (no local checkout needed),
+re-syncs assets and hooks, and re-registers the slash-commands. Your
+`figma.projects.config.json` and design-rules overlay are preserved.
+
 Local guides, synced to the installed extension version:
 [credentials & PAT setup](.figma/docs/CREDENTIALS.md) ·
 [install & update](.figma/docs/INSTALL.md) ·
