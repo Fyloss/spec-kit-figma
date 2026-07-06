@@ -258,7 +258,7 @@ shellcheck -x scripts/bash/*.sh install.sh
 bats tests/
 ```
 The same checks run automatically on every pull request via GitHub Actions
-([.github/workflows/ci.yml](.github/workflows/ci.yml)).
+([.github/workflows/lint-and-test.yml](.github/workflows/lint-and-test.yml)).
 
 ## Single-repo vs mono-repo vs multi-repo
 Same routing rules, component resolution, token handling, responsive and

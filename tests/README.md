@@ -33,4 +33,4 @@ bats tests/
 
 ## CI
 The same checks run on every pull request through
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
+[`.github/workflows/lint-and-test.yml`](../.github/workflows/lint-and-test.yml).
