@@ -35,6 +35,8 @@ submodules) layouts.
 ```
 .
 ├── extension.yml                        # SpecKit extension manifest (read by `specify extension add`)
+├── CHANGELOG.md                        # version history (Keep a Changelog format)
+├── .extensionignore                    # development-only files excluded from the installed copy
 ├── install.sh                          # optional manual installer (single/mono/multi-repo)
 ├── install.ps1                         # the same installer for Windows (PowerShell 7+)
 ├── commands/                           # agent-agnostic command templates
@@ -69,12 +71,17 @@ submodules) layouts.
 
 ### Install as a SpecKit extension (recommended)
 ```bash
-# from a release/source ZIP
+# from the latest tagged release (reproducible, matches the catalog entry)
+specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v1.6.0.zip
+
+# from the development branch (may be ahead of the latest release)
 specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/archive/refs/heads/main.zip
 
 # or from a local checkout
 specify extension add --dev /path/to/spec-kit-figma
 ```
+Once the extension is listed in the Spec Kit community catalog, it is also
+discoverable via `specify extension search figma`.
 This registers the `/speckit.figma.setup`, `/speckit.figma.update`,
 `/speckit.figma.ensure`, `/speckit.figma.introspect` and
 `/speckit.figma.verify` commands with your agent. Then run
