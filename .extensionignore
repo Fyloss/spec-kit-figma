@@ -22,6 +22,7 @@ tests/
 
 # Local development tooling state (untracked, but excluded defensively in case
 # the extension is installed from a working checkout)
+.DS_Store
 .claude/
 .serena/
 .git/
