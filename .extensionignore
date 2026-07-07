@@ -1,0 +1,27 @@
+# .extensionignore — files excluded from the installed copy when a user runs
+# `specify extension add` (gitignore-compatible patterns, see Spec Kit docs).
+#
+# IMPORTANT — everything below is development-only. The following MUST stay in
+# the installed copy because install.sh / install.ps1 and the slash-commands
+# read them at install/run time:
+#   extension.yml, commands/, scripts/, templates/, config/, install.sh,
+#   install.ps1, .figma/ (design-rules base copied into the workspace),
+#   docs/ (copied to the workspace's .figma/docs/ — do NOT ignore it here),
+#   README.md and LICENSE.
+
+# Test suite (bats/Pester) — never referenced by the runtime helpers
+tests/
+
+# CI configuration
+.github/
+
+# Repo-only dotfiles (the installers edit the TARGET workspace's .gitignore,
+# never read this one)
+.gitignore
+.shellcheckrc
+
+# Local development tooling state (untracked, but excluded defensively in case
+# the extension is installed from a working checkout)
+.claude/
+.serena/
+.git/
