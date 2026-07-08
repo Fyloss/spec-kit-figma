@@ -141,6 +141,9 @@ Then inject the secret at runtime (never a committed file):
 
 ```yaml
 # GitHub Actions example
+permissions:
+  contents: read
+
 jobs:
   speckit:
     runs-on: ubuntu-latest
@@ -148,8 +151,26 @@ jobs:
       FIGMA_PAT: ${{ secrets.FIGMA_PAT }}   # stored in repo/org secrets
     steps:
       - uses: actions/checkout@v4
+      # Structural config check — offline, does not consume the token.
       - run: ./.specify/scripts/bash/figma-validate-config.sh
+      # Refresh the design snapshot from api.figma.com — the step that
+      # actually consumes FIGMA_PAT. The script is a safe no-op for the
+      # generation flow (exit 0 even on auth failure), so a CI job must gate
+      # on the machine-readable `code` field of its JSON status instead:
+      - run: |
+          status="$(./.specify/scripts/bash/figma-ensure-context.sh)"
+          echo "$status"
+          jq -e '.code == null' <<<"$status" >/dev/null || {
+            echo "Figma introspection failed — AUTH means the FIGMA_PAT secret is missing/invalid, NETWORK means the runner cannot reach api.figma.com." >&2
+            exit 1
+          }
 ```
+
+(On a Windows runner, call the PowerShell ports under
+`./.specify/scripts/powershell/` instead.) After spec/plan/tasks generation in
+CI, `figma-verify-section.sh --phase <phase> --strict` (or
+`figma.verifyStrict: true` in the config) turns the missing-Figma-section
+check into a failing gate — see `/speckit.figma.verify`.
 
 At runtime the scripts read the token from the **environment variable named by
 `envVar`** (default `FIGMA_PAT`; when `envVar` is unset, `secretName` is used as

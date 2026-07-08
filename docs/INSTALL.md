@@ -100,14 +100,24 @@ different tools, and you need both, exactly as on first install:
 | Slash-command registration (`speckit.figma.*`, per agent format) | `specify extension add figma` | agent-format aware; the **only** thing that registers commands, and what records the installed version at `.specify/extensions/figma/extension.yml` |
 
 The new files come **exclusively from the official repository** — do not reuse
-a local checkout lying around on the developer's machine. First **fetch** a
-fresh copy (shallow clone into a temp directory), then **re-apply** it — no
-uninstall is required, both tools are self-healing:
+a local checkout lying around on the developer's machine. Start with a **fast
+up-to-date check** (one `git ls-remote`, no clone): releases are tagged
+`v<version>` (e.g. `v1.5.0`) and the installed version lives in
+`.specify/extensions/figma/extension.yml` (e.g. `1.5.0`). If they match, there
+is nothing to update. Otherwise **fetch** a fresh copy of the release tag
+(shallow clone into a temp directory), then **re-apply** it — no uninstall is
+required, both tools are self-healing:
 
 ```bash
 # from the target workspace root
+INSTALLED="$(sed -n "s/^[[:space:]]*version:[[:space:]]*['\"]\{0,1\}\([0-9][0-9.]*\)['\"]\{0,1\}.*/\1/p" \
+  .specify/extensions/figma/extension.yml | head -n 1)"
+LATEST_TAG="$(git ls-remote --tags --refs https://github.com/Fyloss/spec-kit-figma 'v[0-9]*' \
+  | sed 's|.*refs/tags/||' | sort -V | tail -n 1)"
+[ "v$INSTALLED" = "$LATEST_TAG" ] && { echo "Already up to date ($INSTALLED)"; exit 0; }
+
 EXT_SRC="$(mktemp -d)/spec-kit-figma"
-git clone --depth 1 https://github.com/Fyloss/spec-kit-figma "$EXT_SRC"   # add --branch <tag> to pin a release
+git clone --depth 1 --branch "$LATEST_TAG" https://github.com/Fyloss/spec-kit-figma "$EXT_SRC"   # or --branch <tag> to pin another release
 specify extension add figma --from "$EXT_SRC"   # re-register commands (picks up NEW commands)
 "$EXT_SRC"/install.sh                            # re-sync assets + hooks; reports coherence (in sync / mismatch)
 ```
