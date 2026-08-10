@@ -19,6 +19,18 @@ status_json() {
   echo "$output" | sed -n '/^{/,$p'
 }
 
+# A PATH holding only the few tools the pre-flight path needs — jq excluded —
+# so the hook can be exercised on a machine where jq was never installed.
+path_without_jq() {
+  local sandbox="${WORKSPACE}/nojq-bin" tool resolved
+  mkdir -p "$sandbox"
+  for tool in bash dirname sed cat grep git; do
+    resolved="$(command -v "$tool" || true)"
+    [ -n "$resolved" ] && ln -sf "$resolved" "${sandbox}/${tool}"
+  done
+  printf '%s' "$sandbox"
+}
+
 @test "missing config is a safe no-op (exit 0, reason no-config)" {
   run "$SCRIPT"
   [ "$status" -eq 0 ]
@@ -326,4 +338,25 @@ JSON
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
   [[ "$(status_json | jq -r '.linkScope')" == "frame" ]]
+}
+
+@test "a missing jq is a skip reason, not a crash (exit 0, JSON still emitted)" {
+  # The hook must never block generation, and it must never leave the agent with
+  # nothing: without a status object the agent improvises — typically by calling
+  # a Figma MCP server with a node id it extracted from the URL itself.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run env PATH="$(path_without_jq)" "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.ran')" == "false" ]]
+  [[ "$(status_json | jq -r '.reason')" == "missing-dependency" ]]
+  [[ "$(status_json | jq -r '.dependency')" == "jq" ]]
+  [[ "$(status_json | jq -r '.mustInject')" == "false" ]]
+}
+
+@test "the missing-jq diagnostic names a no-sudo install path" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run env PATH="$(path_without_jq)" "$SCRIPT"
+  [[ "$output" == *"jq"* ]]
+  # Homebrew is not always writable; the guidance must not stop at 'brew install'.
+  [[ "$output" == *"no sudo"* ]]
 }

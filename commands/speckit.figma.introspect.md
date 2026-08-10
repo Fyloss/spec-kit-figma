@@ -104,6 +104,14 @@ the frame was deleted. So:
   <nodeId>` as the cross-check whenever an MCP call reports a missing node. If
   REST returns the node and MCP does not, the id is right and the **server** is
   the problem — see the next point.
+- **When the scripts cannot run at all** (`jq` missing → `ensure` answers
+  `"reason": "missing-dependency"`), you own the canonicalization. Apply it
+  literally, step by step: cut the `node-id` value at the next `&` or `#`;
+  decode `%3A` → `:` and `%3B` → `;`; replace **every** remaining `-` with `:`;
+  check the result against `12:345` / `I12:345;678:901`; pair it with the
+  `fileKey` from the *same* URL. Do not skip step 3 after the first separator,
+  and do not reconstruct an id from memory. Also relay the install instructions
+  the script printed — the degraded mode should not become permanent.
 - **Local Dev Mode server (`http://127.0.0.1:3845/mcp`)** only sees the file
   currently open in the Figma desktop app. Any node of any other file is
   legitimately "not found". Tell the developer to open the right file in Figma

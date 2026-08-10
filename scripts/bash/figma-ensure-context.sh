@@ -31,6 +31,7 @@
 #
 # Prints a JSON status object on stdout:
 #   { "ran": true|false, "reason": "...", "code": "NETWORK|AUTH|NOT_FOUND|...|null",
+#     "dependency": "jq|null",         # set when reason = missing-dependency
 #     "target": "...",
 #     "snapshot": "...", "links": [...], "introspectArgs": [...],
 #     "mustInject": true|false,        # section is mandatory in spec/plan/tasks
@@ -41,13 +42,24 @@
 # verbatim into the generated document, then complete the judgement fields.
 # Reasons: introspected | fresh | dry-run | no-config | invalid-config |
 #   unresolved-placeholders | ambiguous-target | target-excluded |
-#   target-not-mapped | target-disabled | introspect-failed
+#   target-not-mapped | target-disabled | introspect-failed | missing-dependency
 # =============================================================================
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=./figma-common.sh
 source "${SCRIPT_DIR}/figma-common.sh"
-figma_require jq
+# The auto-hook contract is "never block, always answer". A missing jq must not
+# break the second half of it either: with no status object on stdout the agent
+# is left to improvise, and what it improvises is a direct Figma MCP call with a
+# node id it re-extracted from the URL — the usual source of "the provided node
+# ID was not found in the file". Answer with a machine-readable skip instead, and
+# print an actionable install path (Homebrew is not writable everywhere).
+if ! command -v jq >/dev/null 2>&1; then
+  echo "ERROR: 'jq' is required by the bash helpers but is not installed." >&2
+  figma_install_hint jq >&2
+  printf '%s\n' '{"ran":false,"reason":"missing-dependency","dependency":"jq","code":null,"target":null,"snapshot":null,"links":[],"mustInject":false,"linkScope":"none","candidateFrames":[],"specSection":null,"planSection":null,"tasksSection":null,"introspectArgs":[]}'
+  exit 0
+fi
 
 TARGET=""
 MAX_AGE_MIN="${FIGMA_SNAPSHOT_MAX_AGE_MINUTES:-60}"
@@ -102,6 +114,7 @@ emit() { # $1 = ran (true|false), $2 = reason
     --arg tasksSection "$TASKS_SECTION" \
     '{ran: $ran, reason: $reason,
       code: (if $code == "" then null else $code end),
+      dependency: null,
       target: (if $target == "" then null else $target end),
       snapshot: $snapshot,
       links: $links,

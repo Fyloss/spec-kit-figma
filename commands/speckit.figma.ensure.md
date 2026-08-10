@@ -104,6 +104,33 @@ For any other `reason` (`no-config`, `unresolved-placeholders`, `target-excluded
 `dry-run`) — proceed without Figma context and add a short note mentioning the
 reason. Never block generation.
 
+### `missing-dependency` — the deterministic path is gone; do NOT improvise ids
+
+`"reason": "missing-dependency"` (with `"dependency": "jq"`) means the bash
+helpers cannot run on this machine. The script already printed install
+instructions on stderr, including an admin-free path — **surface them to the
+developer**, because everything below is a degraded mode.
+
+If a Figma MCP server is available you may fall back to direct MCP calls
+(`get_metadata`, `get_design_context`, …) for this run. In that mode the
+canonicalization normally done by `figma-parse-links.sh` is on you, so apply it
+literally — this is precisely where *"The provided node ID was not found in the
+file"* comes from:
+
+1. Take the `node-id` value of the deep link, **up to the next `&` or `#`** — the
+   `&t=…` tracking suffix is NOT part of the id.
+2. Percent-decode: `%3A` → `:`, `%3B` → `;` (either case).
+3. Replace **every** remaining `-` with `:` — not just the first one.
+4. The result must match `12:345`, or `I12:345;678:901` for a nested instance.
+   If it does not, you mis-read the link: ask the developer rather than guessing.
+5. Pass that id together with the `fileKey` **from the same URL** — never with the
+   `figmaFileId` of the config, which may be a different file (a component
+   library, or a Figma branch, which has its own key).
+
+Record in the generated document that Figma context came from direct MCP calls
+rather than the snapshot, and that the section's snapshot facts are therefore
+not auto-verified.
+
 ### `introspect-failed` — report the true cause, never guess
 
 When `"reason": "introspect-failed"`, the JSON also carries a `code` field with

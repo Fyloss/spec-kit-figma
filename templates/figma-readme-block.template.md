@@ -6,6 +6,25 @@ This workspace uses [spec-kit-figma]({{REPOSITORY_URL}}) v{{EXTENSION_VERSION}}
 automatically ground the generated documents in the Figma mockups declared in
 [`figma.projects.config.json`](figma.projects.config.json).
 
+### One-time setup per developer — toolchain
+
+macOS/Linux need `bash` 4+, `curl` and **`jq`** (the bash helpers are built on
+it). Without `jq` the auto-context hook still exits cleanly, but it reports
+`"reason": "missing-dependency"` and the agent loses the deterministic path —
+link parsing, node-id canonicalization, snapshot — which is a common source of
+wrong node ids being sent to a Figma MCP server. If `brew install jq` is not
+possible (no `sudo`, Homebrew Cellar not writable), install the static binary
+without admin rights:
+
+```bash
+mkdir -p ~/.local/bin
+curl -fsSL -o ~/.local/bin/jq https://github.com/jqlang/jq/releases/latest/download/jq-macos-arm64
+chmod +x ~/.local/bin/jq
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+```
+
+Windows uses PowerShell 7+ (`pwsh`) and needs neither `curl` nor `jq`.
+
 ### One-time setup per developer — read-only Figma PAT
 
 Generate a **read-only** personal access token in your Figma account settings,

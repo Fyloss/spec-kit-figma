@@ -18,8 +18,44 @@
 # NOTE: This file is meant to be sourced; do not set shell options here.
 # Entrypoint scripts should enable `set -euo pipefail` as needed.
 
+# Install guidance for the external tools the bash helpers depend on. A bare
+# "jq is required" is a dead end on a locked-down machine (no sudo, Homebrew's
+# Cellar not writable) — and a dead end is what pushes an agent to abandon the
+# scripts and improvise, e.g. by calling a Figma MCP server with a node id it
+# re-derived from the URL. Every hint therefore includes an admin-free path.
+# shellcheck disable=SC2016  # the hints are literal shell snippets for the user
+figma_install_hint() {
+  case "${1:-}" in
+    jq)
+      printf '%s\n' \
+        '  brew install jq             # macOS, when Homebrew is writable' \
+        '  sudo apt-get install -y jq  # Debian/Ubuntu' \
+        '' \
+        '  Neither available (no sudo, Homebrew Cellar not writable)? The static' \
+        '  binary needs no admin rights:' \
+        '    mkdir -p ~/.local/bin' \
+        '    curl -fsSL -o ~/.local/bin/jq https://github.com/jqlang/jq/releases/latest/download/jq-macos-arm64' \
+        '    chmod +x ~/.local/bin/jq' \
+        '    export PATH="$HOME/.local/bin:$PATH"   # add this to your shell profile' \
+        '  (swap jq-macos-arm64 for jq-macos-amd64, jq-linux-amd64 or jq-linux-arm64)' \
+        '' \
+        '  Or skip the bash helpers entirely: the PowerShell 7+ ports under' \
+        '  scripts/powershell/ use built-in JSON and need no jq.'
+      ;;
+    curl)
+      printf '%s\n' \
+        '  brew install curl           # macOS' \
+        '  sudo apt-get install -y curl# Debian/Ubuntu' \
+        '  Or run the PowerShell 7+ ports, which use built-in HTTP.'
+      ;;
+  esac
+}
+
 figma_require() {
-  command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' is required but not installed." >&2; exit 1; }
+  command -v "$1" >/dev/null 2>&1 && return 0
+  echo "ERROR: '$1' is required but not installed." >&2
+  figma_install_hint "$1" >&2
+  exit 1
 }
 
 figma_repo_root() {

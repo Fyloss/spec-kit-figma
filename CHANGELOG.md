@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `figma-introspect --node` validates and canonicalizes its input before any
   network call: `12-345` is accepted and queried as `12:345`, and a malformed
   value fails with an explicit error instead of an empty node set.
+- A missing `jq` no longer breaks the auto-context hook's contract. It used to
+  abort with a bare "'jq' is required but not installed" **before** emitting any
+  status object, leaving the agent with nothing and pushing it to improvise —
+  typically direct Figma MCP calls with a hand-extracted node id, the very
+  failure above. `figma-ensure-context.sh` now answers with a jq-free
+  `{"ran":false,"reason":"missing-dependency","dependency":"jq",…}` on stdout and
+  exits 0, and every `figma_require` failure prints an install path that works
+  without `sudo` or a writable Homebrew Cellar.
 
 ### Added
 
@@ -32,11 +40,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model-dependent: agents must now reuse the `fileId`/`nodeId` pair produced by
   `parse` verbatim, never re-derive an id from a URL, and treat a null `nodeId`
   as a broad link.
+- A `missing-dependency` degraded-mode protocol in `/speckit.figma.ensure`
+  (section 4) and `/speckit.figma.introspect` (section 1b-bis): when the helpers
+  cannot run, the agent must apply the node-id normalization steps literally
+  (cut at `&`/`#`, decode `%3A`/`%3B`, replace *every* `-`, validate the shape,
+  pair with the file key of the same URL) and relay the install instructions
+  instead of silently staying degraded.
 - MCP installation instructions for **Claude Code** and **VS Code** in the
   managed README block written by the installer, and a dedicated section in
   `docs/INSTALL.md` covering the hosted server, the local Dev Mode server, and a
   troubleshooting table for *"The provided node ID was not found in the file"*
   (including the fact that MCP authenticates separately from the PAT).
+- A `jq` prerequisite callout — with the admin-free static-binary install — in
+  `docs/INSTALL.md`, the README requirements and the managed README block.
 
 ## [1.6.0] - 2026-07-07
 
