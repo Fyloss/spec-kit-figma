@@ -44,8 +44,8 @@ figma_install_hint() {
       ;;
     curl)
       printf '%s\n' \
-        '  brew install curl           # macOS' \
-        '  sudo apt-get install -y curl# Debian/Ubuntu' \
+        '  brew install curl            # macOS' \
+        '  sudo apt-get install -y curl # Debian/Ubuntu' \
         '  Or run the PowerShell 7+ ports, which use built-in HTTP.'
       ;;
   esac

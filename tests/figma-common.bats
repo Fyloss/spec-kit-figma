@@ -525,3 +525,15 @@ JSON
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
+
+@test "every install hint is copy/pasteable (no '#' glued to a command)" {
+  # 'apt-get install -y curl# Debian/Ubuntu' is not a comment: the shell reads
+  # 'curl#' as the package name. A '#' must always follow whitespace.
+  local tool
+  for tool in jq curl; do
+    run figma_install_hint "$tool"
+    [ "$status" -eq 0 ]
+    [ -n "$output" ]
+    refute_glued_comment "$output"
+  done
+}

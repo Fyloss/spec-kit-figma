@@ -25,3 +25,14 @@ make_temp_workspace() {
   mkdir -p "$dir/.figma/cache"
   printf '%s' "$dir"
 }
+
+# Fail when a '#' in printed shell guidance is not preceded by whitespace: such a
+# line looks like a commented command but is not one, and breaks on paste.
+refute_glued_comment() {
+  local offender
+  offender="$(printf '%s\n' "$1" | grep -nE '[^[:space:]]#' || true)"
+  if [ -n "$offender" ]; then
+    echo "line with a '#' glued to a command: $offender" >&2
+    return 1
+  fi
+}
