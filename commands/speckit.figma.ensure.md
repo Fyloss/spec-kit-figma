@@ -64,7 +64,12 @@ Do this, in order:
    `/speckit.figma.introspect` sections 3-7 (frame confirmation, 3-level
    placement, token gaps, tests + component-catalog sub-tasks).
 3. Treat any `links` in the status JSON as authoritative design targets for the
-   affected components.
+   affected components. When you call a Figma **MCP** tool for one of them, reuse
+   its `fileId` and `nodeId` **verbatim and paired** — they are already in the
+   canonical form MCP expects (`12:345`). Re-deriving an id from the URL
+   (`node-id=12-345`) or pairing a `nodeId` with a different file key is what
+   makes a server answer *"The provided node ID was not found in the file"*.
+   See `/speckit.figma.introspect` section 1b-bis.
 
 If a `*Section` field is `null` (rendering failed, e.g. a missing template), the
 section is STILL mandatory: build it from

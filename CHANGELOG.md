@@ -5,6 +5,39 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-08-10
+
+### Fixed
+
+- Node ids are now canonicalized at a single chokepoint
+  (`figma_normalize_node_id` / `ConvertTo-FigmaNodeId`), so the URL form Figma
+  puts in deep links can no longer reach a server as-is. Previously
+  `figma-parse-links` converted only the **first** separator and required the id
+  to start with a digit, which left nested-instance links
+  (`node-id=I123-456%3B789-012`) unresolved and could forward a partially
+  normalized id — both surface as *"The provided node ID was not found in the
+  file"*. The extractor now takes the whole `node-id` value (the `&t=…` tracking
+  suffix can no longer leak in), normalizes every separator, and reports an
+  unrecognized value as `null` (broad link → the agent asks which frame) instead
+  of forwarding a bogus id.
+- `figma-introspect --node` validates and canonicalizes its input before any
+  network call: `12-345` is accepted and queried as `12:345`, and a malformed
+  value fails with an explicit error instead of an empty node set.
+
+### Added
+
+- **MCP node-id contract** in the command prompts (`/speckit.figma.introspect`
+  section 1b-bis, `/speckit.figma.ensure` section 2). Passing ids to MCP tools
+  was previously left to the model's own judgement, which made the step
+  model-dependent: agents must now reuse the `fileId`/`nodeId` pair produced by
+  `parse` verbatim, never re-derive an id from a URL, and treat a null `nodeId`
+  as a broad link.
+- MCP installation instructions for **Claude Code** and **VS Code** in the
+  managed README block written by the installer, and a dedicated section in
+  `docs/INSTALL.md` covering the hosted server, the local Dev Mode server, and a
+  troubleshooting table for *"The provided node ID was not found in the file"*
+  (including the fact that MCP authenticates separately from the PAT).
+
 ## [1.6.0] - 2026-07-07
 
 ### Added

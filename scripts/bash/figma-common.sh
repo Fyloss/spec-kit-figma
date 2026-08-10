@@ -12,6 +12,7 @@
 #   figma_cache_dir            -> prints the generated/cached-artifacts directory (.figma/cache/)
 #   figma_cache_path           -> prints the snapshot cache path
 #   figma_section_path <phase> -> prints the rendered-section path for a phase
+#   figma_normalize_node_id <id> -> prints the canonical node id ('12:345'), or fails
 # Dependencies: bash 4+, curl, jq
 # =============================================================================
 # NOTE: This file is meant to be sourced; do not set shell options here.
@@ -58,6 +59,24 @@ figma_check_config() {
   local config="$1"
   [[ -f "$config" ]] || { echo "ERROR: config not found: $config" >&2; return 1; }
   jq empty "$config" 2>/dev/null || { echo "ERROR: $config is not valid JSON" >&2; return 1; }
+}
+
+# Canonical form of a Figma node id, as expected by the REST API and by every
+# Figma MCP server: '12:345', or 'I12:345;678:901' for a nested instance.
+# Deep links carry the same id in URL form — '12-345', '%3A'-encoded, and
+# '%3B'-chained — so a half-normalized value ('12-345' forwarded as-is, or only
+# the first separator converted) reaches the server as an unknown node and comes
+# back as "the provided node ID was not found in the file". Normalizing at a
+# single chokepoint keeps that failure impossible whatever the agent pasted.
+# Prints the canonical id on success; prints nothing and returns 1 when the value
+# is not a node id (callers then treat the link as broad rather than guessing).
+figma_normalize_node_id() {
+  local raw="${1:-}" id
+  local pattern='^I?[0-9]+:[0-9A-Za-z]+(;[0-9]+:[0-9A-Za-z]+)*$'
+  [[ -n "$raw" ]] || return 1
+  id="$(printf '%s' "$raw" | sed -E 's/%3A/:/Ig; s/%3B/;/Ig; s/-/:/g')"
+  [[ "$id" =~ $pattern ]] || return 1
+  printf '%s' "$id"
 }
 
 # Generic config accessor: figma_config_get '<jq-expr>' '<default>' [config-path].

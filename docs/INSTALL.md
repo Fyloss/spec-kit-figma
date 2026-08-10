@@ -156,6 +156,92 @@ See [CREDENTIALS.md](CREDENTIALS.md). Local: store your read-only PAT in the OS
 keychain and export `FIGMA_PAT_COMMAND` (no `.env`). CI/Cloud Agent: inject a
 platform secret.
 
+## 3b. Optional — Figma MCP server (higher mockup fidelity)
+
+The extension works out of the box on the **REST** engine (`figma.contextSource:
+"rest"`), which needs nothing but the PAT and is the only engine guaranteed in
+CI. Adding a Figma **MCP** server on top gives the agent the design's structured
+node data (exact spacing, layout constraints, tokens, variants, component
+bindings), so it reproduces mockups far more faithfully. It is optional and
+per-developer: the config stays portable and falls back to REST automatically.
+
+MCP auth is **separate from the PAT**: the hosted server uses its own OAuth
+sign-in, the local Dev Mode server uses your Figma desktop session. Regenerating
+your PAT neither fixes nor breaks MCP.
+
+### Claude Code
+
+```bash
+claude plugin install figma@claude-plugins-official
+```
+
+The official plugin wires Figma's **hosted** server
+(`https://mcp.figma.com/mcp`) in as a native tool — no local server, no extra
+config. Sign in to Figma when prompted, then set `figma.contextSource: "mcp"` in
+`figma.projects.config.json`. `figma-resolve-source.sh` detects Claude Code and
+reminds you when the plugin is missing (silence it with
+`FIGMA_NO_PLUGIN_ADVICE=1`).
+
+### VS Code
+
+Add the same hosted server to whichever agent you use — auto-detection is
+Claude-Code-only, so this step is manual.
+
+- **GitHub Copilot (agent mode)** consumes VS Code's native MCP support: run
+  **MCP: Add Server…** from the Command Palette (pick *HTTP*, URL
+  `https://mcp.figma.com/mcp`), or commit a workspace `.vscode/mcp.json`:
+
+  ```jsonc
+  {
+    "servers": {
+      "figma": { "type": "http", "url": "https://mcp.figma.com/mcp" }
+    }
+  }
+  ```
+
+- **Cline, Continue, the Claude Code extension…** do *not* read
+  `.vscode/mcp.json` — add the same URL through their own MCP configuration.
+
+Sign in to Figma when the OAuth prompt appears, then set
+`figma.contextSource: "mcp"`.
+
+### Local Dev Mode server (alternative)
+
+`figma.mcp.url` defaults to `http://127.0.0.1:3845/mcp`, the **local** Dev Mode
+server exposed by the Figma desktop app (Preferences → *Enable Dev Mode MCP
+server*, Dev/Full seat required). It is faster but scoped: it only sees the file
+**currently open** in the desktop app. Prefer the hosted server unless you
+specifically need the local one.
+
+### Troubleshooting — "The provided node ID was not found in the file"
+
+This message comes from the **MCP server**, never from this extension. It means
+the id the server received does not exist in the file it looked at. In order of
+likelihood:
+
+| Cause | Check | Fix |
+|---|---|---|
+| Local Dev Mode server, wrong file open | is `figma.mcp.url` `127.0.0.1:3845`? | open the target file in Figma Desktop, or switch to `https://mcp.figma.com/mcp` |
+| Id passed in URL form (`12-345` instead of `12:345`), or with the `&t=…` suffix still attached | read the tool-call arguments in your agent's MCP log | let the agent take ids from `figma-parse-links.sh` / the `ensure` hook's `links`, which are already canonical |
+| `nodeId` paired with the wrong `fileKey` (component library, or a Figma **branch** — a branch has its own file key) | compare both against the deep link | use the `fileId` and `nodeId` of the *same* parse result |
+| The node really was deleted | see below | ask the designer for a current link |
+
+Cross-check with the REST path, which is immune (it canonicalizes and validates
+the id before any call):
+
+```bash
+./.specify/scripts/bash/figma-introspect.sh --file <fileKey> --node <nodeId>
+jq '.nodes.nodes | keys' .figma/cache/context-snapshot.json
+```
+
+If REST returns the node, the id is correct and the problem is the MCP server's
+scope (wrong file open, or not signed in to the right Figma account). If REST
+returns nothing either, the node genuinely does not exist in that file.
+
+`--node` accepts both forms — `12-345` is normalized to `12:345`, and nested
+instances (`I12:345;678:901`) are supported; a value that is not a node id is
+rejected with an explicit error instead of a silent empty result.
+
 ## 4. Register the commands with your agent
 > Skip this step if you installed via `specify extension add` (Option A) — SpecKit
 > already registered all of the extension's commands (`/speckit.figma.setup`,

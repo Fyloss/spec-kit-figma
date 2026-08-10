@@ -10,6 +10,9 @@
 #   {"fileId":"AbC123","nodeId":"12:345","kind":"design","url":"..."}
 # =============================================================================
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./figma-common.sh
+source "${SCRIPT_DIR}/figma-common.sh"
 
 INPUT="${*:-}"
 if [[ -z "$INPUT" ]]; then
@@ -27,7 +30,14 @@ printf '%s\n' "$LINKS" \
       [[ -z "$url" ]] && continue
       kind="$(printf '%s' "$url" | sed -E 's#.*figma\.com/(file|design|proto)/.*#\1#')"
       key="$(printf '%s' "$url" | sed -E 's#.*figma\.com/(file|design|proto)/([A-Za-z0-9_-]+).*#\2#')"
-      node="$(printf '%s' "$url" | grep -oE 'node-id=[0-9]+[-:%][0-9A-Za-z]+' | head -n1 | sed -E 's/node-id=//; s/%3A/:/I; s/-/:/' || true)"
+      # Take the whole node-id value (up to the next parameter or fragment) and
+      # let figma_normalize_node_id canonicalize it: the tracking suffix Figma
+      # appends (&t=…) must not leak into the id, and nested-instance ids carry
+      # several separators. An unrecognized value yields null — the caller then
+      # treats the link as broad and asks which frame, which is safer than
+      # forwarding an id the API/MCP server will reject.
+      raw_node="$(printf '%s' "$url" | grep -oE '[?&]node-id=[^&#[:space:]]+' | head -n1 | sed -E 's/^[?&]node-id=//' || true)"
+      node="$(figma_normalize_node_id "$raw_node" || true)"
       jq -n --arg f "$key" --arg n "${node:-}" --arg k "$kind" --arg u "$url" \
         '{fileId:$f, nodeId:(if $n=="" then null else $n end), kind:$k, url:$u}'
     done

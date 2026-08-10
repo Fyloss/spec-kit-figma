@@ -21,6 +21,34 @@ Describe 'figma-parse-links.ps1' {
         $r.Json.kind | Should -Be 'file'
     }
 
+    It 'decodes a lower-case %3a-encoded node id' {
+        $r = Invoke-FigmaScript 'figma-parse-links.ps1' @('https://www.figma.com/design/AbC123/Flow?node-id=12%3a345')
+        $r.Json.nodeId | Should -Be '12:345'
+    }
+
+    It 'ignores the tracking suffix appended after the node id' {
+        $r = Invoke-FigmaScript 'figma-parse-links.ps1' @('https://www.figma.com/design/AbC123/Flow?node-id=12-345&t=Xy9Z-4')
+        $r.Json.nodeId | Should -Be '12:345'
+    }
+
+    It 'normalizes an instance node id (I-prefixed, ";"-chained)' {
+        # "Copy link to selection" on a nested instance yields I<a>-<b>%3B<c>-<d>.
+        # MCP servers and the REST API expect I<a>:<b>;<c>:<d> — a partially
+        # normalized id is reported as "node not found in the file".
+        $r = Invoke-FigmaScript 'figma-parse-links.ps1' @('https://www.figma.com/design/AbC123/Flow?node-id=I123-456%3B789-012')
+        $r.Json.nodeId | Should -Be 'I123:456;789:012'
+    }
+
+    It 'normalizes every separator of a chained node id, not just the first' {
+        $r = Invoke-FigmaScript 'figma-parse-links.ps1' @('https://www.figma.com/design/AbC123/Flow?node-id=1-2%3B3-4')
+        $r.Json.nodeId | Should -Be '1:2;3:4'
+    }
+
+    It 'reports a malformed node id as null instead of forwarding it' {
+        $r = Invoke-FigmaScript 'figma-parse-links.ps1' @('https://www.figma.com/design/AbC123/Flow?node-id=not-a-node')
+        $r.Json.nodeId | Should -Be $null
+    }
+
     It 'reports a null nodeId for a broad link' {
         $r = Invoke-FigmaScript 'figma-parse-links.ps1' @('https://www.figma.com/proto/Kk77/Proto')
         $r.Json.nodeId | Should -Be $null

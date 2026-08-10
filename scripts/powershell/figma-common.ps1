@@ -85,6 +85,20 @@ function Get-FigmaSectionPath {
     Join-Path (Get-FigmaCacheDir) "section.$Phase.md"
 }
 
+# Canonical form of a Figma node id, as expected by the REST API and by every
+# Figma MCP server: '12:345', or 'I12:345;678:901' for a nested instance.
+# Deep links carry the same id in URL form — '12-345', '%3A'-encoded, and
+# '%3B'-chained — so a half-normalized value reaches the server as an unknown
+# node and comes back as "the provided node ID was not found in the file".
+# Returns the canonical id, or $null when the value is not a node id.
+function ConvertTo-FigmaNodeId {
+    param([string]$Raw)
+    if (-not $Raw) { return $null }
+    $id = $Raw -replace '(?i)%3A', ':' -replace '(?i)%3B', ';' -replace '-', ':'
+    if ($id -notmatch '^I?[0-9]+:[0-9A-Za-z]+(;[0-9]+:[0-9A-Za-z]+)*$') { return $null }
+    return $id
+}
+
 # Default config path. Precedence: FIGMA_CONFIG env override > <root>/figma.projects.config.json.
 function Get-FigmaDefaultConfig {
     if ($env:FIGMA_CONFIG) { return $env:FIGMA_CONFIG }

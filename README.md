@@ -72,7 +72,7 @@ submodules) layouts.
 ### Install as a SpecKit extension (recommended)
 ```bash
 # from the latest tagged release (reproducible, matches the catalog entry)
-specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v1.6.0.zip
+specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/archive/refs/tags/v1.7.0.zip
 
 # from the development branch (may be ahead of the latest release)
 specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/archive/refs/heads/main.zip
@@ -250,6 +250,17 @@ an absent server a hard error. Resolve the effective engine at any time:
 The `claudeCode` block reports whether the run is inside Claude Code and whether
 the official Figma plugin is installed, so tooling can recommend it when missing.
 You keep full portability (REST) while offering MCP richness to those who have it.
+
+> [!NOTE]
+> **"The provided node ID was not found in the file"** comes from the MCP server,
+> not from this extension, and is unrelated to your PAT (MCP authenticates
+> separately). Usual causes: the **local** Dev Mode server only sees the file
+> currently open in Figma Desktop; an id kept in URL form (`12-345` instead of
+> `12:345`) or paired with the wrong file key (a Figma **branch** has its own
+> key). Node ids handed out by `figma-parse-links.sh` and by the `ensure` hook's
+> `links` are already canonical — agents must pass them through verbatim rather
+> than re-deriving them. Full table in
+> [docs/INSTALL.md → Troubleshooting](docs/INSTALL.md#troubleshooting--the-provided-node-id-was-not-found-in-the-file).
 
 ## Testing
 The bash scripts are covered by a [bats](https://github.com/bats-core/bats-core)
