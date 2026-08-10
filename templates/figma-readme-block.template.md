@@ -8,22 +8,42 @@ automatically ground the generated documents in the Figma mockups declared in
 
 ### One-time setup per developer — toolchain
 
-macOS/Linux need `bash` 4+, `curl` and **`jq`** (the bash helpers are built on
-it). Without `jq` the auto-context hook still exits cleanly, but it reports
-`"reason": "missing-dependency"` and the agent loses the deterministic path —
-link parsing, node-id canonicalization, snapshot — which is a common source of
-wrong node ids being sent to a Figma MCP server. If `brew install jq` is not
-possible (no `sudo`, Homebrew Cellar not writable), install the static binary
-without admin rights:
+Install the row for your OS. A mixed team shares one setup: every
+`.specify/scripts/bash/<name>.sh` has a `.specify/scripts/powershell/<name>.ps1`
+twin with the same flags, the same JSON output and the same exit codes.
+
+| OS | Needed | Install |
+|---|---|---|
+| **macOS** | `git`, `bash` 4+, `curl`, `jq` | `brew install bash jq` — `git`/`curl` come with the Xcode Command Line Tools (`xcode-select --install`) |
+| **Linux** | `git`, `bash` 4+, `curl`, `jq` | `sudo apt-get install -y git curl jq` (Debian/Ubuntu) · `sudo dnf install -y git curl jq` (Fedora/RHEL) · `sudo pacman -S git curl jq` (Arch) |
+| **Windows** | `git`, [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows) (`pwsh`) | `winget install Microsoft.PowerShell` — built-in JSON and HTTP, so **no `curl` and no `jq` needed** |
+
+Check what you have: `git --version && bash --version && curl --version && jq --version`
+(Windows: `pwsh -Version`).
+
+**`jq` is not optional on macOS/Linux** — every bash helper is built on it.
+Without it the auto-context hook still exits cleanly and never blocks generation,
+but it reports `"reason": "missing-dependency"` and the agent loses the
+deterministic path (link parsing, node-id canonicalization, snapshot). It then
+falls back to improvising, a common source of wrong node ids being sent to a
+Figma MCP server.
+
+No `sudo`, or Homebrew's Cellar not writable? The static binary needs no admin
+rights — pick the asset matching your machine:
 
 ```bash
+# macOS Apple Silicon: jq-macos-arm64  ·  macOS Intel: jq-macos-amd64
+# Linux x86_64:        jq-linux-amd64  ·  Linux ARM64: jq-linux-arm64
 mkdir -p ~/.local/bin
 curl -fsSL -o ~/.local/bin/jq https://github.com/jqlang/jq/releases/latest/download/jq-macos-arm64
 chmod +x ~/.local/bin/jq
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+# add to your shell profile (~/.zshrc on macOS, ~/.bashrc on most Linux distros):
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Windows uses PowerShell 7+ (`pwsh`) and needs neither `curl` nor `jq`.
+Last resort on a locked-down macOS/Linux machine: install PowerShell 7+ and run
+the `.specify/scripts/powershell/*.ps1` twins instead — they need neither `curl`
+nor `jq`.
 
 ### One-time setup per developer — read-only Figma PAT
 
