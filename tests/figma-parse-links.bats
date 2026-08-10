@@ -56,6 +56,16 @@ setup() {
   [[ "$(echo "$output" | jq -r '.nodeId')" == "1:2;3:4" ]]
 }
 
+@test "parses a node-id behind an HTML-escaped ampersand (&amp;)" {
+  # Feature input pasted from a rich-text source (Jira, Confluence, an HTML
+  # email) carries the separators escaped, so the character before 'node-id'
+  # is ';' rather than '&'. Anchoring on '&' alone silently drops the id and
+  # the pinned frame degrades to a broad link.
+  run "$SCRIPT" "https://www.figma.com/design/AbC123/Flow?type=design&amp;node-id=12-345&amp;m=dev"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -r '.nodeId')" == "12:345" ]]
+}
+
 @test "reports a malformed node-id as null instead of forwarding it" {
   # Better a broad link (the agent asks which frame) than a bogus id that the
   # MCP server rejects with "the node may have been deleted".

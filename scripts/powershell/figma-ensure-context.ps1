@@ -30,6 +30,7 @@
 #
 # Prints a JSON status object on stdout:
 #   { "ran": true|false, "reason": "...", "code": "NETWORK|AUTH|NOT_FOUND|...|null",
+#     "dependency": null,              # always null here (no jq/curl dependency)
 #     "target": "...",
 #     "snapshot": "...", "links": [...], "introspectArgs": [...],
 #     "mustInject": true|false,        # section is mandatory in spec/plan/tasks
@@ -103,6 +104,10 @@ function Emit-Status { # $Ran (bool), $Reason
         ran             = $Ran
         reason          = $Reason
         code            = if ($script:failureCode) { $script:failureCode } else { $null }
+        # Always null here — this port needs neither jq nor curl, so it has no
+        # missing-dependency path. The key is emitted regardless to keep the
+        # status schema identical to the bash twin's, as both READMEs promise.
+        dependency      = $null
         target          = if ($script:target) { $script:target } else { $null }
         snapshot        = $script:snapshotPath
         links           = @($script:links)

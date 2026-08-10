@@ -42,7 +42,7 @@ Gemini, Cursor, …) on a **single-repo** (default), **mono-repo** or **multi-re
 > Swap `jq-macos-arm64` for `jq-macos-amd64`, `jq-linux-amd64` or
 > `jq-linux-arm64` as needed. The scripts print these same instructions when they
 > detect the missing dependency. Alternative: run the **PowerShell 7+ ports**
-> (`scripts/powershell/*.ps1`) — they use built-in JSON and need no `jq` at all,
+> (`.specify/scripts/powershell/*.ps1`) — they use built-in JSON and need no `jq` at all,
 > on macOS and Linux too.
 
 ## 1. Install

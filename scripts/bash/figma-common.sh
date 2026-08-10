@@ -40,7 +40,7 @@ figma_install_hint() {
         '  (swap jq-macos-arm64 for jq-macos-amd64, jq-linux-amd64 or jq-linux-arm64)' \
         '' \
         '  Or skip the bash helpers entirely: the PowerShell 7+ ports under' \
-        '  scripts/powershell/ use built-in JSON and need no jq.'
+        '  .specify/scripts/powershell/ use built-in JSON and need no jq.'
       ;;
     curl)
       printf '%s\n' \

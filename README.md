@@ -171,13 +171,13 @@ and [docs/MONOREPO.md](docs/MONOREPO.md).
 
 ## Requirements
 - `git`, plus one script toolchain per developer machine:
-  - **macOS / Linux**: `bash` 4+, `curl`, `jq` (runs `scripts/bash/*.sh`). `jq`
+  - **macOS / Linux**: `bash` 4+, `curl`, `jq` (runs `.specify/scripts/bash/*.sh`). `jq`
     is required, not optional: without it the auto-context hook reports
     `"reason": "missing-dependency"` and the agent loses the deterministic path.
     No `sudo` / non-writable Homebrew? Install the static binary into
     `~/.local/bin` — see
     [docs/INSTALL.md → Prerequisites](docs/INSTALL.md#prerequisites);
-  - **Windows**: PowerShell 7+ (`pwsh`) — runs the `scripts/powershell/*.ps1`
+  - **Windows**: PowerShell 7+ (`pwsh`) — runs the `.specify/scripts/powershell/*.ps1`
     ports, which use PowerShell's built-in JSON and HTTP support (no `curl`,
     no `jq`). Same flags, same JSON output, same exit codes as the bash
     helpers, so commands, hooks and CI gates behave identically.

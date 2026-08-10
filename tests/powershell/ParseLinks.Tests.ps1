@@ -44,6 +44,15 @@ Describe 'figma-parse-links.ps1' {
         $r.Json.nodeId | Should -Be '1:2;3:4'
     }
 
+    It 'extracts a node id behind an HTML-escaped ampersand (&amp;)' {
+        # Feature input pasted from a rich-text source (Jira, Confluence, an HTML
+        # email) carries the separators escaped, so the character before 'node-id'
+        # is ';' rather than '&'. Anchoring on '&' alone silently drops the id and
+        # the pinned frame degrades to a broad link.
+        $r = Invoke-FigmaScript 'figma-parse-links.ps1' @('https://www.figma.com/design/AbC123/Flow?type=design&amp;node-id=12-345&amp;m=dev')
+        $r.Json.nodeId | Should -Be '12:345'
+    }
+
     It 'reports a malformed node id as null instead of forwarding it' {
         $r = Invoke-FigmaScript 'figma-parse-links.ps1' @('https://www.figma.com/design/AbC123/Flow?node-id=not-a-node')
         $r.Json.nodeId | Should -Be $null

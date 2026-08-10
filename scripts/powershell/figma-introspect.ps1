@@ -166,7 +166,14 @@ try {
 
         # Optionally enrich with specific node detail (e.g. from parsed Figma links).
         if ($nodes.Count -gt 0) {
-            $ids = $nodes -join ','
+            # ';' chains the segments of a nested-instance id ('I12:345;678:901')
+            # and is also a legal query sub-delimiter that some stacks still parse
+            # as a second parameter separator — which would truncate the id
+            # server-side and return no node for it. Downstream, a linked node
+            # absent from the snapshot never satisfies the coverage check, so the
+            # hook would re-introspect forever instead of ever reaching 'fresh'.
+            # Percent-encode it so the id arrives whole.
+            $ids = ($nodes -join ',').Replace(';', '%3B')
             $nodesJson = (Invoke-FigmaApi "/files/$fileKey/nodes?ids=$ids") | ConvertFrom-Json
         }
     } else {

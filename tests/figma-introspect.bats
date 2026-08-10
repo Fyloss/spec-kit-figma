@@ -95,6 +95,23 @@ FAKE
   [ "$output" -ge 1 ]
 }
 
+@test "percent-encodes the ';' of a nested-instance --node in the query" {
+  install_fake_curl
+  export FIGMA_PAT="figd_dummy"
+  jq -n '{name:"f", lastModified:"2026-01-01T00:00:00Z", version:"1",
+    document:{children:[]}, components:{}, styles:{},
+    nodes:{"I12:345;678:901":{document:{id:"I12:345;678:901"}}}}' > "${WORKSPACE}/node.json"
+  export FAKE_CURL_BODY="${WORKSPACE}/node.json"
+
+  # ';' is a legal but ambiguous query sub-delimiter: sent raw, a gateway that
+  # still treats it as a parameter separator truncates the id and the node comes
+  # back missing — which downstream reads as a permanently stale snapshot.
+  run "$SCRIPT" --file abc123 --node "I12-345%3B678-901"
+  [ "$status" -eq 0 ]
+  run grep -c 'nodes?ids=I12:345%3B678:901' "${FAKE_CURL_LOG}"
+  [ "$output" -ge 1 ]
+}
+
 @test "rejects a malformed --node before any network call" {
   run "$SCRIPT" --file abc123 --node "12-345&t=Xy9Z-4"
   [ "$status" -eq 1 ]

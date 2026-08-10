@@ -156,6 +156,13 @@ if [[ -n "$FILE_KEY" ]]; then
   # Optionally enrich with specific node detail (e.g. from parsed Figma links).
   if [[ ${#NODES[@]} -gt 0 ]]; then
     IDS="$(IFS=, ; echo "${NODES[*]}")"
+    # ';' chains the segments of a nested-instance id ('I12:345;678:901') and is
+    # also a legal query sub-delimiter that some stacks still parse as a second
+    # parameter separator — which would truncate the id server-side and return no
+    # node for it. Downstream, a linked node absent from the snapshot never
+    # satisfies snapshot_covers_links, so the hook would re-introspect forever
+    # instead of ever reaching 'fresh'. Percent-encode it so the id arrives whole.
+    IDS="${IDS//;/%3B}"
     figma_api "/files/${FILE_KEY}/nodes?ids=${IDS}" > "$NODES_FILE"
   fi
 else

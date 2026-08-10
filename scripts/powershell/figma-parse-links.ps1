@@ -38,11 +38,15 @@ foreach ($m in $matches_) {
     # Take the whole node-id value (up to the next parameter or fragment) and let
     # ConvertTo-FigmaNodeId canonicalize it: the tracking suffix Figma appends
     # (&t=…) must not leak into the id, and nested-instance ids carry several
-    # separators. An unrecognized value yields null — the caller then treats the
-    # link as broad and asks which frame, which is safer than forwarding an id
-    # the API/MCP server will reject.
+    # separators. The '&' separator is matched through any number of 'amp;'
+    # escapes: input pasted from a rich-text source (Jira, Confluence, an HTML
+    # email) arrives as '&amp;node-id=…', and requiring a bare '&' would silently
+    # downgrade a pinned frame to a broad link.
+    # An unrecognized value yields null — the caller then treats the link as broad
+    # and asks which frame, which is safer than forwarding an id the API/MCP
+    # server will reject.
     $node = $null
-    $nodeMatch = [regex]::Match($url, '[?&]node-id=([^&#\s]+)')
+    $nodeMatch = [regex]::Match($url, '[?&](?:amp;)*node-id=([^&#\s]+)')
     if ($nodeMatch.Success) {
         $node = ConvertTo-FigmaNodeId $nodeMatch.Groups[1].Value
     }

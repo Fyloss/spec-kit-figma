@@ -33,10 +33,14 @@ printf '%s\n' "$LINKS" \
       # Take the whole node-id value (up to the next parameter or fragment) and
       # let figma_normalize_node_id canonicalize it: the tracking suffix Figma
       # appends (&t=…) must not leak into the id, and nested-instance ids carry
-      # several separators. An unrecognized value yields null — the caller then
-      # treats the link as broad and asks which frame, which is safer than
-      # forwarding an id the API/MCP server will reject.
-      raw_node="$(printf '%s' "$url" | grep -oE '[?&]node-id=[^&#[:space:]]+' | head -n1 | sed -E 's/^[?&]node-id=//' || true)"
+      # several separators. The '&' separator is matched through any number of
+      # 'amp;' escapes: input pasted from a rich-text source (Jira, Confluence,
+      # an HTML email) arrives as '&amp;node-id=…', and requiring a bare '&'
+      # would silently downgrade a pinned frame to a broad link.
+      # An unrecognized value yields null — the caller then treats the link as
+      # broad and asks which frame, which is safer than forwarding an id the
+      # API/MCP server will reject.
+      raw_node="$(printf '%s' "$url" | grep -oE '[?&](amp;)*node-id=[^&#[:space:]]+' | head -n1 | sed -E 's/^[?&](amp;)*node-id=//' || true)"
       node="$(figma_normalize_node_id "$raw_node" || true)"
       jq -n --arg f "$key" --arg n "${node:-}" --arg k "$kind" --arg u "$url" \
         '{fileId:$f, nodeId:(if $n=="" then null else $n end), kind:$k, url:$u}'
