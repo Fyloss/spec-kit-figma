@@ -55,6 +55,23 @@ if ($env:FIGMA_CONFIG -and -not (Test-Path -LiteralPath $env:FIGMA_CONFIG -PathT
     Write-FigmaStderr "ERROR: config not found: $($env:FIGMA_CONFIG)"
     exit 1
 }
+# Canonicalize every --node here rather than trusting the caller: an agent that
+# copies the id out of a deep link hands over the URL form ('12-345'), sometimes
+# with the tracking suffix still attached. The API answers such a request with an
+# empty node set, which surfaces downstream (and in MCP servers) as the
+# misleading "the provided node ID was not found in the file".
+if ($nodes.Count -gt 0) {
+    $normalizedNodes = @()
+    foreach ($rawNode in $nodes) {
+        $canonicalNode = ConvertTo-FigmaNodeId $rawNode
+        if (-not $canonicalNode) {
+            Write-FigmaStderr "ERROR: --node '$rawNode' is not a Figma node id. Expected '12:345' (the URL form 'node-id=12-345' is accepted), or 'I12:345;678:901' for a nested instance."
+            exit 1
+        }
+        $normalizedNodes += $canonicalNode
+    }
+    $nodes = $normalizedNodes
+}
 
 $cache = Get-FigmaCachePath
 $null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $cache)
@@ -149,7 +166,14 @@ try {
 
         # Optionally enrich with specific node detail (e.g. from parsed Figma links).
         if ($nodes.Count -gt 0) {
-            $ids = $nodes -join ','
+            # ';' chains the segments of a nested-instance id ('I12:345;678:901')
+            # and is also a legal query sub-delimiter that some stacks still parse
+            # as a second parameter separator — which would truncate the id
+            # server-side and return no node for it. Downstream, a linked node
+            # absent from the snapshot never satisfies the coverage check, so the
+            # hook would re-introspect forever instead of ever reaching 'fresh'.
+            # Percent-encode it so the id arrives whole.
+            $ids = ($nodes -join ',').Replace(';', '%3B')
             $nodesJson = (Invoke-FigmaApi "/files/$fileKey/nodes?ids=$ids") | ConvertFrom-Json
         }
     } else {

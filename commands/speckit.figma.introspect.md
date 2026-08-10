@@ -80,6 +80,44 @@ replace `./.specify/scripts/bash/<name>.sh` with
 - Never assume MCP is present: portability (REST) is the contract; MCP is an
   opt-in enrichment for those who run the server.
 
+### 1b-bis. Node-id contract for MCP tools — never hand-extract an id
+
+Figma writes node ids one way in URLs (`node-id=12-345`) and expects another in
+its API and in every MCP server (`12:345`). Re-deriving that mapping yourself is
+the single most common cause of *"The provided node ID was not found in the
+file"* — the server is telling you the id it received does not exist, not that
+the frame was deleted. So:
+
+- **Take ids from the `parse` script, never from the raw URL.** Its `nodeId`
+  field is already canonical (`12:345`, or `I12:345;678:901` for a nested
+  instance). The `ensure` hook exposes the same values under `links`.
+- **Pass `fileId` and `nodeId` from the SAME parse result** to any MCP tool.
+  Mixing the `figmaFileId` of the config with a `nodeId` coming from a different
+  link (a component library, a Figma **branch** — a branch has its own file key)
+  produces the exact same error.
+- **Never truncate or reconstruct.** `node-id=12-345&t=Xy9Z-4` yields `12:345`;
+  the `&t=…` tracking suffix is not part of the id.
+- When `parse` returns `nodeId: null`, the link is **broad** — do not invent an
+  id: run the creative-confirmation checkpoint (section 3).
+- The REST path is already immune: `introspect --node` canonicalizes its input
+  and refuses a malformed id up front, so use `introspect --file <id> --node
+  <nodeId>` as the cross-check whenever an MCP call reports a missing node. If
+  REST returns the node and MCP does not, the id is right and the **server** is
+  the problem — see the next point.
+- **When the scripts cannot run at all** (`jq` missing → `ensure` answers
+  `"reason": "missing-dependency"`), you own the canonicalization. Apply it
+  literally, step by step: cut the `node-id` value at the next `&` or `#`;
+  decode `%3A` → `:` and `%3B` → `;`; replace **every** remaining `-` with `:`;
+  check the result against `12:345` / `I12:345;678:901`; pair it with the
+  `fileKey` from the *same* URL. Do not skip step 3 after the first separator,
+  and do not reconstruct an id from memory. Also relay the install instructions
+  the script printed — the degraded mode should not become permanent.
+- **Local Dev Mode server (`http://127.0.0.1:3845/mcp`)** only sees the file
+  currently open in the Figma desktop app. Any node of any other file is
+  legitimately "not found". Tell the developer to open the right file in Figma
+  Desktop, or to switch to the hosted server (`https://mcp.figma.com/mcp`), which
+  is file-agnostic. `resolve` reports the configured URL in `mcp.url`.
+
 ## 1c. When introspection fails — report the true cause, never guess
 
 If `introspect` exits non-zero, it has already classified the failure and printed

@@ -35,18 +35,20 @@ foreach ($m in $matches_) {
     $kindKey = [regex]::Match($url, 'figma\.com/(file|design|proto)/([A-Za-z0-9_-]+)')
     $kind = $kindKey.Groups[1].Value
     $key = $kindKey.Groups[2].Value
+    # Take the whole node-id value (up to the next parameter or fragment) and let
+    # ConvertTo-FigmaNodeId canonicalize it: the tracking suffix Figma appends
+    # (&t=…) must not leak into the id, and nested-instance ids carry several
+    # separators. The '&' separator is matched through any number of 'amp;'
+    # escapes: input pasted from a rich-text source (Jira, Confluence, an HTML
+    # email) arrives as '&amp;node-id=…', and requiring a bare '&' would silently
+    # downgrade a pinned frame to a broad link.
+    # An unrecognized value yields null — the caller then treats the link as broad
+    # and asks which frame, which is safer than forwarding an id the API/MCP
+    # server will reject.
     $node = $null
-    $nodeMatch = [regex]::Match($url, 'node-id=[0-9]+[-:%][0-9A-Za-z]+')
+    $nodeMatch = [regex]::Match($url, '[?&](?:amp;)*node-id=([^&#\s]+)')
     if ($nodeMatch.Success) {
-        $node = $nodeMatch.Value -replace '^node-id=', ''
-        # Normalize the id separator to ':' — %3A (any case) first, else the
-        # first '-' (the URL form of the canvas separator).
-        if ($node -match '%3A|%3a') {
-            $node = $node -replace '%3A', ':' -replace '%3a', ':'
-        } else {
-            $idx = $node.IndexOf('-')
-            if ($idx -ge 0) { $node = $node.Substring(0, $idx) + ':' + $node.Substring($idx + 1) }
-        }
+        $node = ConvertTo-FigmaNodeId $nodeMatch.Groups[1].Value
     }
     ConvertTo-FigmaJson ([ordered]@{
         fileId = $key

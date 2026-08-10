@@ -19,6 +19,32 @@ Gemini, Cursor, …) on a **single-repo** (default), **mono-repo** or **multi-re
     `./.specify/scripts/powershell/<name>.ps1` from `pwsh`.
 - A read-only Figma Personal Access Token (local) or a CI secret (pipelines).
 
+> [!IMPORTANT]
+> **`jq` is not optional on macOS/Linux** — every bash helper is built on it.
+> Without it the auto-context hook degrades to `"reason": "missing-dependency"`:
+> it still exits 0 and never blocks generation, but the agent loses the
+> deterministic path (link parsing, node-id canonicalization, snapshot) and falls
+> back to improvising, which is a common source of
+> [wrong node ids sent to MCP](#troubleshooting--the-provided-node-id-was-not-found-in-the-file).
+>
+> When `brew install jq` is not an option (no `sudo`, Homebrew's Cellar not
+> writable — common on managed machines), install the static binary into your own
+> `PATH`; it needs no admin rights:
+>
+> ```bash
+> mkdir -p ~/.local/bin
+> curl -fsSL -o ~/.local/bin/jq \
+>   https://github.com/jqlang/jq/releases/latest/download/jq-macos-arm64
+> chmod +x ~/.local/bin/jq
+> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc   # then restart the shell
+> ```
+>
+> Swap `jq-macos-arm64` for `jq-macos-amd64`, `jq-linux-amd64` or
+> `jq-linux-arm64` as needed. The scripts print these same instructions when they
+> detect the missing dependency. Alternative: run the **PowerShell 7+ ports**
+> (`.specify/scripts/powershell/*.ps1`) — they use built-in JSON and need no `jq` at all,
+> on macOS and Linux too.
+
 ## 1. Install
 
 ### Option A — SpecKit extension (recommended)
@@ -155,6 +181,93 @@ Validate with the JSON Schema in your editor:
 See [CREDENTIALS.md](CREDENTIALS.md). Local: store your read-only PAT in the OS
 keychain and export `FIGMA_PAT_COMMAND` (no `.env`). CI/Cloud Agent: inject a
 platform secret.
+
+## 3b. Optional — Figma MCP server (higher mockup fidelity)
+
+The extension works out of the box on the **REST** engine (`figma.contextSource:
+"rest"`), which needs nothing but the PAT and is the only engine guaranteed in
+CI. Adding a Figma **MCP** server on top gives the agent the design's structured
+node data (exact spacing, layout constraints, tokens, variants, component
+bindings), so it reproduces mockups far more faithfully. It is optional and
+per-developer: the config stays portable and falls back to REST automatically.
+
+MCP auth is **separate from the PAT**: the hosted server uses its own OAuth
+sign-in, the local Dev Mode server uses your Figma desktop session. Regenerating
+your PAT neither fixes nor breaks MCP.
+
+### Claude Code
+
+```bash
+claude plugin install figma@claude-plugins-official
+```
+
+The official plugin wires Figma's **hosted** server
+(`https://mcp.figma.com/mcp`) in as a native tool — no local server, no extra
+config. Sign in to Figma when prompted, then set `figma.contextSource: "mcp"` in
+`figma.projects.config.json`. `figma-resolve-source.sh` detects Claude Code and
+reminds you when the plugin is missing (silence it with
+`FIGMA_NO_PLUGIN_ADVICE=1`).
+
+### VS Code
+
+Add the same hosted server to whichever agent you use — auto-detection is
+Claude-Code-only, so this step is manual.
+
+- **GitHub Copilot (agent mode)** consumes VS Code's native MCP support: run
+  **MCP: Add Server…** from the Command Palette (pick *HTTP*, URL
+  `https://mcp.figma.com/mcp`), or commit a workspace `.vscode/mcp.json`:
+
+  ```jsonc
+  {
+    "servers": {
+      "figma": { "type": "http", "url": "https://mcp.figma.com/mcp" }
+    }
+  }
+  ```
+
+- **Cline, Continue, the Claude Code extension…** do *not* read
+  `.vscode/mcp.json` — add the same URL through their own MCP configuration.
+
+Sign in to Figma when the OAuth prompt appears, then set
+`figma.contextSource: "mcp"`.
+
+### Local Dev Mode server (alternative)
+
+`figma.mcp.url` defaults to `http://127.0.0.1:3845/mcp`, the **local** Dev Mode
+server exposed by the Figma desktop app (Preferences → *Enable Dev Mode MCP
+server*, Dev/Full seat required). It is faster but scoped: it only sees the file
+**currently open** in the desktop app. Prefer the hosted server unless you
+specifically need the local one.
+
+### Troubleshooting — "The provided node ID was not found in the file"
+
+This message comes from the **MCP server**, never from this extension. It means
+the id the server received does not exist in the file it looked at. In order of
+likelihood:
+
+| Cause | Check | Fix |
+|---|---|---|
+| Local Dev Mode server, wrong file open | is `figma.mcp.url` `127.0.0.1:3845`? | open the target file in Figma Desktop, or switch to `https://mcp.figma.com/mcp` |
+| Id passed in URL form (`12-345` instead of `12:345`), or with the `&t=…` suffix still attached | read the tool-call arguments in your agent's MCP log | let the agent take ids from `figma-parse-links.sh` / the `ensure` hook's `links`, which are already canonical |
+| `nodeId` paired with the wrong `fileKey` (component library, or a Figma **branch** — a branch has its own file key) | compare both against the deep link | use the `fileId` and `nodeId` of the *same* parse result |
+| `jq` missing → the helpers never ran, so the agent hand-extracted the id | is there a `"reason": "missing-dependency"` in the hook output? | install `jq` (see [Prerequisites](#prerequisites)) — the deterministic path is what makes the id correct |
+| The node really was deleted | see below | ask the designer for a current link |
+
+Cross-check with the REST path, which is immune (it canonicalizes and validates
+the id before any call):
+
+```bash
+./.specify/scripts/bash/figma-introspect.sh --file <fileKey> --node <nodeId>
+jq '.nodes.nodes | keys' .figma/cache/context-snapshot.json
+```
+
+If REST returns the node, the id is correct and the problem is the MCP server's
+scope (wrong file open, or not signed in to the right Figma account). If REST
+returns nothing either, the node genuinely does not exist in that file.
+
+`--node` accepts both forms — `12-345` is normalized to `12:345`, and nested
+instances (`I12:345;678:901`) are supported; a value that is not a node id is
+rejected with an explicit error instead of a silent empty result.
 
 ## 4. Register the commands with your agent
 > Skip this step if you installed via `specify extension add` (Option A) — SpecKit

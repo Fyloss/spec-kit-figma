@@ -15,11 +15,14 @@ teardown() {
 }
 
 # Install a curl stand-in that replays $FAKE_CURL_BODY for any request and
-# reports HTTP 200, so introspection runs offline.
+# reports HTTP 200, so introspection runs offline. Every invocation is appended
+# to $FAKE_CURL_LOG so tests can assert on the requested URL.
 install_fake_curl() {
   mkdir -p "${WORKSPACE}/bin"
+  export FAKE_CURL_LOG="${WORKSPACE}/curl-args.log"
   cat > "${WORKSPACE}/bin/curl" <<'FAKE'
 #!/usr/bin/env bash
+[[ -n "${FAKE_CURL_LOG:-}" ]] && printf '%s\n' "$*" >> "$FAKE_CURL_LOG"
 out=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -74,4 +77,43 @@ FAKE
   run "$SCRIPT" --file abc123 --depth two
   [ "$status" -eq 1 ]
   [[ "$output" == *"--depth must be a positive integer"* ]]
+}
+
+@test "accepts a URL-form --node and queries the canonical id" {
+  install_fake_curl
+  export FIGMA_PAT="figd_dummy"
+  jq -n '{name:"f", lastModified:"2026-01-01T00:00:00Z", version:"1",
+    document:{children:[]}, components:{}, styles:{},
+    nodes:{"12:345":{document:{id:"12:345"}}}}' > "${WORKSPACE}/node.json"
+  export FAKE_CURL_BODY="${WORKSPACE}/node.json"
+
+  # An agent that copies the id straight out of the deep link passes '12-345';
+  # the API only knows '12:345' and would answer "node not found".
+  run "$SCRIPT" --file abc123 --node 12-345
+  [ "$status" -eq 0 ]
+  run grep -c 'nodes?ids=12:345' "${FAKE_CURL_LOG}"
+  [ "$output" -ge 1 ]
+}
+
+@test "percent-encodes the ';' of a nested-instance --node in the query" {
+  install_fake_curl
+  export FIGMA_PAT="figd_dummy"
+  jq -n '{name:"f", lastModified:"2026-01-01T00:00:00Z", version:"1",
+    document:{children:[]}, components:{}, styles:{},
+    nodes:{"I12:345;678:901":{document:{id:"I12:345;678:901"}}}}' > "${WORKSPACE}/node.json"
+  export FAKE_CURL_BODY="${WORKSPACE}/node.json"
+
+  # ';' is a legal but ambiguous query sub-delimiter: sent raw, a gateway that
+  # still treats it as a parameter separator truncates the id and the node comes
+  # back missing — which downstream reads as a permanently stale snapshot.
+  run "$SCRIPT" --file abc123 --node "I12-345%3B678-901"
+  [ "$status" -eq 0 ]
+  run grep -c 'nodes?ids=I12:345%3B678:901' "${FAKE_CURL_LOG}"
+  [ "$output" -ge 1 ]
+}
+
+@test "rejects a malformed --node before any network call" {
+  run "$SCRIPT" --file abc123 --node "12-345&t=Xy9Z-4"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"is not a Figma node id"* ]]
 }

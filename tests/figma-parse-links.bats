@@ -29,6 +29,51 @@ setup() {
   [[ "$(echo "$output" | jq -r '.nodeId')" == "12:345" ]]
 }
 
+@test "decodes a lower-case url-encoded node-id (%3a)" {
+  run "$SCRIPT" "https://www.figma.com/design/AbC123/Flow?node-id=12%3a345"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -r '.nodeId')" == "12:345" ]]
+}
+
+@test "ignores the tracking suffix that Figma appends after the node-id" {
+  run "$SCRIPT" "https://www.figma.com/design/AbC123/Flow?node-id=12-345&t=Xy9Z-4"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -r '.nodeId')" == "12:345" ]]
+}
+
+@test "normalizes an instance node-id (I-prefixed, ';'-chained)" {
+  # "Copy link to selection" on a nested instance yields I<a>-<b>%3B<c>-<d>.
+  # MCP servers and the REST API expect I<a>:<b>;<c>:<d> — a partially
+  # normalized id is reported as "node not found in the file".
+  run "$SCRIPT" "https://www.figma.com/design/AbC123/Flow?node-id=I123-456%3B789-012"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -r '.nodeId')" == "I123:456;789:012" ]]
+}
+
+@test "normalizes every separator of a chained node-id, not just the first" {
+  run "$SCRIPT" "https://www.figma.com/design/AbC123/Flow?node-id=1-2%3B3-4"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -r '.nodeId')" == "1:2;3:4" ]]
+}
+
+@test "parses a node-id behind an HTML-escaped ampersand (&amp;)" {
+  # Feature input pasted from a rich-text source (Jira, Confluence, an HTML
+  # email) carries the separators escaped, so the character before 'node-id'
+  # is ';' rather than '&'. Anchoring on '&' alone silently drops the id and
+  # the pinned frame degrades to a broad link.
+  run "$SCRIPT" "https://www.figma.com/design/AbC123/Flow?type=design&amp;node-id=12-345&amp;m=dev"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -r '.nodeId')" == "12:345" ]]
+}
+
+@test "reports a malformed node-id as null instead of forwarding it" {
+  # Better a broad link (the agent asks which frame) than a bogus id that the
+  # MCP server rejects with "the node may have been deleted".
+  run "$SCRIPT" "https://www.figma.com/design/AbC123/Flow?node-id=not-a-node"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -r '.nodeId')" == "null" ]]
+}
+
 @test "parses a proto link" {
   run "$SCRIPT" "https://www.figma.com/proto/PrOtO1/Demo"
   [ "$status" -eq 0 ]

@@ -1,4 +1,6 @@
+.claude/
 .DS_Store
 .env
 .figma/cache/
 .serena/
+.tokensave/

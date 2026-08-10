@@ -52,6 +52,15 @@ Describe 'figma-ensure-context.ps1 (skip paths)' {
         Test-Path (Join-Path $ws '.figma/cache/section.spec.md') | Should -BeFalse
     }
 
+    It 'emits the documented status schema, including the dependency key' {
+        # The bash twin always emits "dependency" (null unless jq is missing) and
+        # both READMEs promise the same JSON output from either port; a missing key
+        # makes the Windows status object diverge from the documented schema.
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' -Workspace $ws
+        @($r.Json.PSObject.Properties.Name) | Should -Contain 'dependency'
+        $r.Json.dependency | Should -Be $null
+    }
+
     It 'rejects a non-numeric --max-age-minutes' {
         Copy-Item (Join-Path $Fixtures 'singlerepo-valid.json') (Join-Path $ws 'figma.projects.config.json')
         $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--max-age-minutes', 'nope') -Workspace $ws

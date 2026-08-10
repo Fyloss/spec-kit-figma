@@ -60,6 +60,23 @@ if [[ -n "${FIGMA_CONFIG:-}" && ! -f "$FIGMA_CONFIG" ]]; then
   echo "ERROR: config not found: $FIGMA_CONFIG" >&2
   exit 1
 fi
+# Canonicalize every --node here rather than trusting the caller: an agent that
+# copies the id out of a deep link hands over the URL form ('12-345'), sometimes
+# with the tracking suffix still attached. The API answers such a request with an
+# empty node set, which surfaces downstream (and in MCP servers) as the
+# misleading "the provided node ID was not found in the file".
+if [[ ${#NODES[@]} -gt 0 ]]; then
+  NORMALIZED_NODES=()
+  for RAW_NODE in "${NODES[@]}"; do
+    if CANONICAL_NODE="$(figma_normalize_node_id "$RAW_NODE")"; then
+      NORMALIZED_NODES+=("$CANONICAL_NODE")
+    else
+      echo "ERROR: --node '${RAW_NODE}' is not a Figma node id. Expected '12:345' (the URL form 'node-id=12-345' is accepted), or 'I12:345;678:901' for a nested instance." >&2
+      exit 1
+    fi
+  done
+  NODES=("${NORMALIZED_NODES[@]}")
+fi
 
 CACHE="$(figma_cache_path)"
 mkdir -p "$(dirname "$CACHE")"
@@ -139,6 +156,13 @@ if [[ -n "$FILE_KEY" ]]; then
   # Optionally enrich with specific node detail (e.g. from parsed Figma links).
   if [[ ${#NODES[@]} -gt 0 ]]; then
     IDS="$(IFS=, ; echo "${NODES[*]}")"
+    # ';' chains the segments of a nested-instance id ('I12:345;678:901') and is
+    # also a legal query sub-delimiter that some stacks still parse as a second
+    # parameter separator — which would truncate the id server-side and return no
+    # node for it. Downstream, a linked node absent from the snapshot never
+    # satisfies snapshot_covers_links, so the hook would re-introspect forever
+    # instead of ever reaching 'fresh'. Percent-encode it so the id arrives whole.
+    IDS="${IDS//;/%3B}"
     figma_api "/files/${FILE_KEY}/nodes?ids=${IDS}" > "$NODES_FILE"
   fi
 else
