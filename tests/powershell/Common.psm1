@@ -18,7 +18,8 @@ function Get-FixturesDir { $script:FixturesDir }
 function Reset-FigmaEnvironment {
     foreach ($name in @('FIGMA_PAT', 'FIGMA_PAT_COMMAND', 'FIGMA_CONFIG', 'FIGMA_API_BASE',
             'FIGMA_DIAG_FILE', 'FIGMA_API_MAX_ATTEMPTS', 'FIGMA_API_RETRY_DELAY',
-            'FIGMA_SNAPSHOT_MAX_AGE_MINUTES', 'CLAUDECODE', 'AI_AGENT')) {
+            'FIGMA_SNAPSHOT_MAX_AGE_MINUTES', 'CLAUDECODE', 'AI_AGENT',
+            'SPECIFY_FEATURE')) {
         Remove-Item "Env:$name" -ErrorAction SilentlyContinue
     }
     $env:FIGMA_NO_PLUGIN_ADVICE = '1'

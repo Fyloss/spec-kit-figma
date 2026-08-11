@@ -3,7 +3,7 @@ schema_version: "1.0"
 extension:
   id: figma
   name: "Spec Kit Figma"
-  version: "1.7.0"
+  version: "2.0.0"
   description: "Grounds SpecKit spec/plan/tasks in Figma design context via REST or MCP, on macOS/Linux/Windows."
   author: "Fyloss"
   repository: "https://github.com/Fyloss/spec-kit-figma"
@@ -40,7 +40,7 @@ provides:
 
     - name: speckit.figma.ensure
       file: commands/speckit.figma.ensure.md
-      description: "Automatically refresh the Figma design context (incl. direct Figma links pasted in the feature input) before spec/plan/tasks generation, and render the ready-to-paste design section so it is integrated regardless of agent model. Safe no-op when Figma does not apply; invoked by the before_specify/before_plan/before_tasks hooks."
+      description: "Automatically refresh the Figma design context before spec/plan/tasks generation, and render the ready-to-paste design section so it is integrated regardless of agent model. A Figma link pasted in the feature input is what makes a run a design run: with none, the command is a no-op that adds nothing to the document. Invoked by the before_specify/before_plan/before_tasks hooks."
 
     - name: speckit.figma.introspect
       file: commands/speckit.figma.introspect.md

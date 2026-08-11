@@ -5,6 +5,72 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-08-10
+
+### Changed
+
+- **BREAKING — a Figma link in the feature input is now what triggers the
+  extension.** `figma-ensure-context` used to treat a valid config with a mapped,
+  enabled target as enough: it introspected and forced the design section into
+  every `spec.md`, `plan.md` and `tasks.md`, so a feature like "add a Redis cache
+  on the billing endpoint" came back carrying a Figma section it had no business
+  carrying. The mapping in `figma.projects.config.json` says *where* a creative
+  would live, not *whether* a feature has one — only the link answers that. With
+  no link the run now ends at the new `no-figma-link` reason: no introspection,
+  no rendered section, `mustInject: false`, and the `after_*` verify hooks report
+  `not-applicable`.
+- Workspaces that relied on `pageToPackageMapping` alone to obtain design context
+  without pasting a link must now paste the Figma link in the feature
+  description, or run `/speckit.figma.introspect` by hand.
+- As a consequence, `figma-ensure-context` no longer derives an introspection
+  scope from the config (`--team` / `--project` / `--file`); that path was
+  unreachable once a link became mandatory. `/speckit.figma.introspect` remains
+  the way to introspect a mapped team or project.
+
+### Added
+
+- Figma links detected in the feature input are remembered **per feature**
+  (`.figma/cache/links/<feature>.json`, already covered by the `.figma/cache/`
+  gitignore entry), so the link is pasted once at `/speckit.specify` and
+  `/speckit.plan` / `/speckit.tasks` inherit it. Scoping is per feature so the
+  next, design-less feature never inherits the previous one's link. The feature
+  identity follows SpecKit's own resolution: `SPECIFY_FEATURE`, then
+  `.specify/feature.json`, then the git branch.
+- When that per-feature memory is absent, the link is recovered from the
+  committed `spec.md`. `.figma/cache/` is git-ignored, so the memory does not
+  travel with the branch: a fresh clone, a CI job or a teammate who just pulled
+  reached `/speckit.plan` with no link and fell through to `no-figma-link` —
+  under which the agent is told to add *nothing* about Figma, so `plan.md`
+  silently lost the design section `spec.md` carries. The recovery is gated on
+  the `speckit-figma:section phase=spec` marker: a `figma.com` URL merely
+  mentioned in the prose of a spec is not a design section and must not become a
+  trigger. The document must also be one the current feature positively owns
+  (`identified-only`): with nothing identifying the feature, "the only spec
+  around" belongs to another one, and inheriting its creative would re-create
+  the very regression this release removes. A recovered link re-warms the cache.
+- Prototype links keep their flow starting point. A `/proto/` URL names two
+  frames — `node-id`, whatever the designer was viewing when they copied the
+  link, and `starting-point-node-id`, the entry point of the parcours — and only
+  the first was introspected. Both are now deep-fetched (same batched request, so
+  no extra API cost), which also pins a prototype link whose `node-id` is
+  missing instead of degrading it to a broad link. Parsed links carry a new
+  `startNodeId` field.
+- The `no-figma-link` outcome is now surfaced conversationally, without touching
+  the document. Nothing distinguishes a front-end feature whose author simply
+  forgot to paste the link from a back-end one that legitimately has none, and
+  the document is deliberately silent — so a forgotten link produced a spec with
+  no design context and no signal at all, through `plan.md` and `tasks.md` too.
+  The console line now names the remedy, and the agent instructions separate the
+  two surfaces: nothing in the generated document, one plain sentence in the chat
+  reply. It stays a statement, not a question: the agent still never asks for a
+  link, blocks, or goes looking for one with an MCP tool.
+- `figma_feature_key` / `figma_feature_links_path` / `figma_resolve_phase_doc`
+  (bash) and `Get-FigmaFeatureKey` / `Get-FigmaFeatureLinksPath` /
+  `Get-FigmaPhaseDoc` (PowerShell). `figma-verify-section` now shares the
+  document resolver instead of carrying its own copy, and the resolver honours
+  the feature identity (`SPECIFY_FEATURE`, `.specify/feature.json`) before
+  falling back to the branch.
+
 ## [1.7.0] - 2026-08-10
 
 ### Fixed

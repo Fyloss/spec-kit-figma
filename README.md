@@ -107,6 +107,18 @@ linked nodes) — and it never blocks spec/tasks generation. Running
 `/speckit.figma.introspect` manually remains available for deep dives
 (specific nodes, custom depth).
 
+**A Figma link is what makes a run a design run.** Paste one in the feature
+description at `/speckit.specify` and the design section is generated and made
+mandatory; paste none and the hooks report `no-figma-link` and add nothing at
+all — a back-end feature never comes back with a design section stapled to its
+spec, even in a workspace where the target is mapped to a Figma file. The
+mapping in `figma.projects.config.json` says *where* a creative would live, not
+*whether* this feature has one. The link is pasted once: it is remembered for
+that feature, so `/speckit.plan` and `/speckit.tasks` inherit it without you
+re-pasting. That memory lives in the git-ignored `.figma/cache/`, so when it is
+absent — a fresh clone, a CI job, a teammate who just pulled the branch — the
+link is read back from the `spec.md` the earlier phase committed.
+
 > [!WARNING]
 > **Use a capable model (Claude Sonnet or better).** Lighter models are strongly
 > discouraged for this extension.
@@ -200,6 +212,23 @@ The engine is selected per workspace via `figma.contextSource`:
 | --- | --- | --- |
 | `"rest"` *(default)* | curl + jq against the Figma REST API | Always portable; the only engine guaranteed in CI. |
 | `"mcp"` | A Figma MCP (Model Context Protocol) server | Richer context, and **more faithful mockup implementation**, for users who run the server locally. |
+
+> [!IMPORTANT]
+> **The two engines are not alternatives, and MCP does not replace the PAT.**
+>
+> The deterministic introspection — `figma-introspect` →
+> `.figma/cache/context-snapshot.json` → ready-to-paste section — **always** goes
+> through the REST API and requires a PAT, whatever `contextSource` is set to.
+>
+> What `"mcp"` adds: the effective engine is recorded in the snapshot and
+> reported to the agent, which may then query its own MCP tool to reproduce the
+> mockup more faithfully. MCP improves how the agent **renders** the design, not
+> how the snapshot is **collected**.
+>
+> In practice: a local Dev Mode server alone, with no PAT configured, fails
+> introspection with `"reason": "introspect-failed"` and `"code": "AUTH"`.
+> Generation is not blocked — that is the extension's contract — but it proceeds
+> without design context.
 
 > **MCP yields more accurate implementations.** Because the MCP engine exposes
 > the design's structured node data — exact spacing, layout constraints, tokens,

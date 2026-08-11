@@ -161,7 +161,10 @@ if ($links.Count -eq 0) {
     $linksTable = '_None — context derived from the page mapping._'
 } else {
     $rows = foreach ($l in $links) {
+        # A prototype link with no node-id is still pinned, by its flow starting
+        # point: reporting "—" there would understate what was introspected.
         $node = Get-JsonValue $l @('nodeId')
+        if ($null -eq $node -or "$node" -eq '') { $node = Get-JsonValue $l @('startNodeId') }
         $nodeCell = if ($null -eq $node -or "$node" -eq '') { '—' } else { $node }
         "| $(Format-CellValue (Get-JsonValue $l @('url'))) | ``$(Get-JsonValue $l @('fileId'))`` | ``$nodeCell`` |"
     }

@@ -8,7 +8,11 @@
 #   figma-parse-links.ps1 "https://www.figma.com/design/AbC123/Flow?node-id=12-345 ..."
 #   $INPUT | figma-parse-links.ps1
 # Output: one JSON object per detected link:
-#   {"fileId":"AbC123","nodeId":"12:345","kind":"design","url":"..."}
+#   {"fileId":"AbC123","nodeId":"12:345","startNodeId":null,"kind":"design","url":"..."}
+# startNodeId carries a prototype's `starting-point-node-id`: a /proto/ URL names
+# TWO frames — the one the designer was viewing (node-id) and the entry point of
+# the flow — and both are creatives the spec needs. Callers treat it as an
+# additional node id, which also pins a link whose node-id is missing.
 # =============================================================================
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/figma-common.ps1"
@@ -24,7 +28,7 @@ if (-not $text) {
 if (-not $text) { exit 0 }
 
 # Match figma.com/file/<key>, figma.com/design/<key> and figma.com/proto/<key>,
-# with optional node-id query.
+# with optional node-id and starting-point-node-id queries.
 $linkPattern = 'https?://(www\.)?figma\.com/(file|design|proto)/[A-Za-z0-9_-]+[^\s)"<]*'
 $matches_ = [regex]::Matches($text, $linkPattern)
 if ($matches_.Count -eq 0) { exit 0 }
@@ -50,11 +54,20 @@ foreach ($m in $matches_) {
     if ($nodeMatch.Success) {
         $node = ConvertTo-FigmaNodeId $nodeMatch.Groups[1].Value
     }
+    # The prototype's entry frame. Anchoring on '[?&](?:amp;)*' also keeps the
+    # node-id match above from reading THIS parameter (it ends in 'node-id=', but
+    # preceded by '-', never by a separator).
+    $startNode = $null
+    $startMatch = [regex]::Match($url, '[?&](?:amp;)*starting-point-node-id=([^&#\s]+)')
+    if ($startMatch.Success) {
+        $startNode = ConvertTo-FigmaNodeId $startMatch.Groups[1].Value
+    }
     ConvertTo-FigmaJson ([ordered]@{
-        fileId = $key
-        nodeId = $node
-        kind   = $kind
-        url    = $url
+        fileId      = $key
+        nodeId      = $node
+        startNodeId = $startNode
+        kind        = $kind
+        url         = $url
     }) -Compress
 }
 exit 0

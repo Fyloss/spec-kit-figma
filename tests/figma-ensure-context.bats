@@ -7,6 +7,12 @@ setup() {
   SCRIPT="${SCRIPTS_DIR}/figma-ensure-context.sh"
   WORKSPACE="$(make_temp_workspace)"
   cd "$WORKSPACE"
+  # A Figma link is now what makes a run a design run, so every test that
+  # exercises the applicable path has to carry one.
+  LINK="https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
+  # Each test is its own feature: remembered links are scoped per feature, and a
+  # stable key keeps them from bleeding across tests via the shared temp dir.
+  export SPECIFY_FEATURE="test-${BATS_TEST_NUMBER}"
 }
 
 teardown() {
@@ -59,18 +65,17 @@ path_without_jq() {
   [[ "$(status_json | jq -r '.reason')" == "target-excluded" ]]
 }
 
-@test "single-repo resolves the target to repo and plans a --file introspection" {
+@test "single-repo resolves the target to repo" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
-  run "$SCRIPT" --dry-run
+  run "$SCRIPT" --dry-run --input "$LINK"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "dry-run" ]]
   [[ "$(status_json | jq -r '.target')" == "repo" ]]
-  [[ "$(status_json | jq -r '.introspectArgs | join(" ")')" == "--file single123FILE" ]]
 }
 
 @test "multi-repo with a single enabled target auto-resolves it" {
   cp "${FIXTURES_DIR}/multirepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
-  run "$SCRIPT" --dry-run
+  run "$SCRIPT" --dry-run --input "$LINK"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.target')" == "design-system" ]]
   [[ "$(status_json | jq -r '.reason')" == "dry-run" ]]
@@ -93,17 +98,20 @@ JSON
   [[ "$(status_json | jq -r '.reason')" == "ambiguous-target" ]]
 }
 
-@test "team-based target plans --team introspection" {
+@test "a team-based config still gates on the link" {
+  # The team mapping used to drive a --team introspection on its own; the link
+  # is now the trigger, so a design-less run stops here.
   cp "${FIXTURES_DIR}/organization-valid.json" "${WORKSPACE}/figma.projects.config.json"
   run "$SCRIPT" design-system --dry-run
   [ "$status" -eq 0 ]
-  [[ "$(status_json | jq -r '.introspectArgs | join(" ")')" == "--team 111222333" ]]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
 }
 
-@test "a fresh snapshot skips introspection" {
+@test "a fresh snapshot covering the link skips introspection" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
-  echo '{}' > "${WORKSPACE}/.figma/cache/context-snapshot.json"
-  run "$SCRIPT"
+  echo '{"fileId":"LinkFILE999","nodes":{"nodes":{"12:345":{}}}}' \
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
+  run "$SCRIPT" --input "$LINK"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.ran')" == "false" ]]
   [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
@@ -111,9 +119,10 @@ JSON
 
 @test "a config newer than the snapshot forces re-introspection" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
-  echo '{}' > "${WORKSPACE}/.figma/cache/context-snapshot.json"
+  echo '{"fileId":"LinkFILE999","nodes":{"nodes":{"12:345":{}}}}' \
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
   touch -t 202601010000 "${WORKSPACE}/.figma/cache/context-snapshot.json"
-  run "$SCRIPT" --dry-run
+  run "$SCRIPT" --dry-run --input "$LINK"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "dry-run" ]]
 }
@@ -122,7 +131,7 @@ JSON
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   unset FIGMA_PAT
   unset FIGMA_PAT_COMMAND
-  run "$SCRIPT"
+  run "$SCRIPT" --input "$LINK"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.ran')" == "false" ]]
   [[ "$(status_json | jq -r '.reason')" == "introspect-failed" ]]
@@ -138,7 +147,7 @@ JSON
   export FIGMA_API_BASE="http://127.0.0.1:9/v1"
   export FIGMA_API_MAX_ATTEMPTS="1"
   export FIGMA_API_RETRY_DELAY="0"
-  run "$SCRIPT"
+  run "$SCRIPT" --input "$LINK"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "introspect-failed" ]]
   [[ "$(status_json | jq -r '.code')" == "NETWORK" ]]
@@ -196,12 +205,230 @@ JSON
   [[ "$(status_json | jq -r '.introspectArgs | join(" ")')" == "--file FirstFILE --node 1:2" ]]
 }
 
-@test "input without links keeps the config-derived scope" {
+# --- A Figma link is what makes a run a design run --------------------------
+# Regression: with a valid config and an enabled target, the hook used to
+# introspect and render the mandatory section for EVERY feature — including
+# "add a Redis cache on the billing endpoint" — so spec.md got a Figma design
+# section it had no business carrying. The link in the feature input is now the
+# trigger; without one the hook is a no-op.
+
+@test "input without links is a no-op (reason no-figma-link)" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   run "$SCRIPT" --dry-run --input "No design links in this feature."
   [ "$status" -eq 0 ]
-  [[ "$(status_json | jq -r '.introspectArgs | join(" ")')" == "--file single123FILE" ]]
+  [[ "$(status_json | jq -r '.ran')" == "false" ]]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
   [[ "$(status_json | jq -r '.links | length')" == "0" ]]
+  [[ "$(status_json | jq -r '.introspectArgs | length')" == "0" ]]
+}
+
+@test "no input at all is a no-op, whatever the config maps" {
+  # The config maps the target to a Figma file, but nothing in this run points
+  # at a creative: the mapping alone must not force a design section.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
+}
+
+@test "a link-less run injects nothing and renders no section" {
+  # The heart of the regression: mustInject false and NO section.*.md on disk,
+  # so the after_* verify hooks report not-applicable instead of demanding a
+  # section the document should never have had.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  echo '{"fileId":"single123FILE","pages":[{"id":"0:1","name":"Home","frames":[{"id":"1:2","name":"Hero","type":"FRAME"}]}]}' \
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
+  run "$SCRIPT" --input "Add a Redis cache on the billing endpoint."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
+  [[ "$(status_json | jq -r '.mustInject')" == "false" ]]
+  [[ "$(status_json | jq -r '.specSection')" == "null" ]]
+  [ ! -f "${WORKSPACE}/.figma/cache/section.spec.md" ]
+  [ ! -f "${WORKSPACE}/.figma/cache/section.plan.md" ]
+  [ ! -f "${WORKSPACE}/.figma/cache/section.tasks.md" ]
+}
+
+@test "the no-figma-link diagnostic names the remedy" {
+  # The document stays silent, so the console is the ONLY place a forgotten link
+  # can still be caught — and only if the line says what to do about it. A
+  # front-end feature whose author forgot to paste the link is otherwise
+  # indistinguishable from a back-end one, all the way through plan and tasks.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --input "Build the new checkout screen."
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"/speckit.specify"* ]]
+  [[ "$output" == *"re-run"* ]]
+}
+
+@test "the ensure command doc separates the document from the chat reply" {
+  # "Add NOTHING" must scope to the generated document only. Applied to the
+  # agent's own reply as well, it suppresses the one signal a developer can act
+  # on while the run is still fresh.
+  doc="${REPO_ROOT}/commands/speckit.figma.ensure.md"
+  grep -qiF "chat reply" "$doc"
+  grep -qiF "do not ask" "$doc"
+}
+
+@test "no-figma-link clears a stale rendered section from a previous feature" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  printf 'stale\n' > "${WORKSPACE}/.figma/cache/section.spec.md"
+  run "$SCRIPT" --input "Pure backend refactor."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
+  [ ! -f "${WORKSPACE}/.figma/cache/section.spec.md" ]
+}
+
+# --- The link is required at /speckit.specify, then inherited ----------------
+# The developer pastes the link once, when describing the feature. /speckit.plan
+# and /speckit.tasks receive a different input that no longer carries it, so the
+# links detected at specify time are remembered per feature and reused — without
+# that, spec.md would carry a design section and plan.md would not.
+
+@test "a link is remembered so a later link-less phase still applies" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  export SPECIFY_FEATURE="001-checkout"
+  # /speckit.specify: a real run, so the link is recorded (introspection then
+  # fails for lack of a token, which is beside the point here).
+  run "$SCRIPT" --input \
+    "https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
+  [ "$status" -eq 0 ]
+
+  # /speckit.plan: same feature, no link in this phase's input.
+  run "$SCRIPT" --dry-run --input "Draft the implementation plan."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "dry-run" ]]
+  [[ "$(status_json | jq -r '.introspectArgs | join(" ")')" == "--file LinkFILE999 --node 12:345" ]]
+  [[ "$(status_json | jq -r '.links[0].nodeId')" == "12:345" ]]
+}
+
+@test "remembered links are scoped to their feature, never leaking to the next" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  export SPECIFY_FEATURE="001-checkout"
+  run "$SCRIPT" --input "https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
+  [ "$status" -eq 0 ]
+
+  # A brand-new, design-less feature must not inherit the previous one's link.
+  export SPECIFY_FEATURE="002-billing-cache"
+  run "$SCRIPT" --input "Add a Redis cache on the billing endpoint."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
+}
+
+@test "a corrupt remembered-links file degrades to no-figma-link, never a crash" {
+  # The never-block contract holds even when the cache is damaged: a truncated
+  # or hand-edited file must not abort the script under set -e.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  export SPECIFY_FEATURE="001-checkout"
+  mkdir -p "${WORKSPACE}/.figma/cache/links"
+  printf '{"not":"an array"' > "${WORKSPACE}/.figma/cache/links/001-checkout.json"
+  run "$SCRIPT" --input "No link in this phase."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
+}
+
+@test "a dry run never records the links it detected" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  export SPECIFY_FEATURE="001-checkout"
+  run "$SCRIPT" --dry-run --input \
+    "https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
+  [ "$status" -eq 0 ]
+  run "$SCRIPT" --input "No link in this phase."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
+}
+
+# --- The committed spec.md is the durable record of the link ------------------
+# .figma/cache/ is git-ignored, so the remembered links do NOT travel with the
+# branch: a teammate who pulls it, a fresh clone or a CI job reaches
+# /speckit.plan with the spec but no cache. Falling through to "no-figma-link"
+# there tells the agent to say NOTHING about Figma, so plan.md silently loses the
+# design section spec.md carries. spec.md itself is the fallback.
+
+# Write a spec.md carrying an integrated Figma section for the current feature.
+stage_spec_with_section() { # $1 = feature dir, $2 = link URL
+  mkdir -p "${WORKSPACE}/specs/$1"
+  {
+    printf '# Checkout\n\n'
+    printf '<!-- speckit-figma:section phase=spec -->\n'
+    printf '## Figma Design Context\n\n'
+    printf '**Direct links provided in input**\n\n'
+    printf '| URL | File | Node |\n|-----|------|------|\n'
+    printf '| %s | `x` | `x` |\n' "$2"
+  } > "${WORKSPACE}/specs/$1/spec.md"
+}
+
+@test "a lost links cache falls back to the link recorded in spec.md" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  export SPECIFY_FEATURE="001-checkout"
+  stage_spec_with_section "001-checkout" \
+    "https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
+  # No .figma/cache/links/ at all — the cache never crossed the git boundary.
+  run "$SCRIPT" --dry-run --input "Draft the implementation plan."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "dry-run" ]]
+  [[ "$(status_json | jq -r '.introspectArgs | join(" ")')" == "--file LinkFILE999 --node 12:345" ]]
+}
+
+@test "spec.md is a link source only when it carries the Figma section marker" {
+  # A figma.com URL merely mentioned in prose is not evidence that a design
+  # section was ever integrated; only the machine marker is.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  export SPECIFY_FEATURE="001-checkout"
+  mkdir -p "${WORKSPACE}/specs/001-checkout"
+  printf '# Checkout\n\nSee https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345 for background.\n' \
+    > "${WORKSPACE}/specs/001-checkout/spec.md"
+  run "$SCRIPT" --dry-run --input "Draft the implementation plan."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
+}
+
+@test "another feature's spec.md is never a link source" {
+  # The document is only evidence for the feature it belongs to. Falling back to
+  # "the single specs/*/spec.md" when nothing identifies the current feature
+  # would hand a design-less feature the previous one's creative — the very
+  # regression the link requirement exists to prevent.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  unset SPECIFY_FEATURE
+  stage_spec_with_section "001-checkout" \
+    "https://www.figma.com/design/OtherFEATURE/Checkout?node-id=12-345"
+  run "$SCRIPT" --dry-run --input "Add a Redis cache on the billing endpoint."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
+}
+
+@test "a link recovered from spec.md re-warms the per-feature cache" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  export SPECIFY_FEATURE="001-checkout"
+  stage_spec_with_section "001-checkout" \
+    "https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
+  run "$SCRIPT" --input "Draft the implementation plan."
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/.figma/cache/links/001-checkout.json" ]
+  [[ "$(jq -r '.[0].fileId' "${WORKSPACE}/.figma/cache/links/001-checkout.json")" == "LinkFILE999" ]]
+}
+
+@test "a link in this phase's input still wins over the one in spec.md" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  export SPECIFY_FEATURE="001-checkout"
+  stage_spec_with_section "001-checkout" \
+    "https://www.figma.com/design/OldFILE111/Checkout?node-id=1-1"
+  run "$SCRIPT" --dry-run --input \
+    "Redo it from https://www.figma.com/design/NewFILE222/Checkout?node-id=9-9"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.introspectArgs | join(" ")')" == "--file NewFILE222 --node 9:9" ]]
+}
+
+@test "a prototype link introspects both the viewed frame and the flow start" {
+  # A prototype is a parcours: the frame the designer was on (node-id) and the
+  # entry point of the flow (starting-point-node-id) are both creatives the
+  # spec needs, and both come from the same batched nodes request.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --dry-run --input \
+    "Build https://www.figma.com/proto/ProtoFILE1/Demo?node-id=12-345&starting-point-node-id=1%3A2"
+  [ "$status" -eq 0 ]
+  # Both ids ride the same batched request, so their order carries no meaning.
+  [[ "$(status_json | jq -r '.introspectArgs | index("--file") as $i | .[$i + 1]')" == "ProtoFILE1" ]]
+  [[ "$(status_json | jq -r '[.introspectArgs[] | select(test("^[0-9I]"))] | sort | join(",")')" == "12:345,1:2" ]]
 }
 
 @test "a direct link bypasses a fresh snapshot that does not cover its node" {
@@ -227,9 +454,9 @@ JSON
 
 @test "an applicable run marks the section mandatory and renders spec/plan/tasks" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
-  echo '{"fileId":"single123FILE","pages":[{"id":"0:1","name":"Home","frames":[{"id":"1:2","name":"Hero","type":"FRAME"}]}],"components":{},"styles":{}}' \
+  echo '{"fileId":"LinkFILE999","nodes":{"nodes":{"12:345":{}}},"pages":[{"id":"0:1","name":"Home","frames":[{"id":"1:2","name":"Hero","type":"FRAME"}]}],"components":{},"styles":{}}' \
     > "${WORKSPACE}/.figma/cache/context-snapshot.json"
-  run "$SCRIPT"
+  run "$SCRIPT" --input "$LINK"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
   [[ "$(status_json | jq -r '.mustInject')" == "true" ]]
@@ -288,7 +515,7 @@ JSON
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   printf 'prior render\n' > "${WORKSPACE}/.figma/cache/section.tasks.md"
   unset FIGMA_PAT
-  run "$SCRIPT"
+  run "$SCRIPT" --input "$LINK"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "introspect-failed" ]]
   [ -f "${WORKSPACE}/.figma/cache/section.tasks.md" ]
