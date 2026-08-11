@@ -223,6 +223,23 @@ try {
 
 Write-FigmaStderr "INFO: snapshot written to $cache"
 
+# Keep a copy keyed by file so a later run for THIS file can be answered from
+# cache instead of re-fetching. The current slot is a single one: without the
+# store, alternating between two features that target different Figma files
+# evicts the snapshot every time and the "fresh" path never hits. Copying (not
+# moving) keeps the well-known path authoritative for the agent.
+if ($fileKey) {
+    $store = Get-FigmaSnapshotStorePath $fileKey
+    if ($store) {
+        try {
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $store) | Out-Null
+            Copy-Item -LiteralPath $cache -Destination $store -Force
+        } catch {
+            Write-FigmaStderr "WARN: could not keep a per-file copy of the snapshot at $store."
+        }
+    }
+}
+
 if ($teams.Count -gt 0) {
     Write-Output '----- TEAM / PROJECT / FILE INDEX -----'
     foreach ($t in @($teamsIndex)) {

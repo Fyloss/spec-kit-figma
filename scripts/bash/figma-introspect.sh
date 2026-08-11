@@ -195,6 +195,16 @@ jq -n \
 
 echo "INFO: snapshot written to ${CACHE}" >&2
 
+# Keep a copy keyed by file so a later run for THIS file can be answered from
+# cache instead of re-fetching. The current slot is a single one: without the
+# store, alternating between two features that target different Figma files
+# evicts the snapshot every time and the "fresh" path never hits. Copying (not
+# moving) keeps the well-known path authoritative for the agent.
+if [[ -n "$FILE_KEY" ]] && STORE="$(figma_snapshot_store_path "$FILE_KEY")"; then
+  mkdir -p "$(dirname "$STORE")"
+  cp "$CACHE" "$STORE" 2>/dev/null || echo "WARN: could not keep a per-file copy of the snapshot at ${STORE}." >&2
+fi
+
 if [[ ${#TEAMS[@]} -gt 0 ]]; then
   echo "----- TEAM / PROJECT / FILE INDEX -----"
   jq -r '

@@ -281,6 +281,49 @@ Describe 'figma-ensure-context.ps1 (a Figma link is required)' {
     }
 }
 
+# context-snapshot.json is a single slot: the snapshot of the CURRENT run, which
+# is the path every command prompt hands to the agent. One slot cannot CACHE
+# across features — two features pointing at different Figma files evict each
+# other, so the 'fresh' path never hits and every phase re-pays a full fetch.
+Describe 'figma-ensure-context.ps1 (per-file snapshot store)' {
+    BeforeEach {
+        Reset-FigmaEnvironment
+        $script:ws = New-TempWorkspace
+        Install-SectionTemplates $ws
+        Copy-Item (Join-Path $Fixtures 'singlerepo-valid.json') (Join-Path $ws 'figma.projects.config.json')
+        $script:store = Join-Path $ws '.figma/cache/snapshots'
+        New-Item -ItemType Directory -Force -Path $store | Out-Null
+        $script:link = 'https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345'
+    }
+
+    It 'restores a snapshot kept for the linked file instead of re-introspecting' {
+        # The current slot belongs to ANOTHER feature's file and does not cover
+        # this link — on its own that forces a re-introspection.
+        Set-Content (Join-Path $ws '.figma/cache/context-snapshot.json') '{"fileId":"OtherFILE","pages":[]}'
+        Set-Content (Join-Path $store 'LinkFILE999.json') '{"fileId":"LinkFILE999","pages":[{"id":"0:1","name":"Home","frames":[{"id":"12:345","name":"Hero","type":"FRAME"}]}],"nodes":{"nodes":{"12:345":{"document":{"type":"FRAME"}}}}}'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', $link) -Workspace $ws
+        $r.ExitCode | Should -Be 0
+        $r.Json.reason | Should -Be 'fresh'
+        # …and the restored snapshot became the current one, so the agent reads it.
+        (Get-Content (Join-Path $ws '.figma/cache/context-snapshot.json') -Raw | ConvertFrom-Json).fileId |
+            Should -Be 'LinkFILE999'
+    }
+
+    It 'does not restore a stored snapshot that misses the linked node' {
+        Set-Content (Join-Path $store 'LinkFILE999.json') '{"fileId":"LinkFILE999","pages":[],"nodes":{"nodes":{}}}'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', $link) -Workspace $ws
+        $r.Json.reason | Should -Be 'dry-run'
+    }
+
+    It 'does not restore a stored snapshot older than the max-age window' {
+        $stored = Join-Path $store 'LinkFILE999.json'
+        Set-Content $stored '{"fileId":"LinkFILE999","pages":[],"nodes":{"nodes":{"12:345":{"document":{"type":"FRAME"}}}}}'
+        (Get-Item -LiteralPath $stored).LastWriteTime = (Get-Date).AddDays(-30)
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', $link) -Workspace $ws
+        $r.Json.reason | Should -Be 'dry-run'
+    }
+}
+
 # .figma/cache/ is git-ignored, so the remembered links do NOT travel with the
 # branch: a teammate who pulls it, a fresh clone or a CI job reaches
 # /speckit.plan with the spec but no cache. Falling through to "no-figma-link"

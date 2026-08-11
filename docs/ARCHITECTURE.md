@@ -408,6 +408,24 @@ distinct from a structural error, so the orchestrator can name the real problem.
 `config/figma.projects.config.schema.json` is the source of truth;
 `figma-validate-config` is the portable jq subset checked at runtime.
 
+**Not everything in the config is executable, and the distinction matters when
+reading it.** Two fields look like machine inputs and are not:
+
+- `role` — optional, validated against an enum when present, and read by no
+  helper. `figma-detect-target` copies it into its JSON output and nothing
+  consumes it. It documents what a target *is*, for a human.
+- `pageToPackageMapping` — no script parses it. It is guidance in the
+  `/speckit.figma.introspect` prompt, telling the agent which Figma pages belong
+  to which package so extraction stays scoped in a mono-repo. Changing it changes
+  what the agent is told, not what any code does.
+
+Since the link became the trigger, the Figma ids themselves also stopped driving
+`figma-ensure-context`: it never derives a scope from them. They serve manual
+`/speckit.figma.introspect` runs and one informational message. What the
+orchestrator still genuinely consumes from the config is narrow — whether the
+target is enabled or excluded, the engine settings, the PAT variable name, and
+`verifyStrict`.
+
 ## 11. Workspace state and cache layout
 
 ```mermaid

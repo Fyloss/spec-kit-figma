@@ -224,16 +224,26 @@ prepare_injection() {
   rm -f "$err"
 }
 
-# True when the current snapshot already targets the linked file and contains
+# True when the given snapshot already targets the linked file and contains
 # every linked node — only then can a link-driven run be considered fresh.
-snapshot_covers_links() {
+snapshot_covers_links() { # $1 = snapshot path
+  local snap="$1"
   [[ -z "$LINK_FILE" ]] && return 0
-  jq -e --arg f "$LINK_FILE" '.fileId == $f' "$SNAPSHOT" >/dev/null 2>&1 || return 1
+  jq -e --arg f "$LINK_FILE" '.fileId == $f' "$snap" >/dev/null 2>&1 || return 1
   local node_id
   for node_id in ${LINK_NODES[@]+"${LINK_NODES[@]}"}; do
-    jq -e --arg n "$node_id" '(.nodes.nodes // {}) | has($n)' "$SNAPSHOT" >/dev/null 2>&1 || return 1
+    jq -e --arg n "$node_id" '(.nodes.nodes // {}) | has($n)' "$snap" >/dev/null 2>&1 || return 1
   done
   return 0
+}
+
+# Age-and-config half of the freshness test: the snapshot exists, is not older
+# than the config that shaped it, and is younger than the max-age window
+# (find -mmin is portable across GNU and BSD/macOS).
+snapshot_is_current() { # $1 = snapshot path
+  local snap="$1"
+  [[ -f "$snap" && ! "$CONFIG" -nt "$snap" ]] || return 1
+  [[ -n "$(find "$snap" -mmin "-${MAX_AGE_MIN}" 2>/dev/null)" ]]
 }
 
 # Stale rendered sections from a previous run must not outlive it: the verifier
@@ -396,16 +406,31 @@ if [[ "$RECORD_LINKS" == "true" && "$DRY_RUN" != "true" ]]; then
   printf '%s\n' "$LINKS_JSON" > "$LINKS_FILE"
 fi
 
-# Fresh = snapshot exists, is newer than the config, is younger than the
-# max-age window (find -mmin is portable across GNU and BSD/macOS), and covers
-# any directly-linked file/nodes from the input.
-if [[ -f "$SNAPSHOT" && ! "$CONFIG" -nt "$SNAPSHOT" ]] \
-   && [[ -n "$(find "$SNAPSHOT" -mmin "-${MAX_AGE_MIN}" 2>/dev/null)" ]] \
-   && snapshot_covers_links; then
+# Fresh = the snapshot is current (exists, newer than the config, within the
+# max-age window) AND covers the directly-linked file/nodes.
+if snapshot_is_current "$SNAPSHOT" && snapshot_covers_links "$SNAPSHOT"; then
   # Figma applies and the snapshot is usable → the section is mandatory; render it.
   prepare_injection
   emit false "fresh"
   exit 0
+fi
+
+# The current slot holds another file's snapshot — but the per-file store may
+# already hold a usable one for THIS link. Without this lookup, alternating
+# between two features that target different Figma files re-introspects on every
+# single phase, because each run evicts the other's snapshot from the one slot.
+STORED_SNAPSHOT="$(figma_snapshot_store_path "$LINK_FILE" 2>/dev/null || true)"
+if [[ -n "$STORED_SNAPSHOT" && "$STORED_SNAPSHOT" != "$SNAPSHOT" ]] \
+   && snapshot_is_current "$STORED_SNAPSHOT" && snapshot_covers_links "$STORED_SNAPSHOT"; then
+  # Publish it as the current one: every command prompt hands the agent the
+  # well-known path, so restoring has to happen there and not only in memory.
+  if cp "$STORED_SNAPSHOT" "$SNAPSHOT" 2>/dev/null; then
+    echo "INFO: reused the cached snapshot of file '${LINK_FILE}'; no re-introspection needed." >&2
+    prepare_injection
+    emit false "fresh"
+    exit 0
+  fi
+  echo "WARN: could not restore the cached snapshot of '${LINK_FILE}'; re-introspecting." >&2
 fi
 
 # Link-driven scope, and the only one: introspect the linked file and drill into

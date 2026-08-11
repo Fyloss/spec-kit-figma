@@ -10,7 +10,8 @@
 #   figma_api <PATH>           -> GET against the Figma API with 429/5xx exponential backoff
 #   figma_state_dir            -> prints the per-workspace Figma state directory (.figma/)
 #   figma_cache_dir            -> prints the generated/cached-artifacts directory (.figma/cache/)
-#   figma_cache_path           -> prints the snapshot cache path
+#   figma_cache_path           -> prints the current-run snapshot path
+#   figma_snapshot_store_path <fileId> -> prints the per-file snapshot cache path
 #   figma_section_path <phase> -> prints the rendered-section path for a phase
 #   figma_feature_key          -> prints the current feature's identity (filename-safe)
 #   figma_feature_links_path   -> prints where this feature's design links are remembered
@@ -80,6 +81,24 @@ figma_cache_dir() {
 
 figma_cache_path() {
   echo "$(figma_cache_dir)/context-snapshot.json"
+}
+
+# Per-file snapshot store. figma_cache_path above is a single slot: the snapshot
+# of the CURRENT run, and the well-known path every command prompt hands to the
+# agent. One slot is enough to PUBLISH a snapshot but not to CACHE one — two
+# features pointing at different Figma files evict each other, so the "fresh"
+# path never hits and every phase re-pays a full file + nodes fetch. Keyed by
+# file, snapshots survive that alternation; the current slot is a copy of
+# whichever one this run resolved.
+# Prints the store path, or returns 1 when the key cannot name a file.
+figma_snapshot_store_path() {
+  local key="${1:-}"
+  [[ -n "$key" ]] || return 1
+  # Figma file keys are [A-Za-z0-9_-], but the value reaches us from a URL or a
+  # config field: squeeze anything else so it can never escape the directory.
+  key="$(printf '%s' "$key" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-100)"
+  [[ "$key" =~ ^\.+$ ]] && return 1
+  echo "$(figma_cache_dir)/snapshots/${key}.json"
 }
 
 # Path of the rendered, ready-to-paste section for a phase (spec|plan|tasks).

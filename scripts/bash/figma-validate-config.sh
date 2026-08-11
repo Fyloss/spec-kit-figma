@@ -27,11 +27,17 @@ case "$MODE" in
 esac
 
 # Per-target structural rules, mirroring the JSON schema's definitions/target:
-# 'enabled' (boolean) and 'role' (enum) are required, and every target must
-# declare at least one of figmaFileId / figmaProjectId / figmaTeamId / figmaTeamIds.
+# 'enabled' (boolean) is required, and every target must declare at least one of
+# figmaFileId / figmaProjectId / figmaTeamId / figmaTeamIds.
 # The schema (config/figma.projects.config.schema.json) stays the source of
 # truth; CI validates the examples against it, this script is the portable
 # curl/jq subset for runtime checks.
+#
+# 'role' is OPTIONAL and validated only when present. No script branches on it —
+# figma-detect-target copies it into its JSON and nothing reads it back — so
+# requiring it only rejected otherwise-usable configs. It stays an enum because a
+# value outside it is a typo, and it stays documented because it tells a human
+# what a target is.
 TARGET_ERRORS="$(jq -r --arg mode "$MODE" '
   ["design-system", "app-host", "app", "lib"] as $roles
   | (if $mode == "multi-repo"
@@ -42,7 +48,8 @@ TARGET_ERRORS="$(jq -r --arg mode "$MODE" '
   | . as $e
   | ( (select(($e.t.enabled | type) != "boolean")
        | "\($e.name): missing required boolean field \"enabled\""),
-      (select(($e.t.role | type) != "string" or ($roles | index($e.t.role) == null))
+      (select($e.t | has("role"))
+       | select(($e.t.role | type) != "string" or ($roles | index($e.t.role) == null))
        | "\($e.name): \"role\" must be one of \($roles | join("/"))"),
       (select(($e.t | has("figmaFileId") or has("figmaProjectId") or has("figmaTeamId") or has("figmaTeamIds")) | not)
        | "\($e.name): at least one of figmaFileId/figmaProjectId/figmaTeamId/figmaTeamIds is required") )

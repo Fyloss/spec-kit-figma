@@ -459,6 +459,50 @@ stage_spec_with_section() { # $1 = feature dir, $2 = link URL
   [[ "$(status_json | jq -r '[.introspectArgs[] | select(test("^[0-9I]"))] | sort | join(",")')" == "12:345,1:2" ]]
 }
 
+# --- The per-file snapshot store --------------------------------------------
+# context-snapshot.json is a single slot: the snapshot of the CURRENT run, which
+# is the path every command prompt hands to the agent. One slot cannot CACHE
+# across features — two features pointing at different Figma files evict each
+# other, so the 'fresh' path never hits and every phase re-pays a full file +
+# nodes fetch. Introspection therefore also keeps a copy keyed by file.
+
+@test "a snapshot kept for the linked file is restored instead of re-introspecting" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  # The current slot belongs to ANOTHER feature's file, and does not cover this
+  # link — on its own that forces a re-introspection.
+  echo '{"fileId":"OtherFILE","pages":[]}' > "${WORKSPACE}/.figma/cache/context-snapshot.json"
+  mkdir -p "${WORKSPACE}/.figma/cache/snapshots"
+  echo '{"fileId":"LinkFILE999","pages":[{"id":"0:1","name":"Home","frames":[{"id":"12:345","name":"Hero","type":"FRAME"}]}],"nodes":{"nodes":{"12:345":{"document":{"type":"FRAME"}}}}}' \
+    > "${WORKSPACE}/.figma/cache/snapshots/LinkFILE999.json"
+  run "$SCRIPT" --input "https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
+  # …and the restored snapshot became the current one, so the agent reads it.
+  [[ "$(jq -r '.fileId' "${WORKSPACE}/.figma/cache/context-snapshot.json")" == "LinkFILE999" ]]
+}
+
+@test "a stored snapshot that does not cover the linked node is not restored" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  mkdir -p "${WORKSPACE}/.figma/cache/snapshots"
+  # Right file, but the pinned node was never deep-fetched into it.
+  echo '{"fileId":"LinkFILE999","pages":[],"nodes":{"nodes":{}}}' \
+    > "${WORKSPACE}/.figma/cache/snapshots/LinkFILE999.json"
+  run "$SCRIPT" --dry-run --input "https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "dry-run" ]]
+}
+
+@test "a stored snapshot older than the max-age window is not restored" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  mkdir -p "${WORKSPACE}/.figma/cache/snapshots"
+  stored="${WORKSPACE}/.figma/cache/snapshots/LinkFILE999.json"
+  echo '{"fileId":"LinkFILE999","pages":[],"nodes":{"nodes":{"12:345":{"document":{"type":"FRAME"}}}}}' > "$stored"
+  touch -t 202001010000 "$stored"
+  run "$SCRIPT" --dry-run --input "https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "dry-run" ]]
+}
+
 @test "a direct link bypasses a fresh snapshot that does not cover its node" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   echo '{}' > "${WORKSPACE}/.figma/cache/context-snapshot.json"

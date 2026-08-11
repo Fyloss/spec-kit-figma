@@ -79,6 +79,24 @@ function Get-FigmaCacheDir { Join-Path (Get-FigmaStateDir) 'cache' }
 
 function Get-FigmaCachePath { Join-Path (Get-FigmaCacheDir) 'context-snapshot.json' }
 
+# Per-file snapshot store. Get-FigmaCachePath above is a single slot: the
+# snapshot of the CURRENT run, and the well-known path every command prompt hands
+# to the agent. One slot is enough to PUBLISH a snapshot but not to CACHE one —
+# two features pointing at different Figma files evict each other, so the "fresh"
+# path never hits and every phase re-pays a full file + nodes fetch. Keyed by
+# file, snapshots survive that alternation; the current slot is a copy of
+# whichever one this run resolved. Returns $null when the key cannot name a file.
+function Get-FigmaSnapshotStorePath {
+    param([string]$FileId)
+    if (-not $FileId) { return $null }
+    # Figma file keys are [A-Za-z0-9_-], but the value reaches us from a URL or a
+    # config field: squeeze anything else so it can never escape the directory.
+    $key = ($FileId -replace '[^A-Za-z0-9._-]', '-')
+    if ($key.Length -gt 100) { $key = $key.Substring(0, 100) }
+    if (-not $key -or $key -match '^\.+$') { return $null }
+    return Join-Path (Join-Path (Get-FigmaCacheDir) 'snapshots') "$key.json"
+}
+
 # Path of the rendered, ready-to-paste section for a phase (spec|plan|tasks).
 function Get-FigmaSectionPath {
     param([string]$Phase)

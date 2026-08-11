@@ -257,18 +257,30 @@ function Prepare-Injection {
     }
 }
 
-# True when the current snapshot already targets the linked file and contains
+# True when the given snapshot already targets the linked file and contains
 # every linked node — only then can a link-driven run be considered fresh.
 function Test-SnapshotCoversLinks {
+    param([string]$Path)
     if (-not $script:linkFile) { return $true }
     $snap = $null
-    try { $snap = Read-FigmaJsonFile $script:snapshotPath } catch { return $false }
+    try { $snap = Read-FigmaJsonFile $Path } catch { return $false }
     if ((Get-JsonValue $snap @('fileId')) -ne $script:linkFile) { return $false }
     foreach ($n in $script:linkNodes) {
         $nodesObj = Get-JsonValue $snap @('nodes', 'nodes')
         if ($null -eq $nodesObj -or $null -eq $nodesObj.PSObject.Properties[$n]) { return $false }
     }
     return $true
+}
+
+# Age-and-config half of the freshness test: the snapshot exists, is not older
+# than the config that shaped it, and is younger than the max-age window.
+function Test-SnapshotIsCurrent {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    $configTime = (Get-Item -LiteralPath $script:config).LastWriteTimeUtc
+    $snapshotTime = (Get-Item -LiteralPath $Path).LastWriteTimeUtc
+    $ageMinutes = ((Get-Date).ToUniversalTime() - $snapshotTime).TotalMinutes
+    return ($configTime -le $snapshotTime -and $ageMinutes -lt $script:maxAgeMin)
 }
 
 if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
@@ -436,15 +448,30 @@ if ($recordLinks -and -not $dryRun) {
 
 # Fresh = snapshot exists, is newer than the config, is younger than the
 # max-age window, and covers any directly-linked file/nodes from the input.
-if (Test-Path -LiteralPath $snapshotPath -PathType Leaf) {
-    $configTime = (Get-Item -LiteralPath $config).LastWriteTimeUtc
-    $snapshotTime = (Get-Item -LiteralPath $snapshotPath).LastWriteTimeUtc
-    $ageMinutes = ((Get-Date).ToUniversalTime() - $snapshotTime).TotalMinutes
-    if ($configTime -le $snapshotTime -and $ageMinutes -lt $maxAgeMin -and (Test-SnapshotCoversLinks)) {
-        # Figma applies and the snapshot is usable -> the section is mandatory; render it.
+if ((Test-SnapshotIsCurrent $snapshotPath) -and (Test-SnapshotCoversLinks $snapshotPath)) {
+    # Figma applies and the snapshot is usable -> the section is mandatory; render it.
+    Prepare-Injection
+    Emit-Status $false 'fresh'
+    exit 0
+}
+
+# The current slot holds another file's snapshot -- but the per-file store may
+# already hold a usable one for THIS link. Without this lookup, alternating
+# between two features that target different Figma files re-introspects on every
+# single phase, because each run evicts the other's snapshot from the one slot.
+$storedSnapshot = Get-FigmaSnapshotStorePath $linkFile
+if ($storedSnapshot -and $storedSnapshot -ne $snapshotPath `
+    -and (Test-SnapshotIsCurrent $storedSnapshot) -and (Test-SnapshotCoversLinks $storedSnapshot)) {
+    # Publish it as the current one: every command prompt hands the agent the
+    # well-known path, so restoring has to happen there and not only in memory.
+    try {
+        Copy-Item -LiteralPath $storedSnapshot -Destination $snapshotPath -Force
+        Write-FigmaStderr "INFO: reused the cached snapshot of file '$linkFile'; no re-introspection needed."
         Prepare-Injection
         Emit-Status $false 'fresh'
         exit 0
+    } catch {
+        Write-FigmaStderr "WARN: could not restore the cached snapshot of '$linkFile'; re-introspecting."
     }
 }
 
