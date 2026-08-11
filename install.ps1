@@ -17,7 +17,7 @@
 #   - installs the design-rules constitution base into .figma/ (committed;
 #     extension-owned, always refreshed) and creates the user overlay
 #     .figma/figma-design-rules.custom.md once (skip-if-exists)
-#   - copies the user guides (CREDENTIALS / INSTALL / MONOREPO) to .figma/docs/
+#   - copies the guides (CREDENTIALS / INSTALL / MONOREPO / ARCHITECTURE) to .figma/docs/
 #   - appends/refreshes a managed "Figma design context" section in the
 #     workspace README.md (created if missing); --no-readme skips it entirely
 #   - by default LEAVES the /speckit.specify, /speckit.plan and /speckit.tasks
@@ -237,7 +237,7 @@ if (-not $isSelf) {
     $guides = Get-ChildItem -Path (Join-Path $extDir 'docs') -Filter '*.md' -ErrorAction SilentlyContinue
     if ($guides) {
         $guides | Copy-Item -Destination $docsDest
-        Write-Output 'ADDED: .figma/docs/ (CREDENTIALS / INSTALL / MONOREPO guides, synced to this version)'
+        Write-Output 'ADDED: .figma/docs/ (CREDENTIALS / INSTALL / MONOREPO / ARCHITECTURE guides, synced to this version)'
     } else {
         Write-Stderr "WARN: no guides found in $extDir/docs/ — the README links to .figma/docs/ will dangle."
     }

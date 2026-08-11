@@ -64,7 +64,7 @@ submodules) layouts.
 │   ├── figma-design-rules.md           # non-negotiable agent rules (constitution base; overwritten on update)
 │   └── figma-design-rules.custom.md     # your overlay — overrides the base, preserved across updates (cache/ stays git-ignored)
 └── docs/
-    └── INSTALL.md  CREDENTIALS.md  MONOREPO.md
+    └── INSTALL.md  CREDENTIALS.md  MONOREPO.md  ARCHITECTURE.md
 ```
 
 ## Quick start
@@ -179,7 +179,10 @@ touched, and it is refreshed in place on re-runs — pass `--no-readme` to opt
 out.
 
 See [docs/INSTALL.md](docs/INSTALL.md), [docs/CREDENTIALS.md](docs/CREDENTIALS.md)
-and [docs/MONOREPO.md](docs/MONOREPO.md).
+and [docs/MONOREPO.md](docs/MONOREPO.md). For how the pieces fit together —
+which script owns which decision, and where a run can stop —
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) maps every subsystem with Mermaid
+diagrams.
 
 ## Requirements
 - `git`, plus one script toolchain per developer machine:

@@ -15,7 +15,7 @@
 #     cache/; extension-owned, always refreshed) and creates the user overlay
 #     .figma/figma-design-rules.custom.md once (skip-if-exists; never overwritten,
 #     so project customizations survive updates)
-#   - copies the user guides (CREDENTIALS / INSTALL / MONOREPO) to .figma/docs/
+#   - copies the guides (CREDENTIALS / INSTALL / MONOREPO / ARCHITECTURE) to .figma/docs/
 #     (extension-owned, always refreshed — the workspace docs match the
 #     installed version, and work offline)
 #   - appends/refreshes a managed "Figma design context" section in the
@@ -211,7 +211,7 @@ if [[ "$TARGET_REAL" != "$EXT_DIR" ]]; then
   # Guarded like the section-templates glob: a partial checkout must warn, not
   # abort the installer under set -e.
   if cp "$EXT_DIR/docs/"*.md "$TARGET/.figma/docs/" 2>/dev/null; then
-    echo "ADDED: .figma/docs/ (CREDENTIALS / INSTALL / MONOREPO guides, synced to this version)"
+    echo "ADDED: .figma/docs/ (CREDENTIALS / INSTALL / MONOREPO / ARCHITECTURE guides, synced to this version)"
   else
     echo "WARN: no guides found in ${EXT_DIR}/docs/ — the README links to .figma/docs/ will dangle." >&2
   fi
