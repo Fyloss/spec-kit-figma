@@ -47,7 +47,7 @@ teardown() {
   for phase in spec plan tasks; do
     run "$SCRIPT" --phase "$phase" --snapshot "$SNAP"
     [ "$status" -eq 0 ]
-    [ -f "${WORKSPACE}/.figma/cache/section.${phase}.md" ]
+    [ -f "${WORKSPACE}/.figma/cache/sections/${SPECIFY_FEATURE:-default}/${phase}.md" ]
   done
 }
 

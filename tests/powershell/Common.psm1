@@ -109,6 +109,26 @@ function Install-SectionTemplates {
         Copy-Item -Destination $dest
 }
 
+# Path of the rendered section for the feature the test is acting as — mirrors
+# Get-FigmaSectionPath, which scopes renders per feature so a design-less feature
+# cannot wipe a design one's. Falls back to "default" exactly as the helper does
+# when nothing identifies a feature (the temp workspace is not a git repo).
+function Get-SectionPath {
+    param([string]$Workspace, [string]$Phase)
+    $key = if ($env:SPECIFY_FEATURE) { $env:SPECIFY_FEATURE } else { 'default' }
+    Join-Path (Join-Path (Join-Path $Workspace '.figma/cache/sections') $key) "$Phase.md"
+}
+
+# Stage a fake rendered section, creating the per-feature directory the real
+# renderer would have created.
+function Set-FakeSection {
+    param([string]$Workspace, [string]$Phase, [string]$Content = 'stale')
+    $path = Get-SectionPath $Workspace $Phase
+    $null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path)
+    Set-Content -LiteralPath $path -Value $Content
+    return $path
+}
+
 Export-ModuleMember -Function Get-RepoRoot, Get-ScriptsDir, Get-FixturesDir,
     Reset-FigmaEnvironment, New-TempWorkspace, Invoke-FigmaScript,
-    Write-FakeSnapshot, Install-SectionTemplates
+    Write-FakeSnapshot, Install-SectionTemplates, Get-SectionPath, Set-FakeSection

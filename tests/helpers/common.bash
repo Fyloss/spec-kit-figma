@@ -26,6 +26,22 @@ make_temp_workspace() {
   printf '%s' "$dir"
 }
 
+# Path of the rendered section for the feature the test is acting as — mirrors
+# figma_section_path, which scopes renders per feature so a design-less feature
+# cannot wipe a design one's. Falls back to "default" exactly as the helper does
+# when nothing identifies a feature (the temp workspace is not a git repo).
+section_path() { # $1 = phase (spec|plan|tasks)
+  printf '%s' "${WORKSPACE}/.figma/cache/sections/${SPECIFY_FEATURE:-default}/${1}.md"
+}
+
+# Stage a fake rendered section, creating the per-feature directory the real
+# renderer would have created.
+stage_section() { # $1 = phase, $2 = content (default "stale")
+  local p; p="$(section_path "$1")"
+  mkdir -p "$(dirname "$p")"
+  printf '%s\n' "${2:-stale}" > "$p"
+}
+
 # Fail when a '#' in printed shell guidance is not preceded by whitespace: such a
 # line looks like a commented command but is not one, and breaks on paste.
 refute_glued_comment() {

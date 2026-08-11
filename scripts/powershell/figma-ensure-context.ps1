@@ -212,8 +212,11 @@ function Compute-LinkScope {
 # verifier would report "not-applicable" and let a --strict CI gate silently pass
 # for a run where Figma genuinely applies; leaving the prior render keeps the
 # gate honest (fail-closed, consistent with verify's own --strict policy).
+# Scoped to THIS feature: wiping every feature's renders would erase a design
+# feature's evidence whenever a design-less one runs (see Get-FigmaSectionPath).
 function Clear-RenderedSections {
-    Remove-Item -Path (Join-Path (Get-FigmaCacheDir) 'section.*.md') -Force -ErrorAction SilentlyContinue
+    $dir = Split-Path -Parent (Get-FigmaSectionPath 'spec')
+    Remove-Item -Path (Join-Path $dir '*.md') -Force -ErrorAction SilentlyContinue
 }
 
 # Render the ready-to-paste spec/plan/tasks sections from the fresh snapshot so

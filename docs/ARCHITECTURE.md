@@ -179,7 +179,7 @@ flowchart TD
     RFresh --> Rend["render spec/plan/tasks sections"]
     ROk --> Rend
 
-    RNoCfg -.->|clear| Wipe["delete stale<br>.figma/cache/section.*.md"]
+    RNoCfg -.->|clear| Wipe["delete THIS feature's stale<br>.figma/cache/sections/&lt;feature&gt;/"]
     RPlace -.->|clear| Wipe
     RInvalid -.->|clear| Wipe
     RAmb -.->|clear| Wipe
@@ -199,11 +199,18 @@ with stale data.
 
 **Stale renders are wiped, transient failures are not.** `figma-verify-section`
 keys "Figma applied to this run" on the existence of
-`.figma/cache/section.<phase>.md`. Leaving a previous run's file behind would
-make the verifier demand a section the current document should never carry — so
-every definitive skip deletes them. An `introspect-failed` is *not* definitive:
-wiping there would erase a prior phase's still-valid render and let a `--strict`
-CI gate pass for a run where Figma genuinely applies. It fails closed instead.
+`.figma/cache/sections/<feature>/<phase>.md`. Leaving a previous run's file behind
+would make the verifier demand a section the current document should never carry
+— so every definitive skip deletes them. An `introspect-failed` is *not*
+definitive: wiping there would erase a prior phase's still-valid render and let a
+`--strict` CI gate pass for a run where Figma genuinely applies. It fails closed
+instead.
+
+The wipe is scoped to the **current feature**, and that scoping is load-bearing
+for the same reason. While every feature shared one slot, running a design-less
+feature erased a design feature's renders, so that feature's after-hook reported
+`not-applicable` and a `--strict` gate passed for a document genuinely missing
+its section — fail-open, precisely what the gate exists to prevent.
 
 ## 5. Link resolution — three sources, two guards
 

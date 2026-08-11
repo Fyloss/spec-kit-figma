@@ -258,8 +258,11 @@ snapshot_is_current() { # $1 = snapshot path
 # verifier would report "not-applicable" and let a --strict CI gate silently pass
 # for a run where Figma genuinely applies; leaving the prior render keeps the
 # gate honest (fail-closed, consistent with verify's own --strict policy).
+# Scoped to THIS feature: wiping every feature's renders would erase a design
+# feature's evidence whenever a design-less one runs (see figma_section_path).
 clear_rendered_sections() {
-  rm -f "$(figma_cache_dir)"/section.*.md 2>/dev/null || true
+  local dir; dir="$(dirname "$(figma_section_path spec)")"
+  rm -f "${dir}"/*.md 2>/dev/null || true
 }
 
 if [[ ! -f "$CONFIG" ]]; then

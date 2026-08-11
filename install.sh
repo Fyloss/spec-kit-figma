@@ -162,6 +162,9 @@ rm -f "$TARGET/.figma-context-snapshot.json" "$TARGET"/.figma-section.*.md 2>/de
 # Cached artifacts written by earlier versions at the .figma/ root are dropped;
 # they will be regenerated under .figma/cache/ on the next introspect run.
 rm -f "$TARGET/.figma/context-snapshot.json" "$TARGET"/.figma/section.*.md 2>/dev/null || true
+# Rendered sections are now scoped per feature under .figma/cache/sections/;
+# the flat files earlier versions wrote are dead weight the verifier ignores.
+rm -f "$TARGET"/.figma/cache/section.*.md 2>/dev/null || true
 
 # The introspect command mandates loading this constitution file, so it must
 # always be installed — into .figma/ (committed), not the git-ignored cache/.

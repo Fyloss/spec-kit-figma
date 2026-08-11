@@ -101,9 +101,18 @@ figma_snapshot_store_path() {
   echo "$(figma_cache_dir)/snapshots/${key}.json"
 }
 
-# Path of the rendered, ready-to-paste section for a phase (spec|plan|tasks).
+# Path of the rendered, ready-to-paste section for a phase (spec|plan|tasks),
+# scoped to the current feature.
+#
+# The scoping is load-bearing, not tidiness. figma-verify-section decides
+# "Figma applied to this run" from the EXISTENCE of this file, while resolving a
+# per-feature document — so while every feature shared one slot, a design-less
+# feature erased the renders of a design one, and that feature's after-hook then
+# reported not-applicable. A --strict CI gate passed for a document genuinely
+# missing its design section: fail-open, which is exactly what the gate exists to
+# prevent.
 figma_section_path() {
-  echo "$(figma_cache_dir)/section.$1.md"
+  echo "$(figma_cache_dir)/sections/$(figma_feature_key)/$1.md"
 }
 
 # Identity of the feature being worked on, used to scope the remembered design

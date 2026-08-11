@@ -243,9 +243,9 @@ JSON
   [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
   [[ "$(status_json | jq -r '.mustInject')" == "false" ]]
   [[ "$(status_json | jq -r '.specSection')" == "null" ]]
-  [ ! -f "${WORKSPACE}/.figma/cache/section.spec.md" ]
-  [ ! -f "${WORKSPACE}/.figma/cache/section.plan.md" ]
-  [ ! -f "${WORKSPACE}/.figma/cache/section.tasks.md" ]
+  [ ! -f "$(section_path spec)" ]
+  [ ! -f "$(section_path plan)" ]
+  [ ! -f "$(section_path tasks)" ]
 }
 
 @test "the no-figma-link diagnostic names the remedy" {
@@ -280,13 +280,36 @@ JSON
   grep -qiF "do not ask" "$doc"
 }
 
+@test "a link-less feature does not wipe another feature's rendered section" {
+  # The rendered section is what tells figma-verify-section that Figma applied
+  # to a run. While it lived in one global slot, a design-less feature B erased
+  # feature A's — so A's after-hook reported not-applicable and a --strict CI
+  # gate passed for a document that was genuinely missing its design section.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  export SPECIFY_FEATURE="001-checkout"
+  echo '{"fileId":"LinkFILE999","pages":[{"id":"0:1","name":"Home","frames":[{"id":"12:345","name":"Hero","type":"FRAME"}]}],"nodes":{"nodes":{"12:345":{"document":{"type":"FRAME"}}}}}' \
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
+  run "$SCRIPT" --input "https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
+  a_section="$(status_json | jq -r '.specSection')"
+  [ -f "$a_section" ]
+
+  # Feature B has no mockup at all: its run must clear ITS OWN renders only.
+  export SPECIFY_FEATURE="002-billing-cache"
+  run "$SCRIPT" --input "Add a Redis cache on the billing endpoint."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
+  [ -f "$a_section" ]
+}
+
 @test "no-figma-link clears a stale rendered section from a previous feature" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
-  printf 'stale\n' > "${WORKSPACE}/.figma/cache/section.spec.md"
+  stage_section spec stale
   run "$SCRIPT" --input "Pure backend refactor."
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
-  [ ! -f "${WORKSPACE}/.figma/cache/section.spec.md" ]
+  [ ! -f "$(section_path spec)" ]
 }
 
 # --- The link is required at /speckit.specify, then inherited ----------------
@@ -532,13 +555,13 @@ stage_spec_with_section() { # $1 = feature dir, $2 = link URL
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
   [[ "$(status_json | jq -r '.mustInject')" == "true" ]]
-  [[ "$(status_json | jq -r '.specSection')" == *".figma/cache/section.spec.md" ]]
-  [[ "$(status_json | jq -r '.planSection')" == *".figma/cache/section.plan.md" ]]
-  [[ "$(status_json | jq -r '.tasksSection')" == *".figma/cache/section.tasks.md" ]]
-  [ -f "${WORKSPACE}/.figma/cache/section.spec.md" ]
-  [ -f "${WORKSPACE}/.figma/cache/section.plan.md" ]
-  [ -f "${WORKSPACE}/.figma/cache/section.tasks.md" ]
-  grep -q "Hero" "${WORKSPACE}/.figma/cache/section.spec.md"
+  [[ "$(status_json | jq -r '.specSection')" == *"/sections/${SPECIFY_FEATURE:-default}/spec.md" ]]
+  [[ "$(status_json | jq -r '.planSection')" == *"/sections/${SPECIFY_FEATURE:-default}/plan.md" ]]
+  [[ "$(status_json | jq -r '.tasksSection')" == *"/sections/${SPECIFY_FEATURE:-default}/tasks.md" ]]
+  [ -f "$(section_path spec)" ]
+  [ -f "$(section_path plan)" ]
+  [ -f "$(section_path tasks)" ]
+  grep -q "Hero" "$(section_path spec)"
 }
 
 @test "a broad link (file/page, no node-id) flags linkScope broad with candidate frames" {
@@ -551,7 +574,7 @@ stage_spec_with_section() { # $1 = feature dir, $2 = link URL
   [[ "$(status_json | jq -r '.linkScope')" == "broad" ]]
   [[ "$(status_json | jq -r '.candidateFrames | length')" == "2" ]]
   [[ "$(status_json | jq -r '.mustInject')" == "true" ]]
-  grep -qi "confirm which of these frames" "${WORKSPACE}/.figma/cache/section.spec.md"
+  grep -qi "confirm which of these frames" "$(section_path spec)"
 }
 
 @test "a link pinned to a top-level frame reports linkScope frame" {
@@ -569,13 +592,13 @@ stage_spec_with_section() { # $1 = feature dir, $2 = link URL
 @test "ensure clears stale rendered sections when Figma no longer applies" {
   # No config -> no-config skip path. A leftover .figma/cache/section.*.md from a prior
   # run must be removed so the verifier does not treat this run as 'applicable'.
-  printf 'stale\n' > "${WORKSPACE}/.figma/cache/section.tasks.md"
-  printf 'stale\n' > "${WORKSPACE}/.figma/cache/section.spec.md"
+  stage_section tasks stale
+  stage_section spec stale
   run "$SCRIPT"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "no-config" ]]
-  [ ! -f "${WORKSPACE}/.figma/cache/section.tasks.md" ]
-  [ ! -f "${WORKSPACE}/.figma/cache/section.spec.md" ]
+  [ ! -f "$(section_path tasks)" ]
+  [ ! -f "$(section_path spec)" ]
 }
 
 @test "ensure preserves a prior rendered section on a transient introspect-failure" {
@@ -585,12 +608,12 @@ stage_spec_with_section() { # $1 = feature dir, $2 = link URL
   # report not-applicable and let a --strict CI gate silently pass for a run where
   # Figma genuinely applies. Unlike no-config, this skip is transient -> keep it.
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
-  printf 'prior render\n' > "${WORKSPACE}/.figma/cache/section.tasks.md"
+  stage_section tasks 'prior render'
   unset FIGMA_PAT
   run "$SCRIPT" --input "$LINK"
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "introspect-failed" ]]
-  [ -f "${WORKSPACE}/.figma/cache/section.tasks.md" ]
+  [ -f "$(section_path tasks)" ]
 }
 
 @test "a link to a deep-fetched node that is not a top-level frame stays pinned (linkScope frame)" {

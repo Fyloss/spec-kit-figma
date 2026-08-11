@@ -105,7 +105,7 @@ JSON
 @test "figma_section_path points at the per-phase section under .figma" {
   run figma_section_path plan
   [ "$status" -eq 0 ]
-  [[ "$output" == *"/.figma/cache/section.plan.md" ]]
+  [[ "$output" == *"/.figma/cache/sections/default/plan.md" ]]
 }
 
 @test "figma_context_source defaults to rest without a config" {

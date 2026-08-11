@@ -188,6 +188,9 @@ Remove-Item -Path (Join-Path $target '.figma-section.*.md') -Force -ErrorAction 
 # they will be regenerated under .figma/cache/ on the next introspect run.
 Remove-Item -Path (Join-Path $target '.figma/context-snapshot.json') -Force -ErrorAction SilentlyContinue
 Remove-Item -Path (Join-Path $target '.figma/section.*.md') -Force -ErrorAction SilentlyContinue
+# Rendered sections are now scoped per feature under .figma/cache/sections/;
+# the flat files earlier versions wrote are dead weight the verifier ignores.
+Remove-Item -Path (Join-Path $target '.figma/cache/section.*.md') -Force -ErrorAction SilentlyContinue
 
 # The introspect command mandates loading this constitution file, so it must
 # always be installed — into .figma/ (committed), not the git-ignored cache/.

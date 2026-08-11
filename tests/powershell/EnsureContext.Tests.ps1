@@ -46,10 +46,24 @@ Describe 'figma-ensure-context.ps1 (skip paths)' {
     }
 
     It 'clears stale rendered sections when Figma does not apply' {
-        Set-Content (Join-Path $ws '.figma/cache/section.spec.md') 'stale'
+        Set-FakeSection $ws 'spec' 'stale' | Out-Null
         $r = Invoke-FigmaScript 'figma-ensure-context.ps1' -Workspace $ws
         $r.Json.reason | Should -Be 'no-config'
-        Test-Path (Join-Path $ws '.figma/cache/section.spec.md') | Should -BeFalse
+        Test-Path (Get-SectionPath $ws 'spec') | Should -BeFalse
+    }
+
+    It 'does not wipe another feature''s rendered section' {
+        # The rendered section is what tells figma-verify-section that Figma
+        # applied to a run. While it lived in one global slot, a design-less
+        # feature B erased feature A's — so A's after-hook reported
+        # not-applicable and a --strict CI gate passed for a document that was
+        # genuinely missing its design section.
+        $env:SPECIFY_FEATURE = '001-checkout'
+        $aSection = Set-FakeSection $ws 'spec' 'feature A render'
+        $env:SPECIFY_FEATURE = '002-billing-cache'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', 'Add a Redis cache.') -Workspace $ws
+        $r.Json.reason | Should -Be 'no-config'
+        Test-Path $aSection | Should -BeTrue
     }
 
     It 'emits the documented status schema, including the dependency key' {
@@ -170,14 +184,14 @@ Describe 'figma-ensure-context.ps1 (introspection failure diagnostics)' {
     }
 
     It 'does not clear a prior rendered section on a transient failure (fail-closed gate)' {
-        Set-Content (Join-Path $ws '.figma/cache/section.plan.md') 'prior render'
+        Set-FakeSection $ws 'plan' 'prior render' | Out-Null
         $env:FIGMA_API_BASE = 'http://127.0.0.1:9'
         $env:FIGMA_PAT = 'fake-token'
         $env:FIGMA_API_MAX_ATTEMPTS = '1'
         $env:FIGMA_API_RETRY_DELAY = '1'
         $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', $link) -Workspace $ws
         $r.Json.reason | Should -Be 'introspect-failed'
-        Test-Path (Join-Path $ws '.figma/cache/section.plan.md') | Should -BeTrue
+        Test-Path (Get-SectionPath $ws 'plan') | Should -BeTrue
     }
 }
 
@@ -204,7 +218,7 @@ Describe 'figma-ensure-context.ps1 (a Figma link is required)' {
         $r.Json.reason | Should -Be 'no-figma-link'
         $r.Json.mustInject | Should -BeFalse
         $r.Json.specSection | Should -Be $null
-        Test-Path (Join-Path $ws '.figma/cache/section.spec.md') | Should -BeFalse
+        Test-Path (Get-SectionPath $ws 'spec') | Should -BeFalse
     }
 
     It 'is a no-op with no input at all, whatever the config maps' {
@@ -224,10 +238,10 @@ Describe 'figma-ensure-context.ps1 (a Figma link is required)' {
     }
 
     It 'clears a stale rendered section when no link applies' {
-        Set-Content (Join-Path $ws '.figma/cache/section.spec.md') 'stale'
+        Set-FakeSection $ws 'spec' 'stale' | Out-Null
         $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', 'Pure backend refactor.') -Workspace $ws
         $r.Json.reason | Should -Be 'no-figma-link'
-        Test-Path (Join-Path $ws '.figma/cache/section.spec.md') | Should -BeFalse
+        Test-Path (Get-SectionPath $ws 'spec') | Should -BeFalse
     }
 
     It 'remembers the link so a later link-less phase still applies' {
