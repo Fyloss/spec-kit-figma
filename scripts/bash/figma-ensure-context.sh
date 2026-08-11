@@ -350,12 +350,16 @@ if [[ -z "$LINK_FILE" ]]; then
   # `select` emits nothing unless the file really holds a non-empty ARRAY, so a
   # truncated or hand-edited file degrades to "no remembered links" instead of
   # feeding a malformed value to the `.[0].fileId` below — which would abort the
-  # script under `set -e` and break the never-block contract.
+  # script under `set -e` and break the never-block contract. The root type is
+  # not enough on its own: an ENTRY missing fileId would leave `jq -r` printing
+  # the literal "null", non-empty and therefore indistinguishable from a real
+  # file key, so `// empty` turns that into the same silent no-link path.
   if [[ -f "$LINKS_FILE" ]] \
      && REMEMBERED="$(jq -c 'select(type == "array" and length > 0)' "$LINKS_FILE" 2>/dev/null)" \
-     && [[ -n "$REMEMBERED" ]]; then
+     && [[ -n "$REMEMBERED" ]] \
+     && LINK_FILE="$(jq -r '.[0].fileId // empty' <<< "$REMEMBERED")" \
+     && [[ -n "$LINK_FILE" ]]; then
     LINKS_JSON="$REMEMBERED"
-    LINK_FILE="$(jq -r '.[0].fileId' <<< "$LINKS_JSON")"
     collect_link_nodes
     echo "INFO: no Figma link in this phase's input; reusing the link(s) recorded for feature '$(figma_feature_key)'." >&2
   fi
@@ -427,7 +431,10 @@ if [[ -n "$STORED_SNAPSHOT" && "$STORED_SNAPSHOT" != "$SNAPSHOT" ]] \
    && snapshot_is_current "$STORED_SNAPSHOT" && snapshot_covers_links "$STORED_SNAPSHOT"; then
   # Publish it as the current one: every command prompt hands the agent the
   # well-known path, so restoring has to happen there and not only in memory.
-  if cp "$STORED_SNAPSHOT" "$SNAPSHOT" 2>/dev/null; then
+  # `-p` because snapshot_is_current keys freshness on the slot's mtime: a plain
+  # copy would stamp it "now" and let the restored data outlive the max-age
+  # window — restore it at minute 50 of 60 and it stays "fresh" until 110.
+  if cp -p "$STORED_SNAPSHOT" "$SNAPSHOT" 2>/dev/null; then
     echo "INFO: reused the cached snapshot of file '${LINK_FILE}'; no re-introspection needed." >&2
     prepare_injection
     emit false "fresh"

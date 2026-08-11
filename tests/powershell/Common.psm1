@@ -34,6 +34,19 @@ function New-TempWorkspace {
     return (Resolve-Path $dir).Path
 }
 
+# Turn a workspace into a git repository checked out on a given branch, so a
+# test can exercise the branch-derived paths. An empty commit is needed because
+# `git rev-parse --abbrev-ref HEAD` prints "HEAD" (and fails) on an unborn
+# branch. Returns the root as git reports it: on macOS git resolves /var/... to
+# its real /private/var/... path, and so do the scripts.
+function Initialize-GitWorkspace {
+    param([Parameter(Mandatory)][string]$Workspace, [Parameter(Mandatory)][string]$Branch)
+    git init -q -b $Branch $Workspace | Out-Null
+    git -C $Workspace -c user.email=test@example.com -c user.name=Test `
+        -c commit.gpgsign=false commit -q --allow-empty -m 'init' | Out-Null
+    return (git -C $Workspace rev-parse --show-toplevel)
+}
+
 # Run one of the scripts under test from inside a workspace directory, capturing
 # stdout, stderr and the exit code. Returns @{ Stdout; Stderr; ExitCode; Json }.
 # Json is the parsed stdout when it parses as JSON, else $null.
@@ -130,5 +143,5 @@ function Set-FakeSection {
 }
 
 Export-ModuleMember -Function Get-RepoRoot, Get-ScriptsDir, Get-FixturesDir,
-    Reset-FigmaEnvironment, New-TempWorkspace, Invoke-FigmaScript,
+    Reset-FigmaEnvironment, New-TempWorkspace, Initialize-GitWorkspace, Invoke-FigmaScript,
     Write-FakeSnapshot, Install-SectionTemplates, Get-SectionPath, Set-FakeSection

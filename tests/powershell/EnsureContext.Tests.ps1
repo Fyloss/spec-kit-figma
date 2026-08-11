@@ -401,6 +401,32 @@ Describe 'figma-ensure-context.ps1 (spec.md is the durable record of the link)' 
         $r.Json.reason | Should -Be 'no-figma-link'
     }
 
+    It 'never reads the checked-out branch''s spec.md for another feature' {
+        # SPECIFY_FEATURE identifies the feature; the branch only stands in when
+        # nothing else does. When the two diverge — a new feature started while
+        # the branch still carries the previous one's document —
+        # specs/<branch>/spec.md belongs to ANOTHER feature, so reading its
+        # links hands a design-less feature that feature's creative. The branch
+        # fallback must not outrank the -IdentifiedOnly rule.
+        $script:ws = Initialize-GitWorkspace $ws '002-checkout-redesign'
+        New-SpecWithSection $ws '002-checkout-redesign' 'https://www.figma.com/design/OtherFEATURE/Checkout?node-id=12-345'
+        $env:SPECIFY_FEATURE = '003-redis-cache'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', 'Add a Redis cache on the billing endpoint.') -Workspace $ws
+        $r.ExitCode | Should -Be 0
+        $r.Json.reason | Should -Be 'no-figma-link'
+    }
+
+    It 'still reads the branch''s spec.md for the feature the branch names' {
+        # The mirror image: with nothing else identifying the feature, the
+        # branch IS the feature, and its document must keep working.
+        $script:ws = Initialize-GitWorkspace $ws '002-checkout-redesign'
+        New-SpecWithSection $ws '002-checkout-redesign' 'https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345'
+        Remove-Item Env:SPECIFY_FEATURE -ErrorAction SilentlyContinue
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', 'Draft the implementation plan.') -Workspace $ws
+        $r.ExitCode | Should -Be 0
+        ($r.Json.introspectArgs -join ' ') | Should -Be '--file LinkFILE999 --node 12:345'
+    }
+
     It 're-warms the per-feature cache with the link recovered from spec.md' {
         New-SpecWithSection $ws '001-checkout' 'https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345'
         Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', 'Draft the implementation plan.') -Workspace $ws | Out-Null

@@ -537,3 +537,45 @@ JSON
     refute_glued_comment "$output"
   done
 }
+
+# --- Phase-document resolution -----------------------------------------------
+
+stage_phase_doc() { # $1 = feature dir, $2 = phase
+  mkdir -p "${WORKSPACE}/specs/$1"
+  printf '# %s\n' "$1" > "${WORKSPACE}/specs/$1/$2.md"
+}
+
+@test "figma_resolve_phase_doc in identified-only mode ignores the branch's doc" {
+  # The branch is a FALLBACK identity, not an override. When SPECIFY_FEATURE
+  # names another feature, specs/<branch>/spec.md belongs to someone else, and a
+  # caller that reads design links out of it inherits that feature's creative —
+  # the very regression the link requirement exists to prevent.
+  make_workspace_git "002-checkout-redesign"
+  stage_phase_doc "002-checkout-redesign" spec
+  export SPECIFY_FEATURE="003-redis-cache"
+  run figma_resolve_phase_doc spec identified-only
+  [ "$status" -ne 0 ]
+  [ -z "$output" ]
+}
+
+@test "figma_resolve_phase_doc falls back to the branch's doc in loose mode" {
+  # Loose mode serves a caller that merely VERIFIES a document — its failure
+  # mode is a warning, not a silent injection — so the branch stays a usable
+  # guess there.
+  make_workspace_git "002-checkout-redesign"
+  stage_phase_doc "002-checkout-redesign" spec
+  export SPECIFY_FEATURE="003-redis-cache"
+  run figma_resolve_phase_doc spec
+  [ "$status" -eq 0 ]
+  [ "$output" = "${WORKSPACE}/specs/002-checkout-redesign/spec.md" ]
+}
+
+@test "figma_resolve_phase_doc prefers the identified feature over the branch" {
+  make_workspace_git "002-checkout-redesign"
+  stage_phase_doc "002-checkout-redesign" spec
+  stage_phase_doc "003-redis-cache" spec
+  export SPECIFY_FEATURE="003-redis-cache"
+  run figma_resolve_phase_doc spec identified-only
+  [ "$status" -eq 0 ]
+  [ "$output" = "${WORKSPACE}/specs/003-redis-cache/spec.md" ]
+}

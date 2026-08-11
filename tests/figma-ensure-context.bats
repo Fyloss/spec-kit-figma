@@ -377,6 +377,22 @@ JSON
   [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
 }
 
+@test "a remembered-links entry carrying no fileId degrades to no-figma-link" {
+  # The root type is an array and the file parses, so the shape guard above
+  # passes — but the entry itself has no fileId. Reading it out unguarded yields
+  # jq's literal "null", which is non-empty and therefore looks like a real file
+  # key: the run would go on to introspect /files/null and report a failure
+  # instead of staying silent about Figma.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  export SPECIFY_FEATURE="001-checkout"
+  mkdir -p "${WORKSPACE}/.figma/cache/links"
+  printf '[{"nodeId":"12:345","url":"https://www.figma.com/design/"}]' \
+    > "${WORKSPACE}/.figma/cache/links/001-checkout.json"
+  run "$SCRIPT" --dry-run --input "No link in this phase."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
+}
+
 @test "a dry run never records the links it detected" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   export SPECIFY_FEATURE="001-checkout"
@@ -447,6 +463,36 @@ stage_spec_with_section() { # $1 = feature dir, $2 = link URL
   [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
 }
 
+@test "the checked-out branch's spec.md is never another feature's link source" {
+  # SPECIFY_FEATURE identifies the feature; the branch only stands in when
+  # nothing else does. When the two diverge — a new feature started while the
+  # branch still carries the previous one's document — specs/<branch>/spec.md
+  # belongs to ANOTHER feature, so reading its links hands a design-less feature
+  # that feature's creative. The branch fallback must therefore not outrank the
+  # "identified-only" rule the spec.md recovery asks for.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  make_workspace_git "002-checkout-redesign"
+  stage_spec_with_section "002-checkout-redesign" \
+    "https://www.figma.com/design/OtherFEATURE/Checkout?node-id=12-345"
+  export SPECIFY_FEATURE="003-redis-cache"
+  run "$SCRIPT" --dry-run --input "Add a Redis cache on the billing endpoint."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
+}
+
+@test "the branch's spec.md is still a link source for the feature it names" {
+  # The mirror image of the test above: with nothing else identifying the
+  # feature, the branch IS the feature, and its document must keep working.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  make_workspace_git "002-checkout-redesign"
+  stage_spec_with_section "002-checkout-redesign" \
+    "https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345"
+  unset SPECIFY_FEATURE
+  run "$SCRIPT" --dry-run --input "Draft the implementation plan."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.introspectArgs | join(" ")')" == "--file LinkFILE999 --node 12:345" ]]
+}
+
 @test "a link recovered from spec.md re-warms the per-feature cache" {
   cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
   export SPECIFY_FEATURE="001-checkout"
@@ -502,6 +548,25 @@ stage_spec_with_section() { # $1 = feature dir, $2 = link URL
   [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
   # …and the restored snapshot became the current one, so the agent reads it.
   [[ "$(jq -r '.fileId' "${WORKSPACE}/.figma/cache/context-snapshot.json")" == "LinkFILE999" ]]
+}
+
+@test "restoring a stored snapshot keeps its age, so it still expires" {
+  # Freshness is keyed on the current slot's mtime. A restore that stamps the
+  # slot with "now" resurrects data past the max-age window: fetched at T0,
+  # restored at T0+50, and with the 60-minute default still counted "fresh" at
+  # T0+100 — an hour and forty minutes of drift handed to the agent as current.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  mkdir -p "${WORKSPACE}/.figma/cache/snapshots"
+  stored="${WORKSPACE}/.figma/cache/snapshots/LinkFILE999.json"
+  echo '{"fileId":"LinkFILE999","pages":[],"nodes":{"nodes":{"12:345":{"document":{"type":"FRAME"}}}}}' > "$stored"
+  # The config must not out-age the snapshot, or it is stale for that reason.
+  backdate_file "${WORKSPACE}/figma.projects.config.json" 90
+  backdate_file "$stored" 30
+  run "$SCRIPT" --input "$LINK"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
+  # The republished slot carries the stored snapshot's mtime, not this run's.
+  [ -z "$(find "${WORKSPACE}/.figma/cache/context-snapshot.json" -newer "$stored")" ]
 }
 
 @test "a stored snapshot that does not cover the linked node is not restored" {

@@ -26,6 +26,27 @@ make_temp_workspace() {
   printf '%s' "$dir"
 }
 
+# Turn the temp workspace into a git repository checked out on a given branch,
+# so a test can exercise the branch-derived paths. An empty commit is needed
+# because `git rev-parse --abbrev-ref HEAD` prints "HEAD" (and fails) on an
+# unborn branch. Re-points WORKSPACE at the root as git reports it: on macOS git
+# resolves /var/... to its real /private/var/... path, and so do the scripts.
+make_workspace_git() { # $1 = branch name
+  git init -q -b "$1" "$WORKSPACE"
+  git -C "$WORKSPACE" -c user.email=test@example.com -c user.name=Test \
+    -c commit.gpgsign=false commit -q --allow-empty -m "init"
+  WORKSPACE="$(git -C "$WORKSPACE" rev-parse --show-toplevel)"
+  cd "$WORKSPACE"
+}
+
+# Set a file's mtime N minutes in the past. `date -v` is BSD/macOS and `date -d`
+# is GNU, so try both rather than pinning the suite to one platform.
+backdate_file() { # $1 = path, $2 = minutes
+  local stamp
+  stamp="$(date -v-"$2"M +%Y%m%d%H%M 2>/dev/null || date -d "$2 minutes ago" +%Y%m%d%H%M)"
+  touch -t "$stamp" "$1"
+}
+
 # Path of the rendered section for the feature the test is acting as — mirrors
 # figma_section_path, which scopes renders per feature so a design-less feature
 # cannot wipe a design one's. Falls back to "default" exactly as the helper does
