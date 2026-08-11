@@ -363,7 +363,16 @@ if ($inputText) {
 if (-not $linkFile) {
     $linksFile = Get-FigmaFeatureLinksPath
     if (Test-Path -LiteralPath $linksFile -PathType Leaf) {
-        try { $remembered = @(Read-FigmaJsonFile $linksFile) } catch { $remembered = @() }
+        # The contract is the JSON ROOT TYPE, not merely "does it parse": a
+        # hand-edited file holding a single object instead of a one-element array
+        # would otherwise feed a non-list value to the rest of the pipeline. It
+        # has to be read off the TEXT, because ConvertFrom-Json unrolls '[{...}]'
+        # into a bare object — the deserialized shape cannot tell the two apart.
+        # Mirrors the bash port's `jq 'select(type == "array" and length > 0)'`.
+        try {
+            $rawLinks = Get-Content -LiteralPath $linksFile -Raw
+            $remembered = if ($rawLinks -match '^\s*\[') { @($rawLinks | ConvertFrom-Json) } else { @() }
+        } catch { $remembered = @() }
         if ($remembered.Count -gt 0) {
             $linkFile = [string](Get-JsonValue $remembered[0] @('fileId') '')
         }

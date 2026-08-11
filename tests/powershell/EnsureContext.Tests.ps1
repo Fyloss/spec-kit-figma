@@ -258,6 +258,21 @@ Describe 'figma-ensure-context.ps1 (a Figma link is required)' {
         $r.Json.reason | Should -Be 'no-figma-link'
     }
 
+    It 'ignores a remembered-links file whose JSON root is not an array' {
+        # Valid JSON, plausible content, wrong shape: a hand-edited file holding
+        # a single object instead of a one-element array. ConvertFrom-Json
+        # unrolls '[{...}]' into a bare object, so the deserialized shape cannot
+        # tell the two apart — the JSON root has to be checked in the text, as
+        # the bash port does with `jq 'select(type == "array")'`.
+        $env:SPECIFY_FEATURE = '001-checkout'
+        $linksDir = Join-Path $ws '.figma/cache/links'
+        New-Item -ItemType Directory -Force -Path $linksDir | Out-Null
+        Set-Content (Join-Path $linksDir '001-checkout.json') '{"fileId":"LinkFILE999","nodeId":"12:345"}'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', 'No link in this phase.') -Workspace $ws
+        $r.ExitCode | Should -Be 0
+        $r.Json.reason | Should -Be 'no-figma-link'
+    }
+
     It 'never records the links a dry run detected' {
         $env:SPECIFY_FEATURE = '001-checkout'
         Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', $link) -Workspace $ws | Out-Null

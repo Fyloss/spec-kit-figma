@@ -110,10 +110,14 @@ When `"linkScope": "frame"`, the creative is already pinned: proceed directly.
 
 ## 4. Other skip reasons
 
-For any other `reason` (`no-figma-link`, `no-config`, `unresolved-placeholders`,
+For any other `reason` (`no-config`, `unresolved-placeholders`,
 `target-excluded`, `target-not-mapped`, `target-disabled`, `ambiguous-target`,
 `invalid-config`, `dry-run`) — proceed without Figma context and add a short note
 mentioning the reason. Never block generation.
+
+`no-figma-link` is the one exception, and it overrides that rule: it adds
+**nothing at all** to the document, not even a note naming the reason. See the
+next section.
 
 ### `no-figma-link` — the feature has no mockup; add NOTHING to the document
 

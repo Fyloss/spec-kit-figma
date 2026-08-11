@@ -260,6 +260,17 @@ JSON
   [[ "$output" == *"re-run"* ]]
 }
 
+@test "the ensure command doc does not list no-figma-link among the note-worthy reasons" {
+  # "Other skip reasons" tells the agent to add a short note naming the reason.
+  # Listing no-figma-link there contradicts the section right below it, which
+  # requires adding NOTHING — and a contradiction in the prompt is resolved by
+  # the model, differently each time.
+  doc="${REPO_ROOT}/commands/speckit.figma.ensure.md"
+  paragraph="$(awk '/^For any other `reason`/{f=1} f && NF {print} f && !NF {exit}' "$doc")"
+  [ -n "$paragraph" ]
+  ! grep -qF 'no-figma-link' <<< "$paragraph"
+}
+
 @test "the ensure command doc separates the document from the chat reply" {
   # "Add NOTHING" must scope to the generated document only. Applied to the
   # agent's own reply as well, it suppresses the one signal a developer can act
@@ -322,6 +333,23 @@ JSON
   mkdir -p "${WORKSPACE}/.figma/cache/links"
   printf '{"not":"an array"' > "${WORKSPACE}/.figma/cache/links/001-checkout.json"
   run "$SCRIPT" --input "No link in this phase."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
+}
+
+@test "a remembered-links file whose JSON root is not an array is ignored" {
+  # Valid JSON, plausible content, wrong shape: a hand-edited file holding a
+  # single object instead of a one-element array. Accepting it would feed a
+  # value the rest of the pipeline treats as a list, so the contract is the JSON
+  # ROOT TYPE, not merely "does it parse". Pinned in both ports: PowerShell's
+  # ConvertFrom-Json unrolls a one-element array into a bare object, so the
+  # deserialized shape alone cannot tell the two apart.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  export SPECIFY_FEATURE="001-checkout"
+  mkdir -p "${WORKSPACE}/.figma/cache/links"
+  printf '{"fileId":"LinkFILE999","nodeId":"12:345"}' \
+    > "${WORKSPACE}/.figma/cache/links/001-checkout.json"
+  run "$SCRIPT" --dry-run --input "No link in this phase."
   [ "$status" -eq 0 ]
   [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
 }
