@@ -40,7 +40,7 @@ submodules) layouts.
 ├── install.sh                          # optional manual installer (single/mono/multi-repo)
 ├── install.ps1                         # the same installer for Windows (PowerShell 7+)
 ├── commands/                           # agent-agnostic command templates
-│   ├── speckit.figma.setup.md
+│   ├── speckit.figma.config.md
 │   ├── speckit.figma.update.md         # re-sync assets/hooks + re-register commands (idempotent)
 │   ├── speckit.figma.ensure.md         # auto-context (before_specify/before_plan/before_tasks hooks)
 │   ├── speckit.figma.introspect.md
@@ -82,10 +82,10 @@ specify extension add --dev /path/to/spec-kit-figma
 ```
 Once the extension is listed in the Spec Kit community catalog, it is also
 discoverable via `specify extension search figma`.
-This registers the `/speckit.figma.setup`, `/speckit.figma.update`,
+This registers the `/speckit.figma.config`, `/speckit.figma.update`,
 `/speckit.figma.ensure`, `/speckit.figma.introspect` and
 `/speckit.figma.verify` commands with your agent. Then run
-`/speckit.figma.setup` once.
+`/speckit.figma.config` once.
 
 **Figma context is refreshed automatically:** the manifest's
 `before_specify` / `before_plan` / `before_tasks` hooks invoke
@@ -249,7 +249,7 @@ The engine is selected per workspace via `figma.contextSource`:
 > as a native Claude Code tool — no local Dev Mode server, no extra config — and
 > then you simply set `figma.contextSource: "mcp"` in
 > `figma.projects.config.json`. When the extension's scripts run inside Claude
-> Code and the plugin is absent, `figma-resolve-source.sh` (and `/speckit.figma.setup`)
+> Code and the plugin is absent, `figma-resolve-source.sh` (and `/speckit.figma.config`)
 > print a one-line reminder; silence it with `FIGMA_NO_PLUGIN_ADVICE=1`. Note
 > this hosted server differs from the local Dev Mode MCP server
 > (`http://127.0.0.1:3845/mcp`), which the extension's curl probe targets by

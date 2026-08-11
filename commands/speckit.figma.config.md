@@ -2,10 +2,12 @@
 description: Configure the SpecKit Figma extension for this workspace (single-repo by default, mono-repo or multi-repo) and validate connectivity before any spec/plan/tasks run. Choose the REST engine (portable, CI-friendly) or the MCP engine, which delivers more faithful mockup implementation.
 ---
 
-# /speckit.figma.setup — Configure the Figma extension
+# /speckit.figma.config — Configure the Figma extension
 
-You are setting up the Figma integration for SpecKit. Be deterministic and never
-print or echo the access token.
+You are configuring the Figma integration for SpecKit — writing
+`figma.projects.config.json` and validating connectivity. Installing the
+extension's assets is a different job, done by `install.sh` / `install.ps1`. Be
+deterministic and never print or echo the access token.
 
 ## Scripts
 

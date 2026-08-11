@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Workspaces that relied on `pageToPackageMapping` alone to obtain design context
   without pasting a link must now paste the Figma link in the feature
   description, or run `/speckit.figma.introspect` by hand.
+- **BREAKING — `/speckit.figma.setup` is renamed `/speckit.figma.config`.** The
+  command never installed anything (`install.sh` / `install.ps1` do that): it
+  detects the topology, writes `figma.projects.config.json`, and validates
+  connectivity. `config` says what it does, and matches the sibling extension
+  `spec-kit-charter`, which already exposes `/speckit.charter.config`. Re-run
+  `specify extension add` to register the new name; no alias is kept, because two
+  names for one command is the confusion the rename removes.
 - **`role` is no longer required on a target.** Validation rejected a config
   without it, yet no helper branched on it: `figma-detect-target` copies it into
   its JSON output and nothing reads it back. It stays enum-validated when present

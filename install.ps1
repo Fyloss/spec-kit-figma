@@ -522,7 +522,7 @@ Next steps:
   4. Register the extension commands (commands/speckit.figma.*.md)
      with your SpecKit agent of choice — or install natively with
      'specify extension add' (see extension.yml / docs/INSTALL.md), which registers
-     /speckit.figma.setup, /speckit.figma.update, /speckit.figma.ensure,
+     /speckit.figma.config, /speckit.figma.update, /speckit.figma.ensure,
      /speckit.figma.introspect and /speckit.figma.verify for you.
 "@
 exit 0

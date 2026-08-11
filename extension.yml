@@ -30,8 +30,8 @@ requires:
 
 provides:
   commands:
-    - name: speckit.figma.setup
-      file: commands/speckit.figma.setup.md
+    - name: speckit.figma.config
+      file: commands/speckit.figma.config.md
       description: "Configure the SpecKit Figma extension for this workspace and validate connectivity before any spec/plan/tasks run. Selects the REST engine (portable, CI-friendly) or the MCP engine, which yields more faithful mockup implementation."
 
     - name: speckit.figma.update

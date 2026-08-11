@@ -53,7 +53,7 @@ $fellBack = ($requested -eq 'mcp' -and $effective -eq 'rest')
 
 # Claude Code advisory: surface the official Figma plugin when it would help.
 # The human-readable tip goes to stderr (see Write-FigmaClaudePluginAdvice); the
-# JSON carries the same signal so /speckit.figma.setup can report it too.
+# JSON carries the same signal so /speckit.figma.config can report it too.
 $claudeCode = Test-FigmaIsClaudeCode
 $figmaPlugin = Test-FigmaClaudeFigmaPluginInstalled
 Write-FigmaClaudePluginAdvice

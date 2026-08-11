@@ -57,7 +57,7 @@ specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/arch
 # or from a local checkout
 specify extension add --dev /path/to/spec-kit-figma
 ```
-This registers all of the extension's commands — `/speckit.figma.setup`,
+This registers all of the extension's commands — `/speckit.figma.config`,
 `/speckit.figma.update`, `/speckit.figma.ensure`, `/speckit.figma.introspect` and
 `/speckit.figma.verify` — with your agent. Verify with `specify extension list`.
 With this option you can skip the manual command registration in step 4.
@@ -163,7 +163,7 @@ missing a command file.
 
 In a configured workspace you can run the whole procedure with the bundled
 **`/speckit.figma.update`** command, which orchestrates both tools and reports
-what changed. Re-running the interactive `/speckit.figma.setup` is **not** the
+what changed. Re-running the interactive `/speckit.figma.config` is **not** the
 way to update — it is for first-time configuration.
 
 ## 2. Configure
@@ -271,12 +271,12 @@ rejected with an explicit error instead of a silent empty result.
 
 ## 4. Register the commands with your agent
 > Skip this step if you installed via `specify extension add` (Option A) — SpecKit
-> already registered all of the extension's commands (`/speckit.figma.setup`,
+> already registered all of the extension's commands (`/speckit.figma.config`,
 > `/speckit.figma.update`, `/speckit.figma.ensure`, `/speckit.figma.introspect`,
 > `/speckit.figma.verify`).
 
 For a manual install, the extension ships **agent-agnostic** command templates:
-- `commands/speckit.figma.setup.md`
+- `commands/speckit.figma.config.md`
 - `commands/speckit.figma.update.md` (re-sync assets/hooks + re-register commands
   on a version bump; preserves the config — see "Updating an existing install")
 - `commands/speckit.figma.ensure.md` (auto-context; wired to the
@@ -290,8 +290,8 @@ Map them to your agent's command location, e.g.:
 
 | Agent | Destination |
 |---|---|
-| GitHub Copilot | `.github/prompts/speckit.figma.setup.prompt.md`, `…/speckit.figma.introspect.prompt.md` |
-| Claude | `.claude/commands/speckit.figma.setup.md`, `…/speckit.figma.introspect.md` |
+| GitHub Copilot | `.github/prompts/speckit.figma.config.prompt.md`, `…/speckit.figma.introspect.prompt.md` |
+| Claude | `.claude/commands/speckit.figma.config.md`, `…/speckit.figma.introspect.md` |
 | Gemini / others | the agent's command/prompt directory |
 
 The installer already copies the design-rules constitution to
@@ -323,7 +323,7 @@ Windows (PowerShell 7+):
 ```
 
 ## 6. Use in the SpecKit flow
-Run `/speckit.figma.setup` once. From then on, Figma context is **automatic**:
+Run `/speckit.figma.config` once. From then on, Figma context is **automatic**:
 the extension hooks (`before_specify` / `before_plan` / `before_tasks` in `extension.yml`)
 invoke `/speckit.figma.ensure`, which runs
 `./.specify/scripts/bash/figma-ensure-context.sh` (on Windows:

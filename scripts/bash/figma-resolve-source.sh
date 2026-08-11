@@ -57,7 +57,7 @@ FELL_BACK="false"
 
 # Claude Code advisory: surface the official Figma plugin when it would help.
 # The human-readable tip goes to stderr (see figma_claude_plugin_advice); the
-# JSON carries the same signal so /speckit.figma.setup can report it too.
+# JSON carries the same signal so /speckit.figma.config can report it too.
 CLAUDE_CODE="false"; figma_is_claude_code && CLAUDE_CODE="true"
 FIGMA_PLUGIN="false"; figma_claude_figma_plugin_installed && FIGMA_PLUGIN="true"
 figma_claude_plugin_advice
