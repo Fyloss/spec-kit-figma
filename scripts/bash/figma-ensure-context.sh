@@ -248,7 +248,7 @@ snapshot_is_current() { # $1 = snapshot path
 
 # Stale rendered sections from a previous run must not outlive it: the verifier
 # (figma-verify-section.sh) keys "Figma applied to this run" on the existence of
-# .figma/cache/section.<phase>.md. clear_rendered_sections drops them so only THIS
+# .figma/cache/sections/<feature>/<phase>.md. clear_rendered_sections drops them so only THIS
 # run's renders remain.
 #
 # It is called on the paths where Figma DEFINITIVELY does not apply (no/invalid

@@ -444,7 +444,7 @@ flowchart TD
     Root --> Cache["cache/<br><b>git-ignored</b> — one entry covers everything below"]
 
     Cache --> Snap["context-snapshot.json<br>the introspected design facts"]
-    Cache --> Sec["section.spec.md · section.plan.md · section.tasks.md<br>ready-to-paste blocks; existence means Figma applied"]
+    Cache --> Sec["sections/&lt;feature&gt;/spec.md · plan.md · tasks.md<br>ready-to-paste blocks; existence means Figma applied"]
     Cache --> Links["links/&lt;feature&gt;.json<br>the link remembered for one feature"]
 ```
 
@@ -460,7 +460,7 @@ that produced the `spec.md` fallback in
 | --- | --- | --- | --- |
 | `figma-ensure-context` | config, snapshot, links cache, `spec.md`, raw input | links cache, rendered sections, snapshot (via introspect) | 0 always, except bad args / internal error |
 | `figma-introspect` | Figma REST API | `context-snapshot.json` | 0 ok, non-zero on API failure |
-| `figma-render-section` | snapshot, templates, links | `section.<phase>.md` | 0 ok, non-zero on bad input |
+| `figma-render-section` | snapshot, templates, links | `sections/<feature>/<phase>.md` | 0 ok, non-zero on bad input |
 | `figma-verify-section` | rendered section, generated document | — | 0, or 1 under `--strict` on a real defect |
 | `figma-validate-config` | config | — | 0 valid, 1 structural, 2 placeholder |
 | `figma-detect-target` | config | — | 0 for every mapping outcome, non-zero on structural error |

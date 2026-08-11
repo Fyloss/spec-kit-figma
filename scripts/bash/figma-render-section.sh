@@ -18,7 +18,7 @@
 #     [--config <path>] [--snapshot <path>]
 #     [--links <json-array>] [--candidate-frames <json-array>] [--out <path>]
 #
-# Output: writes <root>/.figma/cache/section.<phase>.md (git-ignored) and prints its
+# Output: writes <root>/.figma/cache/sections/<feature>/<phase>.md (git-ignored) and prints its
 # path on stdout. Templates are resolved from the workspace
 # (<root>/.specify/templates/) first, then the extension checkout
 # (<script>/../../templates/).

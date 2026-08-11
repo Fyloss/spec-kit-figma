@@ -136,9 +136,6 @@ function Emit-Status { # $Ran (bool), $Reason
     })
 }
 
-# Classify the directly-linked nodes against the snapshot and, for broad links
-# (file/page level, no specific FRAME), collect the candidate top-level frames so
-# the agent enumerates them for creative confirmation instead of bailing out.
 # Node ids to deep-fetch for $linkFile, from whichever source filled $links.
 # A prototype link contributes two: the frame that was being viewed and the
 # flow's starting point (startNodeId) — both are creatives, and both ride the
@@ -152,6 +149,9 @@ function Get-LinkNodes {
         Sort-Object -Unique)
 }
 
+# Classify the directly-linked nodes against the snapshot and, for broad links
+# (file/page level, no specific FRAME), collect the candidate top-level frames so
+# the agent enumerates them for creative confirmation instead of bailing out.
 function Compute-LinkScope {
     $script:linkScope = 'none'
     $script:candidateFrames = @()
@@ -202,7 +202,7 @@ function Compute-LinkScope {
 
 # Stale rendered sections from a previous run must not outlive it: the verifier
 # (figma-verify-section.ps1) keys "Figma applied to this run" on the existence of
-# .figma/cache/section.<phase>.md. Clear-RenderedSections drops them so only THIS
+# .figma/cache/sections/<feature>/<phase>.md. Clear-RenderedSections drops them so only THIS
 # run's renders remain.
 #
 # It is called on the paths where Figma DEFINITIVELY does not apply (no/invalid
