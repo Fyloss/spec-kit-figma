@@ -747,3 +747,50 @@ stage_spec_with_section() { # $1 = feature dir, $2 = link URL
   # Homebrew is not always writable; the guidance must not stop at 'brew install'.
   [[ "$output" == *"no sudo"* ]]
 }
+
+# --- Cache housekeeping ------------------------------------------------------
+# The sweep (figma_gc_cache) is wired ahead of every early exit, so the runs that
+# produce the most orphans — the design-less ones — are also the ones that clean
+# up. 11520 minutes = 8 days, past the 7-day default retention window.
+
+stage_orphan_links() { # $1 = feature key
+  mkdir -p "${WORKSPACE}/.figma/cache/links"
+  printf '[{"fileId":"F1","nodeId":"1:2"}]\n' > "${WORKSPACE}/.figma/cache/links/$1.json"
+  backdate_file "${WORKSPACE}/.figma/cache/links/$1.json" 11520
+}
+
+@test "a real run sweeps orphaned cache entries, even a design-less one" {
+  # no-config exits before anything else happens: the sweep still has to have run.
+  stage_orphan_links "throwaway-spike"
+  run "$SCRIPT" --input "Pure backend refactor."
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-config" ]]
+  [ ! -f "${WORKSPACE}/.figma/cache/links/throwaway-spike.json" ]
+}
+
+@test "a dry run leaves the cache exactly as it found it" {
+  # A rehearsal must not change what a later real run decides — the same reason
+  # --dry-run does not record this phase's links.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  stage_orphan_links "throwaway-spike"
+  run "$SCRIPT" --dry-run --input "$LINK"
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/.figma/cache/links/throwaway-spike.json" ]
+  [ ! -f "${WORKSPACE}/.figma/cache/.gc-stamp" ]
+}
+
+@test "the sweep never collects the links the very same run just recorded" {
+  # The links are written after the sweep, but the feature has no specs/
+  # directory yet at /speckit.specify time — ownership alone would have collected
+  # them on the NEXT phase, before it could inherit them.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --input "$LINK"
+  [ "$status" -eq 0 ]
+  links="${WORKSPACE}/.figma/cache/links/${SPECIFY_FEATURE}.json"
+  [ -f "$links" ]
+  backdate_file "$links" 11520
+  FIGMA_CACHE_GC=force run "$SCRIPT" --input "Draft the implementation plan."
+  [ "$status" -eq 0 ]
+  [ -f "$links" ]
+  [[ "$(status_json | jq -r '.links[0].fileId')" == "LinkFILE999" ]]
+}

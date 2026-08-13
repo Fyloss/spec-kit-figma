@@ -18,8 +18,8 @@ function Get-FixturesDir { $script:FixturesDir }
 function Reset-FigmaEnvironment {
     foreach ($name in @('FIGMA_PAT', 'FIGMA_PAT_COMMAND', 'FIGMA_CONFIG', 'FIGMA_API_BASE',
             'FIGMA_DIAG_FILE', 'FIGMA_API_MAX_ATTEMPTS', 'FIGMA_API_RETRY_DELAY',
-            'FIGMA_SNAPSHOT_MAX_AGE_MINUTES', 'CLAUDECODE', 'AI_AGENT',
-            'SPECIFY_FEATURE')) {
+            'FIGMA_SNAPSHOT_MAX_AGE_MINUTES', 'FIGMA_CACHE_GC', 'FIGMA_CACHE_RETENTION_DAYS',
+            'CLAUDECODE', 'AI_AGENT', 'SPECIFY_FEATURE')) {
         Remove-Item "Env:$name" -ErrorAction SilentlyContinue
     }
     $env:FIGMA_NO_PLUGIN_ADVICE = '1'
@@ -142,6 +142,51 @@ function Set-FakeSection {
     return $path
 }
 
+# Set a file's mtime N minutes in the past — mirrors backdate_file in the bats
+# helpers, so the cache-housekeeping tests can age an entry past its window.
+function Set-FigmaFileAge {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][int]$Minutes)
+    (Get-Item -LiteralPath $Path).LastWriteTime = (Get-Date).AddMinutes(-$Minutes)
+}
+
+# Stage a remembered-links file for an arbitrary feature key (Set-FakeSection
+# covers the current one), optionally aged past the retention window.
+function Set-FakeLinksEntry {
+    param([Parameter(Mandatory)][string]$Workspace, [Parameter(Mandatory)][string]$Key,
+        [int]$AgeMinutes = 0)
+    $dir = Join-Path $Workspace '.figma/cache/links'
+    $null = New-Item -ItemType Directory -Force -Path $dir
+    $path = Join-Path $dir "$Key.json"
+    Set-Content -LiteralPath $path -Value '[{"fileId":"F1","nodeId":"1:2"}]'
+    if ($AgeMinutes -gt 0) { Set-FigmaFileAge -Path $path -Minutes $AgeMinutes }
+    return $path
+}
+
+# Same, for a rendered section belonging to an arbitrary feature key.
+function Set-FakeSectionFor {
+    param([Parameter(Mandatory)][string]$Workspace, [Parameter(Mandatory)][string]$Key,
+        [string]$Phase = 'spec', [int]$AgeMinutes = 0)
+    $dir = Join-Path (Join-Path $Workspace '.figma/cache/sections') $Key
+    $null = New-Item -ItemType Directory -Force -Path $dir
+    $path = Join-Path $dir "$Phase.md"
+    Set-Content -LiteralPath $path -Value 'rendered'
+    if ($AgeMinutes -gt 0) { Set-FigmaFileAge -Path $path -Minutes $AgeMinutes }
+    return $path
+}
+
+# Same, for a per-file snapshot in the store.
+function Set-FakeStoredSnapshot {
+    param([Parameter(Mandatory)][string]$Workspace, [Parameter(Mandatory)][string]$FileId,
+        [int]$AgeMinutes = 0)
+    $dir = Join-Path $Workspace '.figma/cache/snapshots'
+    $null = New-Item -ItemType Directory -Force -Path $dir
+    $path = Join-Path $dir "$FileId.json"
+    Set-Content -LiteralPath $path -Value "{`"fileId`":`"$FileId`",`"pages`":[]}"
+    if ($AgeMinutes -gt 0) { Set-FigmaFileAge -Path $path -Minutes $AgeMinutes }
+    return $path
+}
+
 Export-ModuleMember -Function Get-RepoRoot, Get-ScriptsDir, Get-FixturesDir,
     Reset-FigmaEnvironment, New-TempWorkspace, Initialize-GitWorkspace, Invoke-FigmaScript,
-    Write-FakeSnapshot, Install-SectionTemplates, Get-SectionPath, Set-FakeSection
+    Write-FakeSnapshot, Install-SectionTemplates, Get-SectionPath, Set-FakeSection,
+    Set-FigmaFileAge, Set-FakeLinksEntry, Set-FakeSectionFor, Set-FakeStoredSnapshot

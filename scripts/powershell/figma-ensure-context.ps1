@@ -38,6 +38,9 @@
 # config-derived scope, and a snapshot that does not cover the linked nodes is
 # treated as stale. Same contract as /speckit.figma.introspect section 0.
 # FIGMA_SNAPSHOT_MAX_AGE_MINUTES overrides the default freshness window (60).
+# Every real (non-dry) run also sweeps the cache once a day (Invoke-FigmaCacheGc):
+# FIGMA_CACHE_RETENTION_DAYS overrides the 7-day window, FIGMA_CACHE_GC=off
+# disables it, =force ignores the daily throttle.
 #
 # Prints a JSON status object on stdout:
 #   { "ran": true|false, "reason": "...", "code": "NETWORK|AUTH|NOT_FOUND|...|null",
@@ -91,6 +94,15 @@ if ($maxAgeMin -notmatch '^[1-9][0-9]*$') {
     exit 1
 }
 $maxAgeMin = [int]$maxAgeMin
+
+# Housekeeping, placed BEFORE every early exit below so it runs on all kinds of
+# phase — including the design-less ones, which are exactly the runs that leave
+# orphaned keys behind. A dry run is a rehearsal and must leave no trace, so it
+# skips the sweep; the catch keeps a housekeeping failure from ever blocking a
+# hook whose contract is "never block, always answer".
+if (-not $dryRun) {
+    try { Invoke-FigmaCacheGc } catch { }
+}
 
 $config = Get-FigmaDefaultConfig
 $snapshotPath = Get-FigmaCachePath

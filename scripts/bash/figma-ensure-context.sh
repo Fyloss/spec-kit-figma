@@ -39,6 +39,9 @@
 # treated as stale. Same contract as /speckit.figma.introspect section 0, so
 # no manual introspection run is ever needed for pasted links.
 # FIGMA_SNAPSHOT_MAX_AGE_MINUTES overrides the default freshness window (60).
+# Every real (non-dry) run also sweeps the cache once a day (figma_gc_cache):
+# FIGMA_CACHE_RETENTION_DAYS overrides the 7-day window, FIGMA_CACHE_GC=off
+# disables it, =force ignores the daily throttle.
 #
 # Prints a JSON status object on stdout:
 #   { "ran": true|false, "reason": "...", "code": "NETWORK|AUTH|NOT_FOUND|...|null",
@@ -95,6 +98,15 @@ done
 if [[ ! "$MAX_AGE_MIN" =~ ^[1-9][0-9]*$ ]]; then
   echo "ERROR: --max-age-minutes must be a positive integer (got '${MAX_AGE_MIN}')" >&2
   exit 1
+fi
+
+# Housekeeping, placed BEFORE every early exit below so it runs on all kinds of
+# phase — including the design-less ones, which are exactly the runs that leave
+# orphaned keys behind. A dry run is a rehearsal and must leave no trace, so it
+# skips the sweep; `|| true` keeps a housekeeping failure from ever blocking a
+# hook whose contract is "never block, always answer".
+if [[ "$DRY_RUN" != "true" ]]; then
+  figma_gc_cache || true
 fi
 
 CONFIG="$(figma_default_config)"

@@ -336,6 +336,14 @@ for front-end targets and skipped for excluded ones; any skip (no config,
 placeholders, excluded target, failed introspection) is surfaced as a note and
 never blocks generation.
 
+Each real run also sweeps `.figma/cache/` at most once a day, reclaiming the
+per-feature entries of keys that never became a SpecKit feature (an ad-hoc
+branch, a detached HEAD) and the stored snapshots of Figma files nothing links
+any more. Entries belonging to a feature that still owns a `specs/<feature>/`
+directory are never touched, nor is the feature of the run doing the sweep.
+Override the 7-day window with `FIGMA_CACHE_RETENTION_DAYS`, or turn the sweep
+off entirely with `FIGMA_CACHE_GC=off`.
+
 After generation, the `after_specify`/`after_plan`/`after_tasks` hooks run
 `/speckit.figma.verify` (`figma-verify-section.sh`), which confirms the Figma
 section was actually integrated when a mockup was detected — and self-corrects

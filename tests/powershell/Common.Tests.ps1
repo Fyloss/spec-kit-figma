@@ -115,6 +115,105 @@ Describe 'Get-FigmaEnvVarName / Get-FigmaToken' {
     }
 }
 
+Describe 'Invoke-FigmaCacheGc' {
+    # The cache only ever grew: one links/<key>.json and one sections/<key>/ per
+    # branch that ever ran a phase, one snapshots/<file>.json per Figma file ever
+    # linked. Disk is not the point — a recycled branch name would hand a
+    # brand-new feature the remembered links of the one that used the name before
+    # it. 11520 minutes = 8 days, past the 7-day default retention window.
+    BeforeEach {
+        Reset-FigmaEnvironment
+        $script:ws = New-TempWorkspace
+        $env:SPECIFY_FEATURE = '003-redis-cache'
+        Push-Location $script:ws
+    }
+    AfterEach { Pop-Location }
+
+    It 'collects an orphaned feature key, and keeps one that owns a specs/ directory' {
+        # specs/<key>/ is committed and outlives its branch: ownership decides
+        # before age does.
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $ws 'specs/001-checkout')
+        $live = Set-FakeLinksEntry -Workspace $ws -Key '001-checkout' -AgeMinutes 43200
+        $orphan = Set-FakeLinksEntry -Workspace $ws -Key 'throwaway-spike' -AgeMinutes 11520
+        Invoke-FigmaCacheGc
+        Test-Path -LiteralPath $live | Should -BeTrue
+        Test-Path -LiteralPath $orphan | Should -BeFalse
+    }
+
+    It 'never collects the feature of the run doing the sweep' {
+        # /speckit.specify writes the links BEFORE the specs/ directory exists.
+        $own = Set-FakeLinksEntry -Workspace $ws -Key '003-redis-cache' -AgeMinutes 43200
+        Invoke-FigmaCacheGc
+        Test-Path -LiteralPath $own | Should -BeTrue
+    }
+
+    It 'leaves a recent orphan alone until the window elapses' {
+        $recent = Set-FakeLinksEntry -Workspace $ws -Key 'yesterdays-branch' -AgeMinutes 1440
+        Invoke-FigmaCacheGc
+        Test-Path -LiteralPath $recent | Should -BeTrue
+    }
+
+    It "drops an orphan's renders but never a live feature's" {
+        # figma-verify-section reads "Figma applied to this run" from the EXISTENCE
+        # of these files: collecting a live feature's turns a --strict gate
+        # fail-open.
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $ws 'specs/001-checkout')
+        $live = Set-FakeSectionFor -Workspace $ws -Key '001-checkout' -AgeMinutes 43200
+        $orphan = Set-FakeSectionFor -Workspace $ws -Key 'throwaway-spike' -AgeMinutes 11520
+        Invoke-FigmaCacheGc
+        Test-Path -LiteralPath $live | Should -BeTrue
+        Test-Path -LiteralPath (Split-Path -Parent $orphan) | Should -BeFalse
+    }
+
+    It 'collects stored snapshots on age alone, sparing the current-run slot' {
+        $old = Set-FakeStoredSnapshot -Workspace $ws -FileId 'OldFILE' -AgeMinutes 11520
+        $fresh = Set-FakeStoredSnapshot -Workspace $ws -FileId 'FreshFILE' -AgeMinutes 10
+        $slot = Join-Path $ws '.figma/cache/context-snapshot.json'
+        Set-Content -LiteralPath $slot -Value '{"fileId":"F1"}'
+        Set-FigmaFileAge -Path $slot -Minutes 43200
+        Invoke-FigmaCacheGc
+        Test-Path -LiteralPath $old | Should -BeFalse
+        Test-Path -LiteralPath $fresh | Should -BeTrue
+        Test-Path -LiteralPath $slot | Should -BeTrue
+    }
+
+    It 'never collects a snapshot a longer freshness window still covers' {
+        $env:FIGMA_SNAPSHOT_MAX_AGE_MINUTES = '43200'
+        $stored = Set-FakeStoredSnapshot -Workspace $ws -FileId 'LongWindowFILE' -AgeMinutes 11520
+        Invoke-FigmaCacheGc
+        Test-Path -LiteralPath $stored | Should -BeTrue
+    }
+
+    It 'sweeps at most once a day, and =force overrides that' {
+        Invoke-FigmaCacheGc
+        Test-Path -LiteralPath (Join-Path $ws '.figma/cache/.gc-stamp') | Should -BeTrue
+
+        $orphan = Set-FakeLinksEntry -Workspace $ws -Key 'throwaway-spike' -AgeMinutes 11520
+        Invoke-FigmaCacheGc
+        Test-Path -LiteralPath $orphan | Should -BeTrue
+
+        $env:FIGMA_CACHE_GC = 'force'
+        Invoke-FigmaCacheGc
+        Test-Path -LiteralPath $orphan | Should -BeFalse
+    }
+
+    It 'honours FIGMA_CACHE_GC=off and FIGMA_CACHE_RETENTION_DAYS' {
+        $orphan = Set-FakeLinksEntry -Workspace $ws -Key 'throwaway-spike' -AgeMinutes 11520
+        $env:FIGMA_CACHE_GC = 'off'
+        Invoke-FigmaCacheGc
+        Test-Path -LiteralPath $orphan | Should -BeTrue
+
+        $env:FIGMA_CACHE_GC = 'force'
+        $env:FIGMA_CACHE_RETENTION_DAYS = '30'
+        Invoke-FigmaCacheGc
+        Test-Path -LiteralPath $orphan | Should -BeTrue
+
+        $env:FIGMA_CACHE_RETENTION_DAYS = '1'
+        Invoke-FigmaCacheGc
+        Test-Path -LiteralPath $orphan | Should -BeFalse
+    }
+}
+
 Describe 'Resolve-FigmaContextSourceDecision' {
     It 'rest stays rest' {
         Resolve-FigmaContextSourceDecision 'rest' $false $true '' | Should -Be 'rest'

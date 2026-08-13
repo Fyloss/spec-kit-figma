@@ -103,6 +103,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The schema now says what `pageToPackageMapping` is: guidance in the
   `/speckit.figma.introspect` prompt, not a mapping any helper parses. Same for
   `role`.
+- **Cache housekeeping.** `.figma/cache/` only ever grew: a `links/<key>.json`
+  and a `sections/<key>/` per branch that ever ran a phase, a
+  `snapshots/<fileId>.json` per Figma file ever linked. Disk was not the problem
+  — key *reuse* was: a key derives from a branch name, so a new feature on a
+  recycled name inherited the remembered links of whatever used the name before
+  it, and came back carrying a design section for someone else's mockup. Every
+  real (non-dry) run now sweeps the cache at most once a day, on an
+  ownership-first policy: an entry survives as long as `specs/<key>/` exists —
+  the signal is committed, so it outlives the branch — and is collected only when
+  it is *both* orphaned and untouched for `FIGMA_CACHE_RETENTION_DAYS` (7).
+  Stored snapshots have no owner to consult and go on age alone, never below the
+  freshness window a caller configured. The feature of the run doing the sweep is
+  exempt unconditionally, and a live feature's renders are never collected —
+  `figma-verify-section` reads "Figma applied to this run" from their existence,
+  so collecting them would turn a `--strict` gate fail-open. `FIGMA_CACHE_GC=off`
+  disables the sweep, `=force` ignores the daily throttle.
+- `figma_gc_cache` / `figma_gc_key_is_live` (bash) and `Invoke-FigmaCacheGc` /
+  `Test-FigmaGcKeyIsLive` (PowerShell).
 - `figma_snapshot_store_path` (bash) / `Get-FigmaSnapshotStorePath` (PowerShell).
 - `figma_feature_key` / `figma_feature_links_path` / `figma_resolve_phase_doc`
   (bash) and `Get-FigmaFeatureKey` / `Get-FigmaFeatureLinksPath` /

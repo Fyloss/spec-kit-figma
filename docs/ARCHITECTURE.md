@@ -443,9 +443,11 @@ flowchart TD
     Root --> Guides["docs/<br><b>committed</b> · guides synced from the extension"]
     Root --> Cache["cache/<br><b>git-ignored</b> — one entry covers everything below"]
 
-    Cache --> Snap["context-snapshot.json<br>the introspected design facts"]
+    Cache --> Snap["context-snapshot.json<br>the current run's design facts — the path handed to the agent"]
+    Cache --> Store["snapshots/&lt;fileId&gt;.json<br>one kept copy per Figma file, so alternating features do not evict each other"]
     Cache --> Sec["sections/&lt;feature&gt;/spec.md · plan.md · tasks.md<br>ready-to-paste blocks; existence means Figma applied"]
     Cache --> Links["links/&lt;feature&gt;.json<br>the link remembered for one feature"]
+    Cache --> Stamp[".gc-stamp<br>last housekeeping sweep"]
 ```
 
 The `committed` / `git-ignored` split is load-bearing. Anything under `cache/` is
@@ -454,11 +456,48 @@ that must survive a clone may live only there. That is exactly the constraint
 that produced the `spec.md` fallback in
 [section 5](#5-link-resolution--three-sources-two-guards).
 
+### Housekeeping
+
+Three of those four entries are keyed, so the cache only ever grew: a
+`links/<key>.json` and a `sections/<key>/` per branch that ever ran a phase, a
+`snapshots/<fileId>.json` per Figma file ever linked. Disk is not the problem —
+key **reuse** is. A key derives from a branch name, so a new feature on a
+recycled name would inherit the remembered links of whatever used the name
+before it, and come back carrying a design section for a mockup that is not its
+own.
+
+`figma_gc_cache` / `Invoke-FigmaCacheGc` sweeps it, wired into
+`figma-ensure-context` ahead of every early exit so the design-less runs — the
+ones that produce the most orphans — clean up too. Its policy is **ownership
+first, age second**; an entry goes only when both agree.
+
+| Entry | Kept while | Collected when |
+| --- | --- | --- |
+| `links/<key>.json` | `specs/<key>/` exists, or `<key>` is the current feature | orphaned **and** untouched for the retention window |
+| `sections/<key>/` | same | same, measured on the newest render inside |
+| `snapshots/<fileId>.json` | — (no owner to consult) | older than the retention window **and** than the freshness window |
+| `context-snapshot.json` | always — it is the current slot, not a keyed entry | never |
+
+`specs/<key>/` is the durable ownership signal precisely because it is committed
+and outlives its branch. Two guards keep the sweep from eating live state: the
+current feature is exempt unconditionally (at `/speckit.specify` time the links
+are written *before* the `specs/` directory exists), and a live feature's renders
+are never collected — `figma-verify-section` reads "Figma applied to this run"
+from their existence, so deleting them would turn a `--strict` CI gate
+fail-open, the same failure the per-feature scoping above fixed.
+
+The sweep is throttled to once a day through `.gc-stamp`, since the hook fires on
+every phase, and it is skipped entirely on `--dry-run` — a rehearsal must not
+change what a later real run decides. `FIGMA_CACHE_RETENTION_DAYS` overrides the
+7-day window, `FIGMA_CACHE_GC=off` disables the sweep, `=force` ignores the
+throttle. Every failure inside it is swallowed: housekeeping is never allowed to
+be the reason a hook blocks generation.
+
 ## 12. Script contracts at a glance
 
 | Script | Reads | Writes | Exit codes |
 | --- | --- | --- | --- |
-| `figma-ensure-context` | config, snapshot, links cache, `spec.md`, raw input | links cache, rendered sections, snapshot (via introspect) | 0 always, except bad args / internal error |
+| `figma-ensure-context` | config, snapshot, links cache, `spec.md`, raw input | links cache, rendered sections, snapshot (via introspect), the daily cache sweep | 0 always, except bad args / internal error |
 | `figma-introspect` | Figma REST API | `context-snapshot.json` | 0 ok, non-zero on API failure |
 | `figma-render-section` | snapshot, templates, links | `sections/<feature>/<phase>.md` | 0 ok, non-zero on bad input |
 | `figma-verify-section` | rendered section, generated document | — | 0, or 1 under `--strict` on a real defect |

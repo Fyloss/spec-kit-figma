@@ -119,6 +119,12 @@ re-pasting. That memory lives in the git-ignored `.figma/cache/`, so when it is
 absent — a fresh clone, a CI job, a teammate who just pulled the branch — the
 link is read back from the `spec.md` the earlier phase committed.
 
+Every feature gets its own entry there, so switching branches never mixes two
+features' design context, and a daily housekeeping sweep reclaims the entries of
+branches that never became a feature (see
+[ARCHITECTURE.md](docs/ARCHITECTURE.md#housekeeping) — `FIGMA_CACHE_RETENTION_DAYS`,
+`FIGMA_CACHE_GC=off`).
+
 > [!WARNING]
 > **Use a capable model (Claude Sonnet or better).** Lighter models are strongly
 > discouraged for this extension.
