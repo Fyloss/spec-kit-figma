@@ -22,15 +22,15 @@ mockups, token mapping, responsive rules and credential handling are **the same*
 in every mode. Only the topology wrapper differs.
 
 > **Windows note:** every command below has a PowerShell 7+ twin — replace
-> `./install.sh` with `./install.ps1` and
-> `./.specify/scripts/bash/<name>.sh` with
-> `./.specify/scripts/powershell/<name>.ps1` (same flags, same JSON output).
+> `./.specify/extensions/figma/install.sh` with `pwsh -File ./.specify/extensions/figma/install.ps1` and
+> `./.specify/extensions/figma/scripts/bash/<name>.sh` with
+> `./.specify/extensions/figma/scripts/powershell/<name>.ps1` (same flags, same JSON output).
 
 ## Single-repo setup
 
 1. Install in single-repo mode (the default):
    ```bash
-   ./install.sh
+   ./.specify/extensions/figma/install.sh
    ```
 2. Edit `figma.projects.config.json` (see
    `config/figma.projects.config.singlerepo.example.json`):
@@ -41,15 +41,15 @@ in every mode. Only the topology wrapper differs.
      `routingRules`.
 3. Validate and detect:
    ```bash
-   ./.specify/scripts/bash/figma-validate-config.sh
-   ./.specify/scripts/bash/figma-detect-target.sh repo
+   ./.specify/extensions/figma/scripts/bash/figma-validate-config.sh
+   ./.specify/extensions/figma/scripts/bash/figma-detect-target.sh repo
    ```
 
 ## Mono-repo setup
 
 1. Install in mono-repo mode:
    ```bash
-   ./install.sh --mode mono-repo
+   ./.specify/extensions/figma/install.sh --mode mono-repo
    ```
 2. Edit `figma.projects.config.json` (see
    `config/figma.projects.config.monorepo.example.json`):
@@ -61,9 +61,9 @@ in every mode. Only the topology wrapper differs.
    - list non-front packages (BFF, tools) under `excluded`.
 3. Validate and detect:
    ```bash
-   ./.specify/scripts/bash/figma-validate-config.sh
-   ./.specify/scripts/bash/figma-detect-target.sh app-storefront
-   ./.specify/scripts/bash/figma-detect-target.sh app-bff   # → excluded
+   ./.specify/extensions/figma/scripts/bash/figma-validate-config.sh
+   ./.specify/extensions/figma/scripts/bash/figma-detect-target.sh app-storefront
+   ./.specify/extensions/figma/scripts/bash/figma-detect-target.sh app-bff   # → excluded
    ```
 
 ## Component placement in a mono-repo

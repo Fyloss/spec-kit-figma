@@ -5,18 +5,22 @@ Gemini, Cursor, …) on a **single-repo** (default), **mono-repo** or **multi-re
 (git submodules) layout.
 
 ## Prerequisites
-- A SpecKit workspace (`.specify/` present).
-- `git`, plus one of the two script toolchains (both are installed into the
-  workspace, so a mixed team shares one setup):
+- A SpecKit workspace (`.specify/` present) **and the `specify` CLI**: the
+  extension's code reaches a workspace exclusively through
+  `specify extension add`, which installs the tree at
+  `.specify/extensions/figma/`. The helpers run from there; nothing is copied
+  elsewhere.
+- `git`, plus one of the two script toolchains (both ship in the extension tree,
+  so a mixed team shares one setup):
   - **macOS / Linux**: `bash` 4+, `curl`, `jq` — runs the
-    `.specify/scripts/bash/*.sh` helpers;
+    `.specify/extensions/figma/scripts/bash/*.sh` helpers;
   - **Windows**: [PowerShell 7+](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows)
-    (`pwsh`) — runs the `.specify/scripts/powershell/*.ps1` ports (built-in JSON
+    (`pwsh`) — runs the `.specify/extensions/figma/scripts/powershell/*.ps1` ports (built-in JSON
     and HTTP support: no `curl`, no `jq` needed). Every `figma-*.sh` helper has
     a `figma-*.ps1` twin with the same flags, the same JSON output and the same
     exit codes; anywhere this guide shows
-    `./.specify/scripts/bash/<name>.sh`, Windows users run
-    `./.specify/scripts/powershell/<name>.ps1` from `pwsh`.
+    `./.specify/extensions/figma/scripts/bash/<name>.sh`, Windows users run
+    `./.specify/extensions/figma/scripts/powershell/<name>.ps1` from `pwsh`.
 - A read-only Figma Personal Access Token (local) or a CI secret (pipelines).
 
 > [!IMPORTANT]
@@ -42,14 +46,16 @@ Gemini, Cursor, …) on a **single-repo** (default), **mono-repo** or **multi-re
 > Swap `jq-macos-arm64` for `jq-macos-amd64`, `jq-linux-amd64` or
 > `jq-linux-arm64` as needed. The scripts print these same instructions when they
 > detect the missing dependency. Alternative: run the **PowerShell 7+ ports**
-> (`.specify/scripts/powershell/*.ps1`) — they use built-in JSON and need no `jq` at all,
+> (`.specify/extensions/figma/scripts/powershell/*.ps1`) — they use built-in JSON and need no `jq` at all,
 > on macOS and Linux too.
 
 ## 1. Install
 
-### Option A — SpecKit extension (recommended)
-The repo ships an `extension.yml` manifest, so SpecKit can install and register
-the commands for you:
+Installing is **two steps, in this order**. The first brings the extension's code
+into the workspace; the second wires it to the project. Neither replaces the
+other.
+
+### Step 1 — Register the extension (SpecKit CLI)
 ```bash
 # from a release/source ZIP
 specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/archive/refs/heads/main.zip
@@ -59,26 +65,28 @@ specify extension add --dev /path/to/spec-kit-figma
 ```
 This registers all of the extension's commands — `/speckit.figma.config`,
 `/speckit.figma.update`, `/speckit.figma.ensure`, `/speckit.figma.introspect` and
-`/speckit.figma.verify` — with your agent. Verify with `specify extension list`.
-With this option you can skip the manual command registration in step 4.
+`/speckit.figma.verify` — with your agent, and installs the extension tree at
+`.specify/extensions/figma/`. Verify with `specify extension list`.
 
-> Option A registers the **commands** only. Also run the manual installer
-> (Option B) once so the helper scripts (`.specify/scripts/bash/`), the config
-> example and the design-rules constitution are copied into the workspace — the
-> commands invoke `./.specify/scripts/bash/*.sh` from the workspace root (the
-> SpecKit convention, alongside `.specify/memory/`).
+That tree is where the code **lives and runs from**: `scripts/bash/`,
+`scripts/powershell/` and `templates/` are read straight out of it. Both script
+families are present whatever your own platform, so a macOS/Linux teammate and a
+Windows one share one workspace. Nothing is copied into `.specify/scripts/` or
+`.specify/templates/` — a second copy could drift from the version SpecKit
+records in `.specify/extensions/figma/extension.yml`, and the stale one is the
+one a developer ends up reading.
 
-### Option B — Manual installer (alternative)
+### Step 2 — Wire it to the project (the extension's installer)
 ```bash
-# run from the target workspace root (or pass --target /path/to/workspace-root)
+# from the target workspace root (or pass --target /path/to/workspace-root)
 # single-repo (default)
-./install.sh
+./.specify/extensions/figma/install.sh
 
 # mono-repo
-./install.sh --mode mono-repo
+./.specify/extensions/figma/install.sh --mode mono-repo
 
 # multi-repo (git submodules)
-./install.sh --mode multi-repo
+./.specify/extensions/figma/install.sh --mode multi-repo
 ```
 
 On Windows, run the PowerShell 7+ port instead — same flags, same behaviour,
@@ -86,19 +94,18 @@ same output:
 
 ```powershell
 # from pwsh, in the target workspace root (or pass --target <workspace-root>)
-./install.ps1
-./install.ps1 --mode mono-repo
-./install.ps1 --mode multi-repo
+pwsh -File ./.specify/extensions/figma/install.ps1
+pwsh -File ./.specify/extensions/figma/install.ps1 --mode mono-repo
+pwsh -File ./.specify/extensions/figma/install.ps1 --mode multi-repo
 ```
 
-The installer copies the config example to `figma.projects.config.json`, copies
-the helper scripts (including `figma-ensure-context.sh`,
-`figma-render-section.sh` and `figma-verify-section.sh`) to
-`.specify/scripts/bash/` **and their PowerShell ports to
-`.specify/scripts/powershell/`** (both families, whatever the platform the
-installer runs on, so macOS/Linux and Windows teammates share one committed
-workspace), installs the spec/plan/tasks section templates into
-`.specify/templates/`, git-ignores the `.figma/cache/` directory (snapshot +
+> The installer **requires step 1**: it checks
+> `.specify/extensions/figma/scripts/` exists and stops with the exact command to
+> run if it does not. Installing the project wiring around helpers that are not
+> there would produce a workspace that looks installed and fails on every hook.
+
+It copies the config example to `figma.projects.config.json`, git-ignores the
+`.figma/cache/` directory (snapshot +
 rendered sections), and installs the design-rules constitution into `.figma/`
 (committed, next to the git-ignored `cache/`). It also copies these user guides
 (CREDENTIALS / INSTALL / MONOREPO) into **`.figma/docs/`** (always refreshed, so
@@ -122,8 +129,8 @@ different tools, and you need both, exactly as on first install:
 
 | What | Tool | Notes |
 | --- | --- | --- |
-| Assets + hooks (`.specify/scripts`, `.specify/templates`, `.figma/figma-design-rules.md`, `.figma/docs/`, the README figma section, prompt hooks) | `install.sh` | idempotent; never overwrites `figma.projects.config.json` or the design-rules overlay `.figma/figma-design-rules.custom.md`; only the managed block of `README.md` is touched |
-| Slash-command registration (`speckit.figma.*`, per agent format) | `specify extension add figma` | agent-format aware; the **only** thing that registers commands, and what records the installed version at `.specify/extensions/figma/extension.yml` |
+| The extension's own code (`scripts/`, `templates/`, the commands) **and** their registration per agent format | `specify extension add figma` | the **only** thing that puts code in the workspace, at `.specify/extensions/figma/`, and what records the installed version in its `extension.yml` |
+| Project wiring (`figma.projects.config.json`, `.figma/figma-design-rules.md`, `.figma/docs/`, the README figma section, prompt hooks) | the extension's `install.sh` | idempotent; never overwrites `figma.projects.config.json` or the design-rules overlay `.figma/figma-design-rules.custom.md`; only the managed block of `README.md` is touched |
 
 The new files come **exclusively from the official repository** — do not reuse
 a local checkout lying around on the developer's machine. First **fetch** a
@@ -134,12 +141,16 @@ uninstall is required, both tools are self-healing:
 # from the target workspace root
 EXT_SRC="$(mktemp -d)/spec-kit-figma"
 git clone --depth 1 https://github.com/Fyloss/spec-kit-figma "$EXT_SRC"   # add --branch <tag> to pin a release
-specify extension add figma --from "$EXT_SRC"   # re-register commands (picks up NEW commands)
-"$EXT_SRC"/install.sh                            # re-sync assets + hooks; reports coherence (in sync / mismatch)
+specify extension add figma --from "$EXT_SRC"    # refresh the extension tree AND re-register commands
+./.specify/extensions/figma/install.sh           # re-sync the project wiring; reports coherence (in sync / mismatch)
 ```
 
-(On Windows: clone the same way into `$env:TEMP`, then run `install.ps1` from
-`pwsh`, same flags.)
+The second command runs the installer **from the freshly-registered tree**, not
+from the clone: that way what wires the project is always the version SpecKit
+just recorded.
+
+(On Windows: clone the same way into `$env:TEMP`, then run
+`pwsh -File ./.specify/extensions/figma/install.ps1`, same flags.)
 
 This is exactly what the `/speckit.figma.update` slash-command does for you —
 prefer it over the manual sequence above.
@@ -257,7 +268,7 @@ Cross-check with the REST path, which is immune (it canonicalizes and validates
 the id before any call):
 
 ```bash
-./.specify/scripts/bash/figma-introspect.sh --file <fileKey> --node <nodeId>
+./.specify/extensions/figma/scripts/bash/figma-introspect.sh --file <fileKey> --node <nodeId>
 jq '.nodes.nodes | keys' .figma/cache/context-snapshot.json
 ```
 
@@ -270,23 +281,26 @@ instances (`I12:345;678:901`) are supported; a value that is not a node id is
 rejected with an explicit error instead of a silent empty result.
 
 ## 4. Register the commands with your agent
-> Skip this step if you installed via `specify extension add` (Option A) — SpecKit
-> already registered all of the extension's commands (`/speckit.figma.config`,
-> `/speckit.figma.update`, `/speckit.figma.ensure`, `/speckit.figma.introspect`,
-> `/speckit.figma.verify`).
+> **Nothing to do here in the normal case.** `specify extension add` (step 1)
+> registered all of the extension's commands for every agent format it knows:
+> `/speckit.figma.config`, `/speckit.figma.update`, `/speckit.figma.ensure`,
+> `/speckit.figma.introspect`, `/speckit.figma.verify`. Check with
+> `specify extension list`.
 
-For a manual install, the extension ships **agent-agnostic** command templates:
-- `commands/speckit.figma.config.md`
-- `commands/speckit.figma.update.md` (re-sync assets/hooks + re-register commands
-  on a version bump; preserves the config — see "Updating an existing install")
-- `commands/speckit.figma.ensure.md` (auto-context; wired to the
-  `before_specify`/`before_plan`/`before_tasks` hooks when installed via Option A)
-- `commands/speckit.figma.introspect.md`
-- `commands/speckit.figma.verify.md` (post-generation check; wired to the
-  `after_specify`/`after_plan`/`after_tasks` hooks when installed via Option A —
-  `--strict` / `figma.verifyStrict` turns it into a CI gate)
+This section is the fallback for an agent whose format SpecKit does not handle.
+The command files are **agent-agnostic** and live in the installed tree at
+`.specify/extensions/figma/commands/`:
+- `speckit.figma.config.md`
+- `speckit.figma.update.md` (refresh the tree + re-register commands on a version
+  bump; preserves the config — see "Updating an existing install")
+- `speckit.figma.ensure.md` (auto-context; wired to the
+  `before_specify`/`before_plan`/`before_tasks` hooks)
+- `speckit.figma.introspect.md`
+- `speckit.figma.verify.md` (post-generation check; wired to the
+  `after_specify`/`after_plan`/`after_tasks` hooks — `--strict` /
+  `figma.verifyStrict` turns it into a CI gate)
 
-Map them to your agent's command location, e.g.:
+Copy them to your agent's command location, e.g.:
 
 | Agent | Destination |
 |---|---|
@@ -294,9 +308,8 @@ Map them to your agent's command location, e.g.:
 | Claude | `.claude/commands/speckit.figma.config.md`, `…/speckit.figma.introspect.md` |
 | Gemini / others | the agent's command/prompt directory |
 
-The installer already copies the design-rules constitution to
-`.figma/figma-design-rules.md` so the rules ship with the workspace; copy it
-manually only if you skipped `install.sh`.
+Such an agent has no extension-hook support either, so run the installer with
+`--prompt-hooks` to get the automatic context through the prompts instead.
 
 ### Customizing the design rules (persists across updates)
 `.figma/figma-design-rules.md` is the **extension-owned base**: it is overwritten
@@ -309,25 +322,25 @@ component catalog mandatory, or add naming conventions). Commit both files.
 
 ## 5. Validate the setup
 ```bash
-./.specify/scripts/bash/figma-validate-config.sh
-./.specify/scripts/bash/figma-detect-target.sh <a-front-end-target>
-./.specify/scripts/bash/figma-detect-target.sh <an-excluded-target>
+./.specify/extensions/figma/scripts/bash/figma-validate-config.sh
+./.specify/extensions/figma/scripts/bash/figma-detect-target.sh <a-front-end-target>
+./.specify/extensions/figma/scripts/bash/figma-detect-target.sh <an-excluded-target>
 ```
 
 Windows (PowerShell 7+):
 
 ```powershell
-./.specify/scripts/powershell/figma-validate-config.ps1
-./.specify/scripts/powershell/figma-detect-target.ps1 <a-front-end-target>
-./.specify/scripts/powershell/figma-detect-target.ps1 <an-excluded-target>
+./.specify/extensions/figma/scripts/powershell/figma-validate-config.ps1
+./.specify/extensions/figma/scripts/powershell/figma-detect-target.ps1 <a-front-end-target>
+./.specify/extensions/figma/scripts/powershell/figma-detect-target.ps1 <an-excluded-target>
 ```
 
 ## 6. Use in the SpecKit flow
 Run `/speckit.figma.config` once. From then on, Figma context is **automatic**:
 the extension hooks (`before_specify` / `before_plan` / `before_tasks` in `extension.yml`)
 invoke `/speckit.figma.ensure`, which runs
-`./.specify/scripts/bash/figma-ensure-context.sh` (on Windows:
-`./.specify/scripts/powershell/figma-ensure-context.ps1`) before generation,
+`./.specify/extensions/figma/scripts/bash/figma-ensure-context.sh` (on Windows:
+`./.specify/extensions/figma/scripts/powershell/figma-ensure-context.ps1`) before generation,
 piping in the user's raw feature input (`--input -`). It re-introspects only when
 `.figma/cache/context-snapshot.json` is missing or stale (older than 60 minutes, or
 older than the config — override with `FIGMA_SNAPSHOT_MAX_AGE_MINUTES` or
@@ -358,7 +371,7 @@ making them mandatory never blocks non-Figma projects.
 
 Your `/speckit.specify`, `/speckit.plan` and `/speckit.tasks` prompt files are
 **not modified** by default. If your agent does not support SpecKit extension hooks, run
-`./install.sh --prompt-hooks` to append a managed auto-context block to those
+`./.specify/extensions/figma/install.sh --prompt-hooks` to append a managed auto-context block to those
 prompts instead (refreshed in place on re-runs). A default `install.sh` run
 removes any block injected by a previous extension version; `--no-hooks`
 leaves the prompts strictly untouched (no injection, no cleanup).

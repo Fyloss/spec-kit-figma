@@ -5,21 +5,23 @@ description: Configure the SpecKit Figma extension for this workspace (single-re
 # /speckit.figma.config — Configure the Figma extension
 
 You are configuring the Figma integration for SpecKit — writing
-`figma.projects.config.json` and validating connectivity. Installing the
-extension's assets is a different job, done by `install.sh` / `install.ps1`. Be
+`figma.projects.config.json` and validating connectivity. Bringing the
+extension's code into the workspace is a different job, done by
+`specify extension add figma`; wiring the project around it is a third, done by
+`./.specify/extensions/figma/install.sh` (`install.ps1` on Windows). Be
 deterministic and never print or echo the access token.
 
 ## Scripts
 
 Run these from the workspace root. The short names used below map to:
 
-- `validate` → `./.specify/scripts/bash/figma-validate-config.sh`
-- `detect` → `./.specify/scripts/bash/figma-detect-target.sh`
-- `resolve` → `./.specify/scripts/bash/figma-resolve-source.sh`
+- `validate` → `./.specify/extensions/figma/scripts/bash/figma-validate-config.sh`
+- `detect` → `./.specify/extensions/figma/scripts/bash/figma-detect-target.sh`
+- `resolve` → `./.specify/extensions/figma/scripts/bash/figma-resolve-source.sh`
 
 On Windows, use the PowerShell 7+ ports instead — same flags, same JSON output:
-replace `./.specify/scripts/bash/<name>.sh` with
-`./.specify/scripts/powershell/<name>.ps1` (run from `pwsh`). The Windows
+replace `./.specify/extensions/figma/scripts/bash/<name>.sh` with
+`./.specify/extensions/figma/scripts/powershell/<name>.ps1` (run from `pwsh`). The Windows
 installer is `install.ps1` wherever the steps below mention `install.sh`.
 
 ## Steps
@@ -30,10 +32,10 @@ installer is `install.ps1` wherever the steps below mention `install.sh`.
    multiple apps, propose `mode: "mono-repo"`. Otherwise default to
    `mode: "single-repo"` (one repository, one front-end app). Ask the user to confirm.
 
-2. **Sync assets, then scaffold config.** Always run the extension's
-   `install.sh --mode <mode>` first — it is idempotent and is what keeps an
-   already-installed workspace up to date: it refreshes the helper scripts,
-   section templates and design-rules constitution, re-wires the hooks, checks the
+2. **Sync the project wiring, then scaffold config.** Always run
+   `./.specify/extensions/figma/install.sh --mode <mode>` first — it is idempotent
+   and is what keeps an already-installed workspace up to date: it refreshes the
+   design-rules constitution and the guides, re-wires the hooks, checks the
    synced asset version against the version SpecKit has registered (at
    `.specify/extensions/figma/extension.yml`) and flags a mismatch, and warns if
    any figma slash-command is missing for a configured agent (run `specify

@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING — the helpers and templates now run from the tree SpecKit installs,
+  `.specify/extensions/figma/`, and are no longer copied into the workspace.**
+  `specify extension add` already installs `scripts/`, `templates/` and the
+  commands there; the installer copied both into `.specify/scripts/` and
+  `.specify/templates/` on top of that, so every workspace carried two versions of
+  the same file. The copy has no owner — SpecKit records the version of the tree,
+  not of the duplicate — so it silently drifts, and the stale one is the one a
+  developer reads. Everything now invokes
+  `./.specify/extensions/figma/scripts/{bash,powershell}/…`, and
+  `figma-render-section` resolves its templates next to itself (the workspace path
+  remains as a fallback for un-migrated installs, but no longer takes precedence:
+  a leftover can no longer shadow the shipped template).
+
+  Consequences, all of them user-visible:
+  - **`specify extension add` is now a prerequisite**, not one of two options.
+    `install.sh` / `install.ps1` check the tree is present and stop with the exact
+    command to run when it is not — before writing anything, since wiring a
+    project around helpers that are absent produces a workspace that looks
+    installed and fails on every hook. Run them from the installed tree
+    (`./.specify/extensions/figma/install.sh`), which is what `/speckit.figma.update`
+    and `/speckit.figma.config` now do.
+  - The installers **delete the duplicated `figma-*` helpers and section templates**
+    earlier versions left in `.specify/scripts/` and `.specify/templates/`. Only
+    the `figma-*` entries: both directories are SpecKit's and keep its own files,
+    and an emptied directory is removed only when it is genuinely empty.
+
 - **BREAKING — a Figma link in the feature input is now what triggers the
   extension.** `figma-ensure-context` used to treat a valid config with a mapped,
   enabled target as enough: it introspected and forced the design section into

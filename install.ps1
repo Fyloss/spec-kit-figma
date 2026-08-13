@@ -10,9 +10,10 @@
 # (PowerShell-style -Target/-Mode/-PromptHooks/-NoHooks/-NoReadme are accepted too.)
 # What it does (idempotent):
 #   - copies the figma.projects.config example to <root>/figma.projects.config.json
-#   - copies the helper scripts to <root>/.specify/scripts/bash/ AND
-#     <root>/.specify/scripts/powershell/ (both families, so mixed macOS/Linux/
-#     Windows teams share one committed workspace)
+#   - checks the extension tree SpecKit installs (<root>/.specify/extensions/figma/)
+#     is present: the helpers and templates run FROM it, so `specify extension add`
+#     is a prerequisite, and this installer no longer copies either into the
+#     workspace. Copies left by earlier versions are removed.
 #   - ensures the .figma/cache/ directory (generated/cached artifacts) is git-ignored
 #   - installs the design-rules constitution base into .figma/ (committed;
 #     extension-owned, always refreshed) and creates the user overlay
@@ -131,35 +132,65 @@ $exampleSuffix = switch ($mode) {
 $example = Join-Path $extDir 'config' "figma.projects.config.$exampleSuffix.example.json"
 $configDest = Join-Path $target 'figma.projects.config.json'
 
+# The helpers are NOT copied into the workspace any more: they run straight from
+# the extension tree SpecKit itself installs, .specify/extensions/figma/. That
+# tree already carries scripts/, templates/ and this installer, so copying them a
+# second time into .specify/scripts/ and .specify/templates/ produced two
+# versions of the same file — and the copy could silently drift from the manifest
+# SpecKit records the version of. `specify extension add` is now the single way
+# the code reaches a workspace; this installer only handles what it does not
+# cover (config example, design-rules, guides, README block, hooks).
+#
+# So the tree is a PRECONDITION, checked before anything else is written. A
+# workspace missing it would install cleanly and then fail on every hook, with an
+# error naming a path the developer never heard of.
+$extHome = Join-Path $target '.specify/extensions/figma'
+if (-not (Test-Path -LiteralPath (Join-Path $extHome 'scripts/bash/figma-common.sh') -PathType Leaf)) {
+    Write-Stderr @"
+ERROR: the Figma extension tree is missing from this workspace.
+  Expected: .specify/extensions/figma/scripts/
+
+  The helpers now run from the tree SpecKit installs, so register the extension
+  first, then re-run this installer:
+
+    specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/archive/refs/heads/main.zip
+    pwsh -File ./.specify/extensions/figma/install.ps1
+
+  (from a local checkout: specify extension add --dev /path/to/spec-kit-figma)
+"@
+    exit 1
+}
+Write-Output 'OK: helpers found at .specify/extensions/figma/scripts/ (bash + PowerShell)'
+
+# Earlier versions copied both script families into .specify/scripts/ and the
+# section templates into .specify/templates/. Those copies are now dead weight
+# that would shadow nothing but confuse everything — and a stale one is worse
+# than none, since it is the version the developer reads while the extension runs
+# another. Only the figma-* entries go: both directories belong to SpecKit and
+# hold its own files.
+$legacyCopies = @(
+    (Join-Path $target '.specify/scripts/bash/figma-*.sh'),
+    (Join-Path $target '.specify/scripts/powershell/figma-*.ps1'),
+    (Join-Path $target '.specify/templates/*figma-section.template.md')
+) | ForEach-Object { Get-ChildItem -Path $_ -File -ErrorAction SilentlyContinue }
+if ($legacyCopies) {
+    $legacyCopies | Remove-Item -Force -ErrorAction SilentlyContinue
+    Write-Output "REMOVED: $($legacyCopies.Count) duplicated helper/template file(s) from .specify/scripts/ and .specify/templates/ (they now live in .specify/extensions/figma/)"
+}
+# Remove the directories only when EMPTY: they are SpecKit's, and an empty one is
+# all that was ever ours.
+foreach ($dir in @((Join-Path $target '.specify/scripts/bash'), (Join-Path $target '.specify/scripts/powershell'))) {
+    if ((Test-Path -LiteralPath $dir -PathType Container) -and
+        -not (Get-ChildItem -LiteralPath $dir -Force -ErrorAction SilentlyContinue)) {
+        Remove-Item -LiteralPath $dir -Force -ErrorAction SilentlyContinue
+    }
+}
+
 if (Test-Path -LiteralPath $configDest -PathType Leaf) {
     Write-Output "SKIP: $configDest already exists (not overwritten)."
 } else {
     Copy-Item -LiteralPath $example -Destination $configDest
     Write-Output "ADDED: $configDest (from $mode example) — edit it and replace REPLACE_WITH_* ids."
-}
-
-# The docs and slash-commands run ./.specify/scripts/bash/*.sh (or the
-# ./.specify/scripts/powershell/*.ps1 ports on Windows) from the workspace root,
-# so the helper scripts must live in the workspace, not only in this checkout.
-# BOTH families are installed regardless of the platform the installer runs on:
-# the workspace is committed and shared across a mixed team.
-# Always refreshed: they are extension-owned code, not user-edited files.
-if ($isSelf) {
-    Write-Output 'SKIP: .specify/scripts/ (target is the extension checkout itself; scripts already at scripts/).'
-} else {
-    $bashDest = Join-Path $target '.specify/scripts/bash'
-    $null = New-Item -ItemType Directory -Force -Path $bashDest
-    Copy-Item -Path (Join-Path $extDir 'scripts/bash/*.sh') -Destination $bashDest
-    Write-Output 'ADDED: .specify/scripts/bash/ (figma-*.sh helpers)'
-    $psDest = Join-Path $target '.specify/scripts/powershell'
-    $null = New-Item -ItemType Directory -Force -Path $psDest
-    $psScripts = Get-ChildItem -Path (Join-Path $extDir 'scripts/powershell') -Filter '*.ps1' -ErrorAction SilentlyContinue
-    if ($psScripts) {
-        $psScripts | Copy-Item -Destination $psDest
-        Write-Output 'ADDED: .specify/scripts/powershell/ (figma-*.ps1 helpers for Windows / PowerShell 7+)'
-    } else {
-        Write-Stderr "WARN: no figma-*.ps1 found in $extDir/scripts/powershell/ — Windows teammates will lack the PowerShell helpers."
-    }
 }
 
 $gi = Join-Path $target '.gitignore'
@@ -216,20 +247,9 @@ if (-not $isSelf) {
     }
 }
 
-# The section templates MUST be installed so figma-render-section can produce
-# the ready-to-paste spec/plan/tasks blocks in the workspace (not only from the
-# extension checkout). Extension-owned, always refreshed.
-if (-not $isSelf) {
-    $tplDest = Join-Path $target '.specify/templates'
-    $null = New-Item -ItemType Directory -Force -Path $tplDest
-    $tpls = Get-ChildItem -Path (Join-Path $extDir 'templates') -Filter '*figma-section.template.md' -ErrorAction SilentlyContinue
-    if ($tpls) {
-        $tpls | Copy-Item -Destination $tplDest
-        Write-Output 'ADDED: .specify/templates/ (spec/plan/tasks figma-section templates)'
-    } else {
-        Write-Stderr "WARN: no *figma-section.template.md found in $extDir/templates/ — section rendering will fall back to the extension checkout."
-    }
-}
+# The section templates are NOT copied either: figma-render-section resolves them
+# next to itself, inside the extension tree, so they are always the exact version
+# of the renderer that reads them.
 
 # The user guides ship with the workspace so the README section below can link
 # to LOCAL copies that match the installed version. Extension-owned, always
@@ -373,15 +393,15 @@ $hookBlock = @'
 
 Before generating, refresh the Figma design context:
 
-1. From the workspace root, run `./.specify/scripts/bash/figma-ensure-context.sh`
+1. From the workspace root, run `./.specify/extensions/figma/scripts/bash/figma-ensure-context.sh`
    (or, on Windows, the PowerShell 7+ port
-   `./.specify/scripts/powershell/figma-ensure-context.ps1` — same flags, same
+   `./.specify/extensions/figma/scripts/powershell/figma-ensure-context.ps1` — same flags, same
    output), piping the user's RAW feature input (description, arguments, any
    pasted links — verbatim) via `--input -` (pass the target package name as
    the first argument in mono-/multi-repo workspaces):
 
    ```bash
-   ./.specify/scripts/bash/figma-ensure-context.sh --input - <<'SPECKIT_FIGMA_INPUT'
+   ./.specify/extensions/figma/scripts/bash/figma-ensure-context.sh --input - <<'SPECKIT_FIGMA_INPUT'
    <the user's verbatim feature input>
    SPECKIT_FIGMA_INPUT
    ```
@@ -389,7 +409,7 @@ Before generating, refresh the Figma design context:
    ```powershell
    @'
    <the user's verbatim feature input>
-   '@ | ./.specify/scripts/powershell/figma-ensure-context.ps1 --input -
+   '@ | ./.specify/extensions/figma/scripts/powershell/figma-ensure-context.ps1 --input -
    ```
 
    Any direct Figma link in the input is detected and introspected
@@ -517,8 +537,8 @@ Next steps:
        echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"' >> ~/.zshrc
      CI / Cloud Agent: set credentials.source = "ci-secret" and inject a platform secret.
   3. Validate (from the workspace root):
-       Windows:      pwsh -File ./.specify/scripts/powershell/figma-validate-config.ps1
-       macOS/Linux:  ./.specify/scripts/bash/figma-validate-config.sh
+       Windows:      pwsh -File ./.specify/extensions/figma/scripts/powershell/figma-validate-config.ps1
+       macOS/Linux:  ./.specify/extensions/figma/scripts/bash/figma-validate-config.sh
   4. Register the extension commands (commands/speckit.figma.*.md)
      with your SpecKit agent of choice — or install natively with
      'specify extension add' (see extension.yml / docs/INSTALL.md), which registers

@@ -450,6 +450,15 @@ flowchart TD
     Cache --> Stamp[".gc-stamp<br>last housekeeping sweep"]
 ```
 
+The extension's own code is not in there at all: `specify extension add` installs
+it at `.specify/extensions/figma/` (`scripts/`, `templates/`, `commands/`,
+`install.sh`), and that is where the helpers and templates **run from**. Nothing
+is copied into `.specify/scripts/` or `.specify/templates/` — a second copy can
+drift from the version SpecKit records in the tree's own `extension.yml`, and the
+stale one is the one a developer ends up reading. The installer checks the tree
+is present and stops if it is not, since wiring a project around helpers that are
+absent yields a workspace that looks installed and fails on every hook.
+
 The `committed` / `git-ignored` split is load-bearing. Anything under `cache/` is
 reproducible and therefore disposable — but because it is disposable, nothing
 that must survive a clone may live only there. That is exactly the constraint

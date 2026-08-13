@@ -11,25 +11,25 @@ Figma does not apply, and it never blocks spec/plan/tasks generation.
 
 ## 1. Refresh the snapshot
 
-From the workspace root, run `./.specify/scripts/bash/figma-ensure-context.sh`,
+From the workspace root, run `./.specify/extensions/figma/scripts/bash/figma-ensure-context.sh`,
 piping the user's RAW feature input (description, arguments, any pasted links —
 verbatim) via `--input -`. Pass the target package name as the first argument
 in mono-/multi-repo workspaces:
 
 ```bash
-./.specify/scripts/bash/figma-ensure-context.sh --input - <<'SPECKIT_FIGMA_INPUT'
+./.specify/extensions/figma/scripts/bash/figma-ensure-context.sh --input - <<'SPECKIT_FIGMA_INPUT'
 <the user's verbatim feature input>
 SPECKIT_FIGMA_INPUT
 ```
 
 On Windows, use the PowerShell 7+ port instead — same flags, same JSON output
 (every `figma-*.sh` helper has a `figma-*.ps1` twin under
-`./.specify/scripts/powershell/`):
+`./.specify/extensions/figma/scripts/powershell/`):
 
 ```powershell
 @'
 <the user's verbatim feature input>
-'@ | ./.specify/scripts/powershell/figma-ensure-context.ps1 --input -
+'@ | ./.specify/extensions/figma/scripts/powershell/figma-ensure-context.ps1 --input -
 ```
 
 Any direct Figma link in the input is detected and introspected automatically —
@@ -84,7 +84,7 @@ Do this, in order:
 
 If a `*Section` field is `null` (rendering failed, e.g. a missing template), the
 section is STILL mandatory: build it from
-`./.specify/templates/{spec,plan,tasks}-figma-section.template.md` plus the
+`./.specify/extensions/figma/templates/{spec,plan,tasks}-figma-section.template.md` plus the
 snapshot. Do not skip it.
 
 ## 3. Broad / ambiguous Figma links → confirm a frame, never skip silently

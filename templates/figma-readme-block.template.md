@@ -9,7 +9,7 @@ automatically ground the generated documents in the Figma mockups declared in
 ### One-time setup per developer — toolchain
 
 Install the row for your OS. A mixed team shares one setup: every
-`.specify/scripts/bash/<name>.sh` has a `.specify/scripts/powershell/<name>.ps1`
+`.specify/extensions/figma/scripts/bash/<name>.sh` has a `.specify/extensions/figma/scripts/powershell/<name>.ps1`
 twin with the same flags, the same JSON output and the same exit codes.
 
 | OS | Needed | Install |
@@ -42,7 +42,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Last resort on a locked-down macOS/Linux machine: install PowerShell 7+ and run
-the `.specify/scripts/powershell/*.ps1` twins instead — they need neither `curl`
+the `.specify/extensions/figma/scripts/powershell/*.ps1` twins instead — they need neither `curl`
 nor `jq`.
 
 ### One-time setup per developer — read-only Figma PAT
@@ -59,7 +59,7 @@ echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"'
 ```
 
 Windows (PowerShell 7+ with the SecretManagement + SecretStore modules; the
-`.ps1` helper twins live in `.specify/scripts/powershell/`):
+`.ps1` helper twins live in `.specify/extensions/figma/scripts/powershell/`):
 
 ```powershell
 Set-Secret -Name figma-pat -Secret 'figd_xxxxxxxx'
