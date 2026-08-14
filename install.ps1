@@ -144,23 +144,24 @@ $configDest = Join-Path $target 'figma.projects.config.json'
 # So the tree is a PRECONDITION, checked before anything else is written. A
 # workspace missing it would install cleanly and then fail on every hook, with an
 # error naming a path the developer never heard of.
-$extHome = Join-Path $target '.specify/extensions/figma'
+$extRel = ".specify/extensions/$extId"
+$extHome = Join-Path $target $extRel
 if (-not (Test-Path -LiteralPath (Join-Path $extHome 'scripts/bash/figma-common.sh') -PathType Leaf)) {
     Write-Stderr @"
 ERROR: the Figma extension tree is missing from this workspace.
-  Expected: .specify/extensions/figma/scripts/
+  Expected: $extRel/scripts/
 
   The helpers now run from the tree SpecKit installs, so register the extension
   first, then re-run this installer:
 
-    specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/archive/refs/heads/main.zip
-    pwsh -File ./.specify/extensions/figma/install.ps1
+    specify extension add $extId --from https://github.com/Fyloss/spec-kit-figma/archive/refs/heads/main.zip
+    pwsh -File ./$extRel/install.ps1
 
   (from a local checkout: specify extension add --dev /path/to/spec-kit-figma)
 "@
     exit 1
 }
-Write-Output 'OK: helpers found at .specify/extensions/figma/scripts/ (bash + PowerShell)'
+Write-Output "OK: helpers found at $extRel/scripts/ (bash + PowerShell)"
 
 # Earlier versions copied both script families into .specify/scripts/ and the
 # section templates into .specify/templates/. Those copies are now dead weight

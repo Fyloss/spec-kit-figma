@@ -123,7 +123,7 @@ esac
 # So the tree is a PRECONDITION, checked before anything else is written. A
 # workspace missing it would install cleanly and then fail on every hook, with an
 # error naming a path the developer never heard of.
-EXT_HOME="$TARGET/.specify/extensions/figma"
+EXT_HOME="$TARGET/.specify/extensions/${EXT_ID}"
 if [[ ! -f "$EXT_HOME/scripts/bash/figma-common.sh" ]]; then
   cat >&2 <<EOF
 ERROR: the Figma extension tree is missing from this workspace.
@@ -132,8 +132,8 @@ ERROR: the Figma extension tree is missing from this workspace.
   The helpers now run from the tree SpecKit installs, so register the extension
   first, then re-run this installer:
 
-    specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/archive/refs/heads/main.zip
-    ./.specify/extensions/figma/install.sh
+    specify extension add ${EXT_ID} --from https://github.com/Fyloss/spec-kit-figma/archive/refs/heads/main.zip
+    ./${EXT_HOME#"$TARGET"/}/install.sh
 
   (from a local checkout: specify extension add --dev /path/to/spec-kit-figma)
 EOF
