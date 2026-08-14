@@ -215,6 +215,12 @@ diagrams.
   `projects:read`** (and the token must belong to a member of those teams) so the
   organization > team > projects > files hierarchy can be enumerated. See
   [docs/CREDENTIALS.md](docs/CREDENTIALS.md) for the full scope matrix.
+- **On Windows with PowerShell SecretStore?** A vault created with the defaults
+  needs an interactive password unlock, which an agent hook can never answer —
+  `Get-Secret` then fails and the run looks like a missing PAT. One-time fix
+  (secrets stay encrypted at rest under your Windows profile via DPAPI):
+  `Set-SecretStoreConfiguration -Authentication None -Interaction None -Confirm:$false`.
+  See [docs/CREDENTIALS.md → SecretStore and non-interactive lookups](docs/CREDENTIALS.md#secretstore-and-non-interactive-lookups-windows).
 - **Behind a corporate proxy?** A transport failure (`curl` exit 5, HTTP `000`)
   is a proxy/network problem, not a bad token. The single curl chokepoint
   auto-retries once with the proxy stripped; if it still fails, see

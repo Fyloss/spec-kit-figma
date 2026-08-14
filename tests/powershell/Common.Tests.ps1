@@ -113,6 +113,45 @@ Describe 'Get-FigmaEnvVarName / Get-FigmaToken' {
         Push-Location $ws
         try { { Get-FigmaToken '/nonexistent.json' } | Should -Throw } finally { Pop-Location }
     }
+
+    It "surfaces the failing command's own error, not just 'not found'" {
+        # A swallowed reason sends the user back to re-storing a PAT that is
+        # already stored — the retrieval, not the token, is what broke.
+        $env:FIGMA_PAT_COMMAND = 'figma-pat-tool-that-does-not-exist'
+        $captured = New-Object System.IO.StringWriter
+        $original = [Console]::Error
+        [Console]::SetError($captured)
+        try { { Get-FigmaToken '/nonexistent.json' } | Should -Throw }
+        finally { [Console]::SetError($original) }
+        $captured.ToString() | Should -Match 'figma-pat-tool-that-does-not-exist'
+    }
+}
+
+Describe 'Get-FigmaSecretStoreHint' {
+    # The Windows failure mode: a SecretStore vault left in its default password
+    # mode needs an interactive unlock that an agent hook can never answer, so
+    # every non-interactive Get-Secret lookup fails for a reason that has nothing
+    # to do with the PAT.
+    It 'names the no-password remedy for a SecretStore lookup' {
+        $hint = Get-FigmaSecretStoreHint 'Get-Secret figma-pat -AsPlainText'
+        $hint | Should -Match 'Set-SecretStoreConfiguration'
+        $hint | Should -Match '-Authentication None'
+        $hint | Should -Match '-Interaction None'
+    }
+
+    It 'reports the observed vault configuration when it could be read' {
+        $hint = Get-FigmaSecretStoreHint 'Get-Secret figma-pat -AsPlainText' 'Password' 'Prompt'
+        $hint | Should -Match 'Authentication=Password'
+        $hint | Should -Match 'Interaction=Prompt'
+    }
+
+    It 'stays silent when the vault is already in no-password mode' {
+        Get-FigmaSecretStoreHint 'Get-Secret figma-pat -AsPlainText' 'None' 'None' | Should -BeNullOrEmpty
+    }
+
+    It 'stays silent for a non-SecretStore command' {
+        Get-FigmaSecretStoreHint 'security find-generic-password -s figma-pat -w' | Should -BeNullOrEmpty
+    }
 }
 
 Describe 'Invoke-FigmaCacheGc' {

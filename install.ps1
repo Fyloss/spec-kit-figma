@@ -532,7 +532,11 @@ Next steps:
      also linked from the figma section of your README).
      Windows (PowerShell 7+ SecretManagement), in your PowerShell profile:
        Set-Secret -Name figma-pat -Secret 'figd_xxxxxxxx'
+       Set-SecretStoreConfiguration -Authentication None -Interaction None -Confirm:`$false
        `$env:FIGMA_PAT_COMMAND = 'Get-Secret figma-pat -AsPlainText'
+       (the Set-SecretStoreConfiguration line is required: a default vault asks
+        for a password no agent hook can type, and the run then looks like a
+        missing PAT. Secrets stay encrypted at rest via your Windows profile.)
      macOS (keychain), e.g. in ~/.zshrc:
        security add-generic-password -s figma-pat -a "`$USER" -w 'figd_xxxxxxxx'
        echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"' >> ~/.zshrc

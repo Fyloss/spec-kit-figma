@@ -520,7 +520,11 @@ Next steps:
        echo 'export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"' >> ~/.zshrc
      Windows (PowerShell 7+ SecretManagement), in your PowerShell profile:
        Set-Secret -Name figma-pat -Secret 'figd_xxxxxxxx'
+       Set-SecretStoreConfiguration -Authentication None -Interaction None -Confirm:\$false
        \$env:FIGMA_PAT_COMMAND = 'Get-Secret figma-pat -AsPlainText'
+       (the Set-SecretStoreConfiguration line is required: a default vault asks
+        for a password no agent hook can type, and the run then looks like a
+        missing PAT. Secrets stay encrypted at rest via your Windows profile.)
      CI / Cloud Agent: set credentials.source = "ci-secret" and inject a platform secret.
   3. Validate (from the workspace root):
        macOS/Linux:  ./.specify/extensions/figma/scripts/bash/figma-validate-config.sh

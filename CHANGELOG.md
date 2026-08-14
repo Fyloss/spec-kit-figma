@@ -166,6 +166,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   what the gate exists to prevent. Sections are now scoped per feature, resolved
   through the same feature identity as the remembered links, so `ensure` and
   `verify` always agree and a wipe only ever touches the current feature.
+- **A Windows PAT stored in a default PowerShell SecretStore vault was reported
+  as missing.** Such a vault is in password mode: the first `Get-Secret` of a
+  session opens an interactive prompt, which an agent hook can never answer. The
+  token loaders discarded the command's stderr (`2>$null` / `2>/dev/null`) and
+  fell through to "`FIGMA_PAT` not found", sending the user back to re-storing a
+  PAT that was already stored correctly. Both loaders now capture the command's
+  own error and print it with the warning, and a SecretStore lookup that fails
+  additionally names the remedy —
+  `Set-SecretStoreConfiguration -Authentication None -Interaction None -Confirm:$false`,
+  which keeps the secrets encrypted at rest under the Windows user profile
+  (DPAPI) — reporting the vault's observed `Authentication`/`Interaction` when it
+  can be read, and staying silent when the vault is already in no-password mode.
+  The bash hint also covers Git Bash/WSL, where `Get-Secret` is a cmdlet the
+  tokenized exec cannot run at all without a `pwsh -NoProfile -NonInteractive
+  -Command` wrapper. The one-time `Set-SecretStoreConfiguration` step is now part
+  of the documented Windows setup (`docs/CREDENTIALS.md`, README, both
+  installers, `/speckit.figma.config`, the README block template).
 - The PowerShell port accepted any remembered-links file that parsed, including a
   JSON object root, where bash requires an array. A hand-edited
   `.figma/cache/links/<feature>.json` holding a single object instead of a
