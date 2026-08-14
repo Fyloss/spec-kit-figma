@@ -68,6 +68,9 @@ installer is `install.ps1` wherever the steps below mention `install.sh`.
      Install-Module Microsoft.PowerShell.SecretManagement, Microsoft.PowerShell.SecretStore
      Register-SecretVault -Name SecretStore -ModuleName Microsoft.PowerShell.SecretStore -DefaultVault
      Set-Secret -Name figma-pat -Secret 'figd_xxxxxxxx'
+     # required for hook-driven runs: a default vault demands an interactive
+     # password unlock no hook can answer (secrets stay encrypted at rest via DPAPI)
+     Set-SecretStoreConfiguration -Authentication None -Interaction None -Confirm:$false
      # in $PROFILE:
      $env:FIGMA_PAT_COMMAND = 'Get-Secret figma-pat -AsPlainText'
      ```

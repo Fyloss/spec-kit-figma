@@ -567,6 +567,51 @@ TIP: Claude Code detected without the official Figma plugin. For the richest,
 #   $env:FIGMA_PAT_COMMAND = 'Get-Secret figma-pat -AsPlainText'
 # It is executed WITHOUT a shell (tokenized invocation via the call operator),
 # so pipes/substitutions in the value are inert arguments, not shell syntax.
+# Read the local SecretStore vault's authentication settings, so a failed
+# lookup can be diagnosed against what the vault actually does. Reading the
+# configuration never unlocks anything, so it cannot itself prompt. Returns
+# empty strings when the command is not a SecretStore lookup or the module is
+# absent — the one impure part of the diagnostic, kept out of the hint text so
+# that stays a pure function.
+function Get-FigmaSecretStoreState {
+    param([string]$Command)
+    $state = @{ Authentication = ''; Interaction = '' }
+    if ($Command -notmatch 'Get-Secret') { return $state }
+    try {
+        $cfg = Get-SecretStoreConfiguration -ErrorAction Stop
+        $state.Authentication = [string]$cfg.Authentication
+        $state.Interaction = [string]$cfg.Interaction
+    } catch { }
+    return $state
+}
+
+# The Windows failure mode: a SecretStore vault created with the defaults
+# requires an interactive password unlock, which an agent hook can never answer,
+# so every non-interactive `Get-Secret` fails for a reason that has nothing to
+# do with the PAT — and the raw error never names the remedy. $Authentication /
+# $Interaction are the observed vault settings ('' when unknown). Returns ''
+# when the command is not a SecretStore lookup, or when the vault is already in
+# no-password mode and this diagnosis would therefore be a wrong lead.
+function Get-FigmaSecretStoreHint {
+    param([string]$Command, [string]$Authentication = '', [string]$Interaction = '')
+    if ($Command -notmatch 'Get-Secret') { return '' }
+    if ($Authentication -eq 'None' -and $Interaction -eq 'None') { return '' }
+    $observed = ''
+    if ($Authentication -or $Interaction) {
+        $observed = " Vault config: Authentication=$Authentication, Interaction=$Interaction."
+    }
+    return @"
+HINT: 'Get-Secret' failed — the PAT itself is fine.$observed
+      A SecretStore vault created with the defaults requires an interactive
+      password unlock, which an agent hook can never answer, so every
+      non-interactive lookup fails. Switch the vault to no-password mode — the
+      secrets stay encrypted at rest under your Windows user profile (DPAPI),
+      the setting recommended for a local dev machine driving automated tooling:
+          Set-SecretStoreConfiguration -Authentication None -Interaction None -Confirm:`$false
+      Verify: Get-SecretStoreConfiguration | Select-Object Authentication, Interaction
+"@
+}
+
 # Throws when no token can be resolved (the bash `return 1` analogue).
 function Get-FigmaToken {
     param([string]$Config = (Get-FigmaDefaultConfig))
@@ -578,12 +623,27 @@ function Get-FigmaToken {
         $exe = $tokens[0]
         $cmdArgs = @()
         if ($tokens.Count -gt 1) { $cmdArgs = $tokens[1..($tokens.Count - 1)] }
+        # Keep the command's own error instead of discarding it: a locked vault,
+        # a missing cmdlet and a revoked entry all failed the same silent way
+        # before, and "PAT not found" then sends the user back to re-storing a
+        # token that is already stored. Error records are filtered OUT of the
+        # token so a chatty-but-successful lookup still resolves.
+        $why = ''
         try {
-            $out = & $exe @cmdArgs 2>$null
-            $out = ($out | Out-String).TrimEnd("`r", "`n")
+            $raw = & $exe @cmdArgs 2>&1
+            $failures = @($raw | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] })
+            $out = (@($raw | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] }) | Out-String).TrimEnd("`r", "`n")
             if ($out) { return $out }
-        } catch { }
-        Write-FigmaStderr 'WARN: FIGMA_PAT_COMMAND failed or returned an empty token.'
+            if ($failures.Count -gt 0) { $why = ($failures | ForEach-Object { $_.ToString() }) -join ' ' }
+        } catch {
+            $why = $_.Exception.Message
+        }
+        $why = ($why -replace '\s*\r?\n\s*', ' ').Trim()
+        $detail = if ($why) { " ($why)" } else { '' }
+        Write-FigmaStderr "WARN: FIGMA_PAT_COMMAND failed or returned an empty token.$detail"
+        $state = Get-FigmaSecretStoreState $env:FIGMA_PAT_COMMAND
+        $hint = Get-FigmaSecretStoreHint $env:FIGMA_PAT_COMMAND $state.Authentication $state.Interaction
+        if ($hint) { Write-FigmaStderr $hint }
     }
     Write-FigmaStderr "ERROR: $var not found. Store the PAT in your OS credential store and export FIGMA_PAT_COMMAND locally (e.g. 'Get-Secret figma-pat -AsPlainText' with the SecretManagement module, or 'security find-generic-password -s figma-pat -w' on macOS), or inject $var as a CI secret. Do NOT set ${var}=... by hand and do NOT create a .env file — the token must never be written to disk in the workspace (see docs/CREDENTIALS.md)."
     throw "missing Figma token"

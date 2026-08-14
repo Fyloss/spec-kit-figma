@@ -81,6 +81,39 @@ JSON
   [[ "$output" != *"figd_dotenv"* ]]
 }
 
+@test "a failing FIGMA_PAT_COMMAND surfaces the command's own error" {
+  unset FIGMA_PAT
+  cat > "${WORKSPACE}/locked-vault" <<'SH'
+#!/usr/bin/env bash
+echo "the vault is locked and no password was provided" >&2
+exit 1
+SH
+  chmod +x "${WORKSPACE}/locked-vault"
+  export FIGMA_PAT_COMMAND="${WORKSPACE}/locked-vault"
+  run figma_load_token
+  [ "$status" -ne 0 ]
+  # Without the real reason, "PAT not found" sends the user back to re-storing a
+  # token that is already stored — the vault, not the PAT, is the problem.
+  [[ "$output" == *"the vault is locked and no password was provided"* ]]
+}
+
+@test "a failing Get-Secret lookup names the SecretStore no-password remedy" {
+  unset FIGMA_PAT
+  # 'Get-Secret' is a PowerShell cmdlet, so this fails outright under bash — the
+  # exact shape of the Windows report (agent hook, no interactive unlock).
+  export FIGMA_PAT_COMMAND="Get-Secret figma-pat -AsPlainText"
+  run figma_load_token
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Set-SecretStoreConfiguration -Authentication None"* ]]
+  [[ "$output" == *"pwsh -NoProfile -NonInteractive"* ]]
+}
+
+@test "figma_secretstore_hint stays silent for a non-SecretStore command" {
+  run figma_secretstore_hint "security find-generic-password -s figma-pat -w"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
 @test "FIGMA_PAT_COMMAND is executed without a shell (no pipe smuggling)" {
   unset FIGMA_PAT
   export FIGMA_PAT_COMMAND="printf figd_a | tr a b"

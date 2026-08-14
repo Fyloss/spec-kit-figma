@@ -58,12 +58,49 @@ Install-Module Microsoft.PowerShell.SecretManagement, Microsoft.PowerShell.Secre
 Register-SecretVault -Name SecretStore -ModuleName Microsoft.PowerShell.SecretStore -DefaultVault
 Set-Secret -Name figma-pat -Secret 'figd_xxxxxxxx'
 
-# 2. add the retrieval command to your PowerShell profile
+# 2. one-time: let automation read the vault without an interactive unlock
+#    (see "SecretStore and non-interactive lookups" below — skipping this makes
+#    every hook-driven Get-Secret fail)
+Set-SecretStoreConfiguration -Authentication None -Interaction None -Confirm:$false
+
+# 3. add the retrieval command to your PowerShell profile
 Add-Content $PROFILE "`n`$env:FIGMA_PAT_COMMAND = 'Get-Secret figma-pat -AsPlainText'"
 
-# 3. reload the profile so FIGMA_PAT_COMMAND is set
+# 4. reload the profile so FIGMA_PAT_COMMAND is set
 . $PROFILE
 ```
+
+#### SecretStore and non-interactive lookups (Windows)
+
+A SecretStore vault created with the defaults is in **password mode**: the first
+`Get-Secret` of a session opens a password prompt. The scripts run from an agent
+hook, which has no one to answer that prompt, so the lookup fails with an error
+about the vault — never about the PAT — and the agent reports a missing token
+for a PAT that is correctly stored.
+
+Switching the vault to no-password mode fixes it. The secrets stay **encrypted
+at rest** under your Windows user profile (DPAPI): they are readable by your
+Windows account only. That is what the `-Authentication None` setting of
+[`Set-SecretStoreConfiguration`](https://learn.microsoft.com/powershell/module/microsoft.powershell.secretstore/set-secretstoreconfiguration)
+exists for — a machine where no one is present to type a password.
+
+```powershell
+Set-SecretStoreConfiguration -Authentication None -Interaction None -Confirm:$false
+
+# verify — expect Authentication = None, Interaction = None
+Get-SecretStoreConfiguration | Select-Object Authentication, Interaction
+```
+
+Prefer to keep the password? Then the vault must be unlocked in the same session
+that runs the scripts (`Unlock-SecretStore`), which no hook can do for you — use
+`credentials.source: "ci-secret"` style injection instead, i.e. set `FIGMA_PAT`
+in the environment the agent starts from.
+
+> **Note for Git Bash / WSL users on Windows:** the **bash** helpers execute
+> `FIGMA_PAT_COMMAND` as an external program, and `Get-Secret` is a PowerShell
+> cmdlet, not an executable — it can never run there. Either use the PowerShell
+> helpers (`scripts/powershell/`), or wrap the cmdlet:
+> `export FIGMA_PAT_COMMAND="pwsh -NoProfile -NonInteractive -Command Get-Secret figma-pat -AsPlainText"`.
 
 Generate the PAT at <https://www.figma.com/developers/api#access-tokens>. **The
 scopes depend on the introspection level declared in `figma.projects.config.json`**

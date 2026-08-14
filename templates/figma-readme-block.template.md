@@ -63,6 +63,10 @@ Windows (PowerShell 7+ with the SecretManagement + SecretStore modules; the
 
 ```powershell
 Set-Secret -Name figma-pat -Secret 'figd_xxxxxxxx'
+# let the hooks read the vault without an interactive unlock (still encrypted
+# at rest under your Windows profile via DPAPI) — without this every automated
+# Get-Secret fails and looks like a missing PAT:
+Set-SecretStoreConfiguration -Authentication None -Interaction None -Confirm:$false
 # in $PROFILE:
 $env:FIGMA_PAT_COMMAND = 'Get-Secret figma-pat -AsPlainText'
 ```

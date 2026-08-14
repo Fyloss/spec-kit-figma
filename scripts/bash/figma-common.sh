@@ -535,6 +535,36 @@ EOF
 #   export FIGMA_PAT_COMMAND="security find-generic-password -s figma-pat -w"
 # It is executed WITHOUT a shell (tokenized exec), so pipes/substitutions in
 # the value are inert arguments, not shell syntax.
+# The Windows failure mode, when FIGMA_PAT_COMMAND is a PowerShell SecretStore
+# lookup. Two distinct things break such a lookup from an agent hook, and the
+# raw error names neither: `Get-Secret` is a cmdlet (not an executable, so the
+# tokenized exec below cannot run it at all), and a vault created with the
+# defaults demands an interactive password unlock no hook can answer. Prints to
+# stdout (the caller redirects to stderr); empty for any other command manager;
+# always exits 0.
+# shellcheck disable=SC2016  # the hint is a literal shell/PowerShell snippet
+figma_secretstore_hint() {
+  case "${1:-}" in
+    *Get-Secret*) ;;
+    *) return 0 ;;
+  esac
+  cat <<'EOF'
+HINT: FIGMA_PAT_COMMAND is a PowerShell SecretStore lookup. Two things stop it
+      from working non-interactively — the PAT itself is fine:
+      1. 'Get-Secret' is a cmdlet, not an executable. The bash helpers exec the
+         command directly, so wrap it in a shell that knows the cmdlet:
+           export FIGMA_PAT_COMMAND="pwsh -NoProfile -NonInteractive -Command Get-Secret figma-pat -AsPlainText"
+         (or run the PowerShell twins under scripts/powershell/ instead).
+      2. A SecretStore vault created with the defaults requires an interactive
+         password unlock, which an agent hook can never answer. Switch it to
+         no-password mode — still encrypted at rest under your Windows user
+         profile (DPAPI), the setting recommended for a local dev machine
+         driving automated tooling:
+           Set-SecretStoreConfiguration -Authentication None -Interaction None -Confirm:$false
+         Verify: Get-SecretStoreConfiguration | Select-Object Authentication, Interaction
+EOF
+}
+
 # shellcheck disable=SC2120  # optional $1 (config path) is intentional for testability
 figma_load_token() {
   local config="${1:-$(figma_default_config)}"
@@ -546,12 +576,21 @@ figma_load_token() {
   if [[ -n "${FIGMA_PAT_COMMAND:-}" ]]; then
     local -a pat_cmd
     read -r -a pat_cmd <<< "$FIGMA_PAT_COMMAND"
-    local pat_out
-    if pat_out="$("${pat_cmd[@]}" 2>/dev/null)" && [[ -n "$pat_out" ]]; then
+    # Capture the command's stderr instead of discarding it: a locked vault, a
+    # missing CLI and a revoked entry all failed the same silent way before, and
+    # "PAT not found" then sends the user back to re-storing a token that is
+    # already stored.
+    local pat_out pat_err why
+    pat_err="$(mktemp)"
+    if pat_out="$("${pat_cmd[@]}" 2>"$pat_err")" && [[ -n "$pat_out" ]]; then
+      rm -f "$pat_err"
       printf '%s' "$pat_out"
       return 0
     fi
-    echo "WARN: FIGMA_PAT_COMMAND failed or returned an empty token." >&2
+    why="$(tr '\n' ' ' < "$pat_err")"; why="${why%"${why##*[![:space:]]}"}"
+    rm -f "$pat_err"
+    echo "WARN: FIGMA_PAT_COMMAND failed or returned an empty token.${why:+ ($why)}" >&2
+    figma_secretstore_hint "$FIGMA_PAT_COMMAND" >&2
   fi
   echo "ERROR: ${var} not found. Store the PAT in your OS keychain and export FIGMA_PAT_COMMAND locally (e.g. 'security find-generic-password -s figma-pat -w'), or inject ${var} as a CI secret. Do NOT 'export ${var}=...' by hand and do NOT create a .env file — the token must never be written to disk in the workspace (see docs/CREDENTIALS.md)." >&2
   return 1
