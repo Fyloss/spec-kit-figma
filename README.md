@@ -40,7 +40,7 @@ submodules) layouts.
 ├── install.sh                          # optional manual installer (single/mono/multi-repo)
 ├── install.ps1                         # the same installer for Windows (PowerShell 7+)
 ├── commands/                           # agent-agnostic command templates
-│   ├── speckit.figma.setup.md
+│   ├── speckit.figma.config.md
 │   ├── speckit.figma.update.md         # re-sync assets/hooks + re-register commands (idempotent)
 │   ├── speckit.figma.ensure.md         # auto-context (before_specify/before_plan/before_tasks hooks)
 │   ├── speckit.figma.introspect.md
@@ -64,7 +64,7 @@ submodules) layouts.
 │   ├── figma-design-rules.md           # non-negotiable agent rules (constitution base; overwritten on update)
 │   └── figma-design-rules.custom.md     # your overlay — overrides the base, preserved across updates (cache/ stays git-ignored)
 └── docs/
-    └── INSTALL.md  CREDENTIALS.md  MONOREPO.md
+    └── INSTALL.md  CREDENTIALS.md  MONOREPO.md  ARCHITECTURE.md
 ```
 
 ## Quick start
@@ -82,10 +82,10 @@ specify extension add --dev /path/to/spec-kit-figma
 ```
 Once the extension is listed in the Spec Kit community catalog, it is also
 discoverable via `specify extension search figma`.
-This registers the `/speckit.figma.setup`, `/speckit.figma.update`,
+This registers the `/speckit.figma.config`, `/speckit.figma.update`,
 `/speckit.figma.ensure`, `/speckit.figma.introspect` and
 `/speckit.figma.verify` commands with your agent. Then run
-`/speckit.figma.setup` once.
+`/speckit.figma.config` once.
 
 **Figma context is refreshed automatically:** the manifest's
 `before_specify` / `before_plan` / `before_tasks` hooks invoke
@@ -106,6 +106,24 @@ unconfigured, the target is excluded, or the snapshot is fresh (and covers the
 linked nodes) — and it never blocks spec/tasks generation. Running
 `/speckit.figma.introspect` manually remains available for deep dives
 (specific nodes, custom depth).
+
+**A Figma link is what makes a run a design run.** Paste one in the feature
+description at `/speckit.specify` and the design section is generated and made
+mandatory; paste none and the hooks report `no-figma-link` and add nothing at
+all — a back-end feature never comes back with a design section stapled to its
+spec, even in a workspace where the target is mapped to a Figma file. The
+mapping in `figma.projects.config.json` says *where* a creative would live, not
+*whether* this feature has one. The link is pasted once: it is remembered for
+that feature, so `/speckit.plan` and `/speckit.tasks` inherit it without you
+re-pasting. That memory lives in the git-ignored `.figma/cache/`, so when it is
+absent — a fresh clone, a CI job, a teammate who just pulled the branch — the
+link is read back from the `spec.md` the earlier phase committed.
+
+Every feature gets its own entry there, so switching branches never mixes two
+features' design context, and a daily housekeeping sweep reclaims the entries of
+branches that never became a feature (see
+[ARCHITECTURE.md](docs/ARCHITECTURE.md#housekeeping) — `FIGMA_CACHE_RETENTION_DAYS`,
+`FIGMA_CACHE_GC=off`).
 
 > [!WARNING]
 > **Use a capable model (Claude Sonnet or better).** Lighter models are strongly
@@ -167,7 +185,10 @@ touched, and it is refreshed in place on re-runs — pass `--no-readme` to opt
 out.
 
 See [docs/INSTALL.md](docs/INSTALL.md), [docs/CREDENTIALS.md](docs/CREDENTIALS.md)
-and [docs/MONOREPO.md](docs/MONOREPO.md).
+and [docs/MONOREPO.md](docs/MONOREPO.md). For how the pieces fit together —
+which script owns which decision, and where a run can stop —
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) maps every subsystem with Mermaid
+diagrams.
 
 ## Requirements
 - `git`, plus one script toolchain per developer machine:
@@ -201,6 +222,23 @@ The engine is selected per workspace via `figma.contextSource`:
 | `"rest"` *(default)* | curl + jq against the Figma REST API | Always portable; the only engine guaranteed in CI. |
 | `"mcp"` | A Figma MCP (Model Context Protocol) server | Richer context, and **more faithful mockup implementation**, for users who run the server locally. |
 
+> [!IMPORTANT]
+> **The two engines are not alternatives, and MCP does not replace the PAT.**
+>
+> The deterministic introspection — `figma-introspect` →
+> `.figma/cache/context-snapshot.json` → ready-to-paste section — **always** goes
+> through the REST API and requires a PAT, whatever `contextSource` is set to.
+>
+> What `"mcp"` adds: the effective engine is recorded in the snapshot and
+> reported to the agent, which may then query its own MCP tool to reproduce the
+> mockup more faithfully. MCP improves how the agent **renders** the design, not
+> how the snapshot is **collected**.
+>
+> In practice: a local Dev Mode server alone, with no PAT configured, fails
+> introspection with `"reason": "introspect-failed"` and `"code": "AUTH"`.
+> Generation is not blocked — that is the extension's contract — but it proceeds
+> without design context.
+
 > **MCP yields more accurate implementations.** Because the MCP engine exposes
 > the design's structured node data — exact spacing, layout constraints, tokens,
 > variants and component bindings — the agent reproduces mockups far more
@@ -217,7 +255,7 @@ The engine is selected per workspace via `figma.contextSource`:
 > as a native Claude Code tool — no local Dev Mode server, no extra config — and
 > then you simply set `figma.contextSource: "mcp"` in
 > `figma.projects.config.json`. When the extension's scripts run inside Claude
-> Code and the plugin is absent, `figma-resolve-source.sh` (and `/speckit.figma.setup`)
+> Code and the plugin is absent, `figma-resolve-source.sh` (and `/speckit.figma.config`)
 > print a one-line reminder; silence it with `FIGMA_NO_PLUGIN_ADVICE=1`. Note
 > this hosted server differs from the local Dev Mode MCP server
 > (`http://127.0.0.1:3845/mcp`), which the extension's curl probe targets by

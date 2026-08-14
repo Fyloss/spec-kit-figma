@@ -61,7 +61,39 @@ Describe 'figma-parse-links.ps1' {
     It 'reports a null nodeId for a broad link' {
         $r = Invoke-FigmaScript 'figma-parse-links.ps1' @('https://www.figma.com/proto/Kk77/Proto')
         $r.Json.nodeId | Should -Be $null
+        $r.Json.startNodeId | Should -Be $null
         $r.Json.kind | Should -Be 'proto'
+    }
+
+    It 'keeps a prototype flow start alongside the viewed frame' {
+        # A prototype URL carries TWO frames: node-id is whatever the designer was
+        # looking at when they copied the link, starting-point-node-id is the entry
+        # point of the flow. Dropping the latter leaves the snapshot without the
+        # frame the parcours actually starts from.
+        $r = Invoke-FigmaScript 'figma-parse-links.ps1' @('https://www.figma.com/proto/Kk77/Proto?page-id=0%3A1&node-id=12-345&starting-point-node-id=1%3A2&t=Xy9Z-4')
+        $r.Json.nodeId | Should -Be '12:345'
+        $r.Json.startNodeId | Should -Be '1:2'
+    }
+
+    It 'pins a prototype link that carries only a starting point' {
+        # Hand-trimmed and embed URLs drop node-id; without the fallback the link
+        # degrades to 'broad' and the agent has to ask which frame — although the
+        # URL names it.
+        $r = Invoke-FigmaScript 'figma-parse-links.ps1' @('https://www.figma.com/proto/Kk77/Proto?starting-point-node-id=1%3A2')
+        $r.Json.nodeId | Should -Be $null
+        $r.Json.startNodeId | Should -Be '1:2'
+    }
+
+    It 'reports a malformed starting-point-node-id as null, never forwards it' {
+        $r = Invoke-FigmaScript 'figma-parse-links.ps1' @('https://www.figma.com/proto/Kk77/Proto?starting-point-node-id=nope')
+        $r.Json.startNodeId | Should -Be $null
+    }
+
+    It 'does not mistake starting-point-node-id for node-id' {
+        # '&starting-point-node-id=' ends with the literal 'node-id=' — a regex
+        # anchored loosely would read the flow start as the viewed frame.
+        $r = Invoke-FigmaScript 'figma-parse-links.ps1' @('https://www.figma.com/proto/Kk77/Proto?starting-point-node-id=1%3A2&node-id=12-345')
+        $r.Json.nodeId | Should -Be '12:345'
     }
 
     It 'emits one JSON object per link' {

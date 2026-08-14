@@ -46,10 +46,24 @@ Describe 'figma-ensure-context.ps1 (skip paths)' {
     }
 
     It 'clears stale rendered sections when Figma does not apply' {
-        Set-Content (Join-Path $ws '.figma/cache/section.spec.md') 'stale'
+        Set-FakeSection $ws 'spec' 'stale' | Out-Null
         $r = Invoke-FigmaScript 'figma-ensure-context.ps1' -Workspace $ws
         $r.Json.reason | Should -Be 'no-config'
-        Test-Path (Join-Path $ws '.figma/cache/section.spec.md') | Should -BeFalse
+        Test-Path (Get-SectionPath $ws 'spec') | Should -BeFalse
+    }
+
+    It 'does not wipe another feature''s rendered section' {
+        # The rendered section is what tells figma-verify-section that Figma
+        # applied to a run. While it lived in one global slot, a design-less
+        # feature B erased feature A's — so A's after-hook reported
+        # not-applicable and a --strict CI gate passed for a document that was
+        # genuinely missing its design section.
+        $env:SPECIFY_FEATURE = '001-checkout'
+        $aSection = Set-FakeSection $ws 'spec' 'feature A render'
+        $env:SPECIFY_FEATURE = '002-billing-cache'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', 'Add a Redis cache.') -Workspace $ws
+        $r.Json.reason | Should -Be 'no-config'
+        Test-Path $aSection | Should -BeTrue
     }
 
     It 'emits the documented status schema, including the dependency key' {
@@ -77,10 +91,13 @@ Describe 'figma-ensure-context.ps1 (fresh snapshot + injection contract)' {
         Write-FakeSnapshot $ws | Out-Null
         # The snapshot must be newer than the config for the fresh path.
         (Get-Item (Join-Path $ws '.figma/cache/context-snapshot.json')).LastWriteTime = Get-Date
+        # A Figma link is what makes a run a design run, so every test on the
+        # applicable path carries one. It points at the fake snapshot's file/node.
+        $script:link = 'https://www.figma.com/design/AbC123/X?node-id=1-2'
     }
 
     It 'reports fresh with mustInject and the three rendered sections' {
-        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' -Workspace $ws
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', $link) -Workspace $ws
         $r.ExitCode | Should -Be 0
         $r.Json.ran | Should -BeFalse
         $r.Json.reason | Should -Be 'fresh'
@@ -93,13 +110,13 @@ Describe 'figma-ensure-context.ps1 (fresh snapshot + injection contract)' {
 
     It 'treats a snapshot older than --max-age-minutes as stale (dry-run)' {
         (Get-Item (Join-Path $ws '.figma/cache/context-snapshot.json')).LastWriteTime = (Get-Date).AddMinutes(-120)
-        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--max-age-minutes', '60', '--dry-run') -Workspace $ws
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--max-age-minutes', '60', '--dry-run', '--input', $link) -Workspace $ws
         $r.Json.reason | Should -Be 'dry-run'
     }
 
     It 'treats a snapshot older than the config as stale (dry-run)' {
         (Get-Item (Join-Path $ws 'figma.projects.config.json')).LastWriteTime = (Get-Date).AddMinutes(5)
-        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run') -Workspace $ws
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', $link) -Workspace $ws
         $r.Json.reason | Should -Be 'dry-run'
     }
 
@@ -142,6 +159,7 @@ Describe 'figma-ensure-context.ps1 (introspection failure diagnostics)' {
         Reset-FigmaEnvironment
         $script:ws = New-TempWorkspace
         Copy-Item (Join-Path $Fixtures 'singlerepo-valid.json') (Join-Path $ws 'figma.projects.config.json')
+        $script:link = 'https://www.figma.com/design/AbC123/X?node-id=1-2'
     }
 
     It 'reports introspect-failed with code NETWORK on a transport failure' {
@@ -149,7 +167,7 @@ Describe 'figma-ensure-context.ps1 (introspection failure diagnostics)' {
         $env:FIGMA_PAT = 'fake-token'
         $env:FIGMA_API_MAX_ATTEMPTS = '1'
         $env:FIGMA_API_RETRY_DELAY = '1'
-        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' -Workspace $ws
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', $link) -Workspace $ws
         $r.ExitCode | Should -Be 0
         $r.Json.ran | Should -BeFalse
         $r.Json.reason | Should -Be 'introspect-failed'
@@ -160,20 +178,280 @@ Describe 'figma-ensure-context.ps1 (introspection failure diagnostics)' {
     It 'reports introspect-failed with code AUTH when no token is available' {
         $env:FIGMA_API_BASE = 'http://127.0.0.1:9'
         $env:FIGMA_API_MAX_ATTEMPTS = '1'
-        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' -Workspace $ws
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', $link) -Workspace $ws
         $r.Json.reason | Should -Be 'introspect-failed'
         $r.Json.code | Should -Be 'AUTH'
     }
 
     It 'does not clear a prior rendered section on a transient failure (fail-closed gate)' {
-        Set-Content (Join-Path $ws '.figma/cache/section.plan.md') 'prior render'
+        Set-FakeSection $ws 'plan' 'prior render' | Out-Null
         $env:FIGMA_API_BASE = 'http://127.0.0.1:9'
         $env:FIGMA_PAT = 'fake-token'
         $env:FIGMA_API_MAX_ATTEMPTS = '1'
         $env:FIGMA_API_RETRY_DELAY = '1'
-        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' -Workspace $ws
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', $link) -Workspace $ws
         $r.Json.reason | Should -Be 'introspect-failed'
-        Test-Path (Join-Path $ws '.figma/cache/section.plan.md') | Should -BeTrue
+        Test-Path (Get-SectionPath $ws 'plan') | Should -BeTrue
+    }
+}
+
+# A Figma link in the feature input is what makes a run a design run. Regression:
+# with a valid config and an enabled target, the hook used to introspect and
+# render the mandatory section for EVERY feature — including "add a Redis cache
+# on the billing endpoint" — so spec.md got a Figma design section it had no
+# business carrying.
+Describe 'figma-ensure-context.ps1 (a Figma link is required)' {
+    BeforeEach {
+        Reset-FigmaEnvironment
+        $script:ws = New-TempWorkspace
+        Install-SectionTemplates $ws
+        Copy-Item (Join-Path $Fixtures 'singlerepo-valid.json') (Join-Path $ws 'figma.projects.config.json')
+        Write-FakeSnapshot $ws | Out-Null
+        (Get-Item (Join-Path $ws '.figma/cache/context-snapshot.json')).LastWriteTime = Get-Date
+        $script:link = 'https://www.figma.com/design/AbC123/X?node-id=1-2'
+    }
+
+    It 'is a no-op when the input carries no link' {
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', 'Add a Redis cache on the billing endpoint.') -Workspace $ws
+        $r.ExitCode | Should -Be 0
+        $r.Json.ran | Should -BeFalse
+        $r.Json.reason | Should -Be 'no-figma-link'
+        $r.Json.mustInject | Should -BeFalse
+        $r.Json.specSection | Should -Be $null
+        Test-Path (Get-SectionPath $ws 'spec') | Should -BeFalse
+    }
+
+    It 'is a no-op with no input at all, whatever the config maps' {
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' -Workspace $ws
+        $r.Json.reason | Should -Be 'no-figma-link'
+    }
+
+    It 'names the remedy in the no-figma-link diagnostic' {
+        # The document stays silent, so the console is the ONLY place a forgotten
+        # link can still be caught — and only if the line says what to do about
+        # it. A front-end feature whose author forgot to paste the link is
+        # otherwise indistinguishable from a back-end one, through plan and tasks.
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', 'Build the new checkout screen.') -Workspace $ws
+        $r.ExitCode | Should -Be 0
+        $r.Stderr | Should -BeLike '*/speckit.specify*'
+        $r.Stderr | Should -BeLike '*re-run*'
+    }
+
+    It 'clears a stale rendered section when no link applies' {
+        Set-FakeSection $ws 'spec' 'stale' | Out-Null
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', 'Pure backend refactor.') -Workspace $ws
+        $r.Json.reason | Should -Be 'no-figma-link'
+        Test-Path (Get-SectionPath $ws 'spec') | Should -BeFalse
+    }
+
+    It 'remembers the link so a later link-less phase still applies' {
+        $env:SPECIFY_FEATURE = '001-checkout'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', $link) -Workspace $ws
+        $r.Json.reason | Should -Be 'fresh'
+        # /speckit.plan: same feature, no link in this phase's input.
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', 'Draft the implementation plan.') -Workspace $ws
+        $r.Json.reason | Should -Be 'fresh'
+        @($r.Json.links)[0].nodeId | Should -Be '1:2'
+    }
+
+    It 'scopes remembered links to their feature, never leaking to the next' {
+        $env:SPECIFY_FEATURE = '001-checkout'
+        Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', $link) -Workspace $ws | Out-Null
+        $env:SPECIFY_FEATURE = '002-billing-cache'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', 'Add a Redis cache.') -Workspace $ws
+        $r.Json.reason | Should -Be 'no-figma-link'
+    }
+
+    It 'degrades to no-figma-link when the remembered-links file is corrupt' {
+        $env:SPECIFY_FEATURE = '001-checkout'
+        $linksDir = Join-Path $ws '.figma/cache/links'
+        New-Item -ItemType Directory -Force -Path $linksDir | Out-Null
+        Set-Content (Join-Path $linksDir '001-checkout.json') '{"not":"an array"'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', 'No link in this phase.') -Workspace $ws
+        $r.ExitCode | Should -Be 0
+        $r.Json.reason | Should -Be 'no-figma-link'
+    }
+
+    It 'ignores a remembered-links file whose JSON root is not an array' {
+        # Valid JSON, plausible content, wrong shape: a hand-edited file holding
+        # a single object instead of a one-element array. ConvertFrom-Json
+        # unrolls '[{...}]' into a bare object, so the deserialized shape cannot
+        # tell the two apart — the JSON root has to be checked in the text, as
+        # the bash port does with `jq 'select(type == "array")'`.
+        $env:SPECIFY_FEATURE = '001-checkout'
+        $linksDir = Join-Path $ws '.figma/cache/links'
+        New-Item -ItemType Directory -Force -Path $linksDir | Out-Null
+        Set-Content (Join-Path $linksDir '001-checkout.json') '{"fileId":"LinkFILE999","nodeId":"12:345"}'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', 'No link in this phase.') -Workspace $ws
+        $r.ExitCode | Should -Be 0
+        $r.Json.reason | Should -Be 'no-figma-link'
+    }
+
+    It 'never records the links a dry run detected' {
+        $env:SPECIFY_FEATURE = '001-checkout'
+        Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', $link) -Workspace $ws | Out-Null
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', 'No link in this phase.') -Workspace $ws
+        $r.Json.reason | Should -Be 'no-figma-link'
+    }
+}
+
+# context-snapshot.json is a single slot: the snapshot of the CURRENT run, which
+# is the path every command prompt hands to the agent. One slot cannot CACHE
+# across features — two features pointing at different Figma files evict each
+# other, so the 'fresh' path never hits and every phase re-pays a full fetch.
+Describe 'figma-ensure-context.ps1 (per-file snapshot store)' {
+    BeforeEach {
+        Reset-FigmaEnvironment
+        $script:ws = New-TempWorkspace
+        Install-SectionTemplates $ws
+        Copy-Item (Join-Path $Fixtures 'singlerepo-valid.json') (Join-Path $ws 'figma.projects.config.json')
+        $script:store = Join-Path $ws '.figma/cache/snapshots'
+        New-Item -ItemType Directory -Force -Path $store | Out-Null
+        $script:link = 'https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345'
+    }
+
+    It 'restores a snapshot kept for the linked file instead of re-introspecting' {
+        # The current slot belongs to ANOTHER feature's file and does not cover
+        # this link — on its own that forces a re-introspection.
+        Set-Content (Join-Path $ws '.figma/cache/context-snapshot.json') '{"fileId":"OtherFILE","pages":[]}'
+        Set-Content (Join-Path $store 'LinkFILE999.json') '{"fileId":"LinkFILE999","pages":[{"id":"0:1","name":"Home","frames":[{"id":"12:345","name":"Hero","type":"FRAME"}]}],"nodes":{"nodes":{"12:345":{"document":{"type":"FRAME"}}}}}'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', $link) -Workspace $ws
+        $r.ExitCode | Should -Be 0
+        $r.Json.reason | Should -Be 'fresh'
+        # …and the restored snapshot became the current one, so the agent reads it.
+        (Get-Content (Join-Path $ws '.figma/cache/context-snapshot.json') -Raw | ConvertFrom-Json).fileId |
+            Should -Be 'LinkFILE999'
+    }
+
+    It 'does not restore a stored snapshot that misses the linked node' {
+        Set-Content (Join-Path $store 'LinkFILE999.json') '{"fileId":"LinkFILE999","pages":[],"nodes":{"nodes":{}}}'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', $link) -Workspace $ws
+        $r.Json.reason | Should -Be 'dry-run'
+    }
+
+    It 'does not restore a stored snapshot older than the max-age window' {
+        $stored = Join-Path $store 'LinkFILE999.json'
+        Set-Content $stored '{"fileId":"LinkFILE999","pages":[],"nodes":{"nodes":{"12:345":{"document":{"type":"FRAME"}}}}}'
+        (Get-Item -LiteralPath $stored).LastWriteTime = (Get-Date).AddDays(-30)
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', $link) -Workspace $ws
+        $r.Json.reason | Should -Be 'dry-run'
+    }
+}
+
+# .figma/cache/ is git-ignored, so the remembered links do NOT travel with the
+# branch: a teammate who pulls it, a fresh clone or a CI job reaches
+# /speckit.plan with the spec but no cache. Falling through to "no-figma-link"
+# there tells the agent to say NOTHING about Figma, so plan.md silently loses the
+# design section spec.md carries. spec.md itself is the fallback.
+Describe 'figma-ensure-context.ps1 (spec.md is the durable record of the link)' {
+    BeforeAll {
+        # Write a spec.md carrying an integrated Figma section for the feature.
+        function New-SpecWithSection {
+            param([string]$Workspace, [string]$Feature, [string]$Url)
+            $dir = Join-Path (Join-Path $Workspace 'specs') $Feature
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            @(
+                '# Checkout'
+                ''
+                '<!-- speckit-figma:section phase=spec -->'
+                '## Figma Design Context'
+                ''
+                '| URL | File | Node |'
+                '|-----|------|------|'
+                "| $Url | ``x`` | ``x`` |"
+            ) | Set-Content -LiteralPath (Join-Path $dir 'spec.md') -Encoding utf8
+        }
+    }
+
+    BeforeEach {
+        Reset-FigmaEnvironment
+        $script:ws = New-TempWorkspace
+        Install-SectionTemplates $ws
+        Copy-Item (Join-Path $Fixtures 'singlerepo-valid.json') (Join-Path $ws 'figma.projects.config.json')
+        $env:SPECIFY_FEATURE = '001-checkout'
+    }
+
+    It 'falls back to the link recorded in spec.md when the cache is gone' {
+        New-SpecWithSection $ws '001-checkout' 'https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', 'Draft the implementation plan.') -Workspace $ws
+        $r.ExitCode | Should -Be 0
+        $r.Json.reason | Should -Be 'dry-run'
+        ($r.Json.introspectArgs -join ' ') | Should -Be '--file LinkFILE999 --node 12:345'
+    }
+
+    It 'reads spec.md only when it carries the Figma section marker' {
+        # A figma.com URL merely mentioned in prose is not evidence that a design
+        # section was ever integrated; only the machine marker is.
+        $dir = Join-Path (Join-Path $ws 'specs') '001-checkout'
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        Set-Content (Join-Path $dir 'spec.md') 'See https://www.figma.com/design/LinkFILE999/X?node-id=12-345 for background.'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', 'Draft the plan.') -Workspace $ws
+        $r.Json.reason | Should -Be 'no-figma-link'
+    }
+
+    It 'never reads another feature''s spec.md as a link source' {
+        # The document is only evidence for the feature it belongs to. Falling
+        # back to "the single specs/*/spec.md" when nothing identifies the
+        # current feature would hand a design-less feature the previous one's
+        # creative — the very regression the link requirement exists to prevent.
+        Remove-Item Env:SPECIFY_FEATURE -ErrorAction SilentlyContinue
+        New-SpecWithSection $ws '001-checkout' 'https://www.figma.com/design/OtherFEATURE/Checkout?node-id=12-345'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', 'Add a Redis cache on the billing endpoint.') -Workspace $ws
+        $r.ExitCode | Should -Be 0
+        $r.Json.reason | Should -Be 'no-figma-link'
+    }
+
+    It 'never reads the checked-out branch''s spec.md for another feature' {
+        # SPECIFY_FEATURE identifies the feature; the branch only stands in when
+        # nothing else does. When the two diverge — a new feature started while
+        # the branch still carries the previous one's document —
+        # specs/<branch>/spec.md belongs to ANOTHER feature, so reading its
+        # links hands a design-less feature that feature's creative. The branch
+        # fallback must not outrank the -IdentifiedOnly rule.
+        $script:ws = Initialize-GitWorkspace $ws '002-checkout-redesign'
+        New-SpecWithSection $ws '002-checkout-redesign' 'https://www.figma.com/design/OtherFEATURE/Checkout?node-id=12-345'
+        $env:SPECIFY_FEATURE = '003-redis-cache'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', 'Add a Redis cache on the billing endpoint.') -Workspace $ws
+        $r.ExitCode | Should -Be 0
+        $r.Json.reason | Should -Be 'no-figma-link'
+    }
+
+    It 'still reads the branch''s spec.md for the feature the branch names' {
+        # The mirror image: with nothing else identifying the feature, the
+        # branch IS the feature, and its document must keep working.
+        $script:ws = Initialize-GitWorkspace $ws '002-checkout-redesign'
+        New-SpecWithSection $ws '002-checkout-redesign' 'https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345'
+        Remove-Item Env:SPECIFY_FEATURE -ErrorAction SilentlyContinue
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', 'Draft the implementation plan.') -Workspace $ws
+        $r.ExitCode | Should -Be 0
+        ($r.Json.introspectArgs -join ' ') | Should -Be '--file LinkFILE999 --node 12:345'
+    }
+
+    It 're-warms the per-feature cache with the link recovered from spec.md' {
+        New-SpecWithSection $ws '001-checkout' 'https://www.figma.com/design/LinkFILE999/Checkout?node-id=12-345'
+        Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', 'Draft the implementation plan.') -Workspace $ws | Out-Null
+        $cached = Join-Path $ws '.figma/cache/links/001-checkout.json'
+        Test-Path $cached | Should -BeTrue
+        @(Get-Content $cached -Raw | ConvertFrom-Json)[0].fileId | Should -Be 'LinkFILE999'
+    }
+
+    It 'still lets this phase''s input win over the link in spec.md' {
+        New-SpecWithSection $ws '001-checkout' 'https://www.figma.com/design/OldFILE111/Checkout?node-id=1-1'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input', 'Redo it from https://www.figma.com/design/NewFILE222/Checkout?node-id=9-9') -Workspace $ws
+        ($r.Json.introspectArgs -join ' ') | Should -Be '--file NewFILE222 --node 9:9'
+    }
+
+    It 'introspects both the viewed frame and the flow start of a prototype' {
+        # A prototype is a parcours: the frame the designer was on (node-id) and
+        # the entry point of the flow (starting-point-node-id) are both creatives
+        # the spec needs, and both come from the same batched nodes request.
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--dry-run', '--input',
+            'Build https://www.figma.com/proto/ProtoFILE1/Demo?node-id=12-345&starting-point-node-id=1%3A2') -Workspace $ws
+        $r.Json.reason | Should -Be 'dry-run'
+        # Both ids ride the same batched request, so their order carries no meaning.
+        $r.Json.introspectArgs | Should -Contain 'ProtoFILE1'
+        $r.Json.introspectArgs | Should -Contain '12:345'
+        $r.Json.introspectArgs | Should -Contain '1:2'
     }
 }
 

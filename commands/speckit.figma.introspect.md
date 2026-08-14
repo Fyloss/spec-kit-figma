@@ -249,7 +249,7 @@ regardless of the agent model. Do not hand-assemble it from scratch:
    `tasks`; on Windows `./.specify/scripts/powershell/figma-render-section.ps1`).
    It fills every deterministic placeholder from the snapshot (file,
    pages, top-level frames, components/styles, context engine, input links) and
-   writes `.figma/cache/section.<phase>.md`. The `ensure` hook already does this and
+   writes `.figma/cache/sections/<feature>/<phase>.md`. The `ensure` hook already does this and
    reports the path in `specSection` / `planSection` / `tasksSection`.
 2. **Paste that rendered block verbatim** into the generated document.
 3. **Complete the judgement fields** it leaves open (per-component placement +

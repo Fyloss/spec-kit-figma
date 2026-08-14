@@ -7,7 +7,7 @@
 # section and guarantees the FILE exists, but it cannot guarantee the agent
 # actually PASTED it into the generated spec.md / plan.md / tasks.md. This
 # verification runs AFTER generation and checks that — when a Figma mockup was
-# detected for the run (i.e. the rendered `.figma/cache/section.<phase>.md` exists) —
+# detected for the run (i.e. the rendered `.figma/cache/sections/<feature>/<phase>.md` exists) —
 # the corresponding document really contains the Figma section marker.
 #
 # Designed as a SAFE NO-OP by default: when Figma does not apply, the document
@@ -54,7 +54,6 @@ if (-not $strict) {
     if ($strictCfg -is [bool] -and $strictCfg) { $strict = $true }
 }
 
-$root = Get-FigmaRepoRoot
 $rendered = Get-FigmaSectionPath $phase
 # Phase-specific machine marker emitted by figma-render-section.ps1: decoupled
 # from the (translatable) heading text and able to detect a wrong-phase section.
@@ -83,37 +82,14 @@ function Emit-Status {
     })
 }
 
-# Resolve the SpecKit document for this phase when not given explicitly.
+# Resolve the SpecKit document for this phase when not given explicitly. The
+# layout rules (and the refusal to guess between several candidates, which under
+# --strict would gate CI on the WRONG feature's doc) live in Get-FigmaPhaseDoc.
 # Returns $true when $doc is set.
 function Resolve-Doc {
     if ($script:doc) { return $true }
-    $branch = ''
-    try {
-        $branch = git -C $root rev-parse --abbrev-ref HEAD 2>$null
-        if ($LASTEXITCODE -ne 0) { $branch = '' }
-    } catch { $branch = '' }
-    if ($branch) {
-        $cand = Join-Path $root 'specs' $branch "$phase.md"
-        if (Test-Path -LiteralPath $cand -PathType Leaf) { $script:doc = $cand; return $true }
-    }
-    # No branch-named feature dir: fall back ONLY when the choice is unambiguous —
-    # a single specs/*/<phase>.md. With several candidates, picking the most-recent
-    # one could verify (and, under --strict, gate CI on) the WRONG feature's doc,
-    # so refuse and ask for --doc instead.
-    $specsDir = Join-Path $root 'specs'
-    $matched = @()
-    if (Test-Path -LiteralPath $specsDir -PathType Container) {
-        $matched = @(Get-ChildItem -LiteralPath $specsDir -Directory |
-            ForEach-Object { Join-Path $_.FullName "$phase.md" } |
-            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
-    }
-    if ($matched.Count -eq 1) {
-        $script:doc = $matched[0]
-        return $true
-    } elseif ($matched.Count -gt 1) {
-        Write-FigmaStderr "WARN: $($matched.Count) candidate specs/*/$phase.md documents and branch '$branch' has no specs/$branch/$phase.md; pass --doc to disambiguate."
-    }
-    return $false
+    $script:doc = Get-FigmaPhaseDoc $phase
+    return [bool]$script:doc
 }
 
 # Not applicable: no rendered section => Figma did not apply to this run.

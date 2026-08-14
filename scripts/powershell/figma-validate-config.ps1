@@ -36,11 +36,17 @@ switch ($mode) {
 }
 
 # Per-target structural rules, mirroring the JSON schema's definitions/target:
-# 'enabled' (boolean) and 'role' (enum) are required, and every target must
-# declare at least one of figmaFileId / figmaProjectId / figmaTeamId / figmaTeamIds.
+# 'enabled' (boolean) is required, and every target must declare at least one of
+# figmaFileId / figmaProjectId / figmaTeamId / figmaTeamIds.
 # The schema (config/figma.projects.config.schema.json) stays the source of
 # truth; CI validates the examples against it, this script is the portable
 # runtime subset.
+#
+# 'role' is OPTIONAL and validated only when present. No script branches on it —
+# figma-detect-target copies it into its JSON and nothing reads it back — so
+# requiring it only rejected otherwise-usable configs. It stays an enum because a
+# value outside it is a typo, and it stays documented because it tells a human
+# what a target is.
 $roles = @('design-system', 'app-host', 'app', 'lib')
 $entries = @()
 if ($mode -eq 'multi-repo') {
@@ -61,9 +67,11 @@ foreach ($e in $entries) {
     if ($null -eq $enabledProp -or $enabledProp.Value -isnot [bool]) {
         $targetErrors += "$($e.name): missing required boolean field `"enabled`""
     }
-    $role = Get-JsonValue $t @('role')
-    if ($role -isnot [string] -or $roles -notcontains $role) {
-        $targetErrors += "$($e.name): `"role`" must be one of $($roles -join '/')"
+    if ($null -ne $t -and $null -ne $t.PSObject.Properties['role']) {
+        $role = Get-JsonValue $t @('role')
+        if ($role -isnot [string] -or $roles -notcontains $role) {
+            $targetErrors += "$($e.name): `"role`" must be one of $($roles -join '/')"
+        }
     }
     $hasAnyId = $false
     foreach ($idKey in @('figmaFileId', 'figmaProjectId', 'figmaTeamId', 'figmaTeamIds')) {

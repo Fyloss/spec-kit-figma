@@ -8,6 +8,17 @@
 # whether Figma applies to the run and re-introspects only when the snapshot
 # is missing or stale.
 #
+# WHAT MAKES FIGMA APPLY: a Figma link in the feature input, and nothing else.
+# A valid config with a mapped, enabled target is a precondition, not a trigger:
+# it says WHERE a creative would live, not WHETHER this feature has one. Without
+# a link the run ends at "no-figma-link" — no introspection, no rendered section,
+# mustInject=false — so a purely back-end feature never comes back with a Figma
+# design section stapled to its spec. The link is pasted once, at
+# /speckit.specify; it is then remembered per feature (see
+# Get-FigmaFeatureLinksPath) so /speckit.plan and /speckit.tasks inherit it, and
+# when that git-ignored cache is absent (fresh clone, CI, a teammate's checkout)
+# it is recovered from the committed spec.md.
+#
 # Designed as a SAFE NO-OP for generation flow: every configuration problem
 # (missing config, unresolved placeholders, excluded target, failed
 # introspection, ...) is reported as a skip reason with exit 0 so spec/tasks
@@ -27,6 +38,9 @@
 # config-derived scope, and a snapshot that does not cover the linked nodes is
 # treated as stale. Same contract as /speckit.figma.introspect section 0.
 # FIGMA_SNAPSHOT_MAX_AGE_MINUTES overrides the default freshness window (60).
+# Every real (non-dry) run also sweeps the cache once a day (Invoke-FigmaCacheGc):
+# FIGMA_CACHE_RETENTION_DAYS overrides the 7-day window, FIGMA_CACHE_GC=off
+# disables it, =force ignores the daily throttle.
 #
 # Prints a JSON status object on stdout:
 #   { "ran": true|false, "reason": "...", "code": "NETWORK|AUTH|NOT_FOUND|...|null",
@@ -39,9 +53,9 @@
 #     "specSection": "...", "planSection": "...", "tasksSection": "..." }
 # When mustInject=true the agent MUST paste the rendered <phase>Section file
 # verbatim into the generated document, then complete the judgement fields.
-# Reasons: introspected | fresh | dry-run | no-config | invalid-config |
-#   unresolved-placeholders | ambiguous-target | target-excluded |
-#   target-not-mapped | target-disabled | introspect-failed
+# Reasons: introspected | fresh | dry-run | no-figma-link | no-config |
+#   invalid-config | unresolved-placeholders | ambiguous-target |
+#   target-excluded | target-not-mapped | target-disabled | introspect-failed
 # =============================================================================
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/figma-common.ps1"
@@ -81,12 +95,25 @@ if ($maxAgeMin -notmatch '^[1-9][0-9]*$') {
 }
 $maxAgeMin = [int]$maxAgeMin
 
+# Housekeeping, placed BEFORE every early exit below so it runs on all kinds of
+# phase — including the design-less ones, which are exactly the runs that leave
+# orphaned keys behind. A dry run is a rehearsal and must leave no trace, so it
+# skips the sweep; the catch keeps a housekeeping failure from ever blocking a
+# hook whose contract is "never block, always answer".
+if (-not $dryRun) {
+    try { Invoke-FigmaCacheGc } catch { }
+}
+
 $config = Get-FigmaDefaultConfig
 $snapshotPath = Get-FigmaCachePath
 $introspectArgs = @()
 $links = @()          # parsed link objects
 $linkFile = ''
 $linkNodes = @()
+# True when the links were freshly resolved (this phase's input, or recovered
+# from spec.md) rather than read back from the per-feature cache — only those are
+# worth writing to it.
+$recordLinks = $false
 # Injection contract: filled once a usable snapshot exists (introspected|fresh).
 $mustInject = $false
 $linkScope = 'none'          # none | frame | broad
@@ -119,6 +146,19 @@ function Emit-Status { # $Ran (bool), $Reason
         tasksSection    = if ($script:tasksSection) { $script:tasksSection } else { $null }
         introspectArgs  = @($script:introspectArgs | ForEach-Object { [string]$_ })
     })
+}
+
+# Node ids to deep-fetch for $linkFile, from whichever source filled $links.
+# A prototype link contributes two: the frame that was being viewed and the
+# flow's starting point (startNodeId) — both are creatives, and both ride the
+# same batched /nodes request, so there is nothing to save by dropping one.
+function Get-LinkNodes {
+    @($script:links |
+        Where-Object { $_.fileId -eq $script:linkFile } |
+        ForEach-Object { $_.nodeId; $_.startNodeId } |
+        Where-Object { $null -ne $_ -and '' -ne $_ } |
+        ForEach-Object { [string]$_ } |
+        Sort-Object -Unique)
 }
 
 # Classify the directly-linked nodes against the snapshot and, for broad links
@@ -174,7 +214,7 @@ function Compute-LinkScope {
 
 # Stale rendered sections from a previous run must not outlive it: the verifier
 # (figma-verify-section.ps1) keys "Figma applied to this run" on the existence of
-# .figma/cache/section.<phase>.md. Clear-RenderedSections drops them so only THIS
+# .figma/cache/sections/<feature>/<phase>.md. Clear-RenderedSections drops them so only THIS
 # run's renders remain.
 #
 # It is called on the paths where Figma DEFINITIVELY does not apply (no/invalid
@@ -184,8 +224,11 @@ function Compute-LinkScope {
 # verifier would report "not-applicable" and let a --strict CI gate silently pass
 # for a run where Figma genuinely applies; leaving the prior render keeps the
 # gate honest (fail-closed, consistent with verify's own --strict policy).
+# Scoped to THIS feature: wiping every feature's renders would erase a design
+# feature's evidence whenever a design-less one runs (see Get-FigmaSectionPath).
 function Clear-RenderedSections {
-    Remove-Item -Path (Join-Path (Get-FigmaCacheDir) 'section.*.md') -Force -ErrorAction SilentlyContinue
+    $dir = Split-Path -Parent (Get-FigmaSectionPath 'spec')
+    Remove-Item -Path (Join-Path $dir '*.md') -Force -ErrorAction SilentlyContinue
 }
 
 # Render the ready-to-paste spec/plan/tasks sections from the fresh snapshot so
@@ -229,18 +272,30 @@ function Prepare-Injection {
     }
 }
 
-# True when the current snapshot already targets the linked file and contains
+# True when the given snapshot already targets the linked file and contains
 # every linked node — only then can a link-driven run be considered fresh.
 function Test-SnapshotCoversLinks {
+    param([string]$Path)
     if (-not $script:linkFile) { return $true }
     $snap = $null
-    try { $snap = Read-FigmaJsonFile $script:snapshotPath } catch { return $false }
+    try { $snap = Read-FigmaJsonFile $Path } catch { return $false }
     if ((Get-JsonValue $snap @('fileId')) -ne $script:linkFile) { return $false }
     foreach ($n in $script:linkNodes) {
         $nodesObj = Get-JsonValue $snap @('nodes', 'nodes')
         if ($null -eq $nodesObj -or $null -eq $nodesObj.PSObject.Properties[$n]) { return $false }
     }
     return $true
+}
+
+# Age-and-config half of the freshness test: the snapshot exists, is not older
+# than the config that shaped it, and is younger than the max-age window.
+function Test-SnapshotIsCurrent {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    $configTime = (Get-Item -LiteralPath $script:config).LastWriteTimeUtc
+    $snapshotTime = (Get-Item -LiteralPath $Path).LastWriteTimeUtc
+    $ageMinutes = ((Get-Date).ToUniversalTime() - $snapshotTime).TotalMinutes
+    return ($configTime -le $snapshotTime -and $ageMinutes -lt $script:maxAgeMin)
 }
 
 if (-not (Test-Path -LiteralPath $config -PathType Leaf)) {
@@ -315,50 +370,139 @@ if ($inputText) {
         if ($distinctFiles -gt 1) {
             Write-FigmaStderr "WARN: the input links reference $distinctFiles distinct Figma files; auto-introspecting the first ('$linkFile') — run /speckit.figma.introspect --file <id> for the others."
         }
-        $linkNodes = @($links |
-            Where-Object { $_.fileId -eq $linkFile -and $null -ne $_.nodeId } |
-            ForEach-Object { [string]$_.nodeId } |
-            Sort-Object -Unique)
+        $linkNodes = Get-LinkNodes
+        $recordLinks = $true
     }
+}
+
+# A Figma link in the feature input is what makes a run a design run. Without
+# one, the extension has nothing to ground itself in and MUST stay out of the
+# way: a valid config and a mapped target used to be enough to introspect and
+# force the design section into spec.md, so a feature like "add a Redis cache on
+# the billing endpoint" came back carrying a Figma section it had no business
+# carrying. The mapping describes WHERE a creative would live, not WHETHER this
+# feature has one; only the link answers that.
+#
+# The developer pastes the link once, at /speckit.specify. /speckit.plan and
+# /speckit.tasks receive a different input that no longer carries it, so the
+# links are remembered per feature and inherited by the later phases — otherwise
+# spec.md would carry the design section and plan.md would not.
+if (-not $linkFile) {
+    $linksFile = Get-FigmaFeatureLinksPath
+    if (Test-Path -LiteralPath $linksFile -PathType Leaf) {
+        # The contract is the JSON ROOT TYPE, not merely "does it parse": a
+        # hand-edited file holding a single object instead of a one-element array
+        # would otherwise feed a non-list value to the rest of the pipeline. It
+        # has to be read off the TEXT, because ConvertFrom-Json unrolls '[{...}]'
+        # into a bare object — the deserialized shape cannot tell the two apart.
+        # Mirrors the bash port's `jq 'select(type == "array" and length > 0)'`.
+        try {
+            $rawLinks = Get-Content -LiteralPath $linksFile -Raw
+            $remembered = if ($rawLinks -match '^\s*\[') { @($rawLinks | ConvertFrom-Json) } else { @() }
+        } catch { $remembered = @() }
+        if ($remembered.Count -gt 0) {
+            $linkFile = [string](Get-JsonValue $remembered[0] @('fileId') '')
+        }
+        # A truncated or hand-edited file must degrade to "no remembered links"
+        # rather than put a malformed entry in the status object's `links`.
+        if ($linkFile) {
+            $links = $remembered
+            $linkNodes = Get-LinkNodes
+            Write-FigmaStderr "INFO: no Figma link in this phase's input; reusing the link(s) recorded for feature '$(Get-FigmaFeatureKey)'."
+        }
+    }
+}
+
+# Last source: the spec.md an earlier phase already produced. The per-feature
+# cache above lives under .figma/cache/, which is git-ignored, so it does NOT
+# travel with the branch — a teammate who pulls it, a fresh clone or a CI job
+# reaches /speckit.plan with the spec but no cache. Falling through to
+# "no-figma-link" there is worse than doing nothing: the agent is instructed to
+# say NOTHING about Figma, so plan.md silently loses the design section spec.md
+# carries. The committed document is the durable record of the link.
+#
+# Two guards keep this from re-creating the regression it protects against.
+# -IdentifiedOnly: the document must be one the CURRENT feature owns — with
+# nothing identifying the feature, "the only spec around" belongs to another one,
+# and inheriting its creative is exactly the bug. The machine marker: a
+# figma.com URL merely mentioned in the prose of a spec is not a design section,
+# and must not become a trigger.
+if (-not $linkFile) {
+    $specDoc = Get-FigmaPhaseDoc 'spec' -IdentifiedOnly
+    if ($specDoc -and (Select-String -LiteralPath $specDoc -SimpleMatch -Pattern 'speckit-figma:section phase=spec' -Quiet)) {
+        $recoveredLines = @(& "$PSScriptRoot/figma-parse-links.ps1" (Get-Content -LiteralPath $specDoc -Raw))
+        if ($recoveredLines.Count -gt 0) {
+            $links = @($recoveredLines | ForEach-Object { $_ | ConvertFrom-Json })
+            $linkFile = [string](Get-JsonValue $links[0] @('fileId') '')
+            $linkNodes = Get-LinkNodes
+            # Re-warm the cache: recovered links are as authoritative as pasted ones.
+            $recordLinks = $true
+            Write-FigmaStderr "INFO: no Figma link in this phase's input and none cached for feature '$(Get-FigmaFeatureKey)'; recovered it from $(Split-Path -Leaf $specDoc)."
+        }
+    }
+}
+
+if (-not $linkFile) {
+    # Actionable on purpose. The document stays silent, so this line is the only
+    # place a forgotten link can still be caught — and it only works if it says
+    # what to do. Nothing downstream distinguishes a front-end feature whose
+    # author forgot the link from a back-end one that legitimately has none.
+    Write-FigmaStderr 'INFO: no Figma link in the feature input; proceeding without Figma context. If this feature does have a mockup, paste the Figma link into /speckit.specify and re-run — nothing further will flag the omission.'
+    Clear-RenderedSections
+    Emit-Status $false 'no-figma-link'
+    exit 0
+}
+
+# Remember this phase's links for the next one. A dry run is a rehearsal: it must
+# not leave state behind that changes what a later real run decides.
+if ($recordLinks -and -not $dryRun) {
+    $linksFile = Get-FigmaFeatureLinksPath
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $linksFile) | Out-Null
+    ConvertTo-FigmaJson @($links) | Set-Content -LiteralPath $linksFile -Encoding utf8
 }
 
 # Fresh = snapshot exists, is newer than the config, is younger than the
 # max-age window, and covers any directly-linked file/nodes from the input.
-if (Test-Path -LiteralPath $snapshotPath -PathType Leaf) {
-    $configTime = (Get-Item -LiteralPath $config).LastWriteTimeUtc
-    $snapshotTime = (Get-Item -LiteralPath $snapshotPath).LastWriteTimeUtc
-    $ageMinutes = ((Get-Date).ToUniversalTime() - $snapshotTime).TotalMinutes
-    if ($configTime -le $snapshotTime -and $ageMinutes -lt $maxAgeMin -and (Test-SnapshotCoversLinks)) {
-        # Figma applies and the snapshot is usable -> the section is mandatory; render it.
+if ((Test-SnapshotIsCurrent $snapshotPath) -and (Test-SnapshotCoversLinks $snapshotPath)) {
+    # Figma applies and the snapshot is usable -> the section is mandatory; render it.
+    Prepare-Injection
+    Emit-Status $false 'fresh'
+    exit 0
+}
+
+# The current slot holds another file's snapshot -- but the per-file store may
+# already hold a usable one for THIS link. Without this lookup, alternating
+# between two features that target different Figma files re-introspects on every
+# single phase, because each run evicts the other's snapshot from the one slot.
+$storedSnapshot = Get-FigmaSnapshotStorePath $linkFile
+if ($storedSnapshot -and $storedSnapshot -ne $snapshotPath `
+    -and (Test-SnapshotIsCurrent $storedSnapshot) -and (Test-SnapshotCoversLinks $storedSnapshot)) {
+    # Publish it as the current one: every command prompt hands the agent the
+    # well-known path, so restoring has to happen there and not only in memory.
+    try {
+        Copy-Item -LiteralPath $storedSnapshot -Destination $snapshotPath -Force
+        Write-FigmaStderr "INFO: reused the cached snapshot of file '$linkFile'; no re-introspection needed."
         Prepare-Injection
         Emit-Status $false 'fresh'
         exit 0
+    } catch {
+        Write-FigmaStderr "WARN: could not restore the cached snapshot of '$linkFile'; re-introspecting."
     }
 }
 
-if ($linkFile) {
-    # Link-driven scope: introspect the linked file and drill into each linked
-    # node so the snapshot carries frame-level detail (fills, typography, layout).
-    $introspectArgs += @('--file', $linkFile)
-    foreach ($nodeId in $linkNodes) {
-        $introspectArgs += @('--node', $nodeId)
-    }
-    $configFileId = [string](Get-JsonValue $detect @('figmaFileId') '')
-    if ($configFileId -and $configFileId -ne $linkFile) {
-        Write-FigmaStderr "INFO: direct Figma link overrides the mapped file '$configFileId' for this run."
-    }
-} else {
-    # Derive the introspection scope from the detected target (team > project >
-    # file, same precedence as /speckit.figma.introspect).
-    foreach ($teamId in @(Get-JsonValue $detect @('figmaTeamIds') @())) {
-        $introspectArgs += @('--team', [string]$teamId)
-    }
-    $teamId = [string](Get-JsonValue $detect @('figmaTeamId') '')
-    if ($teamId) { $introspectArgs += @('--team', $teamId) }
-    $projectId = [string](Get-JsonValue $detect @('figmaProjectId') '')
-    if ($projectId) { $introspectArgs += @('--project', $projectId) }
-    $fileId = [string](Get-JsonValue $detect @('figmaFileId') '')
-    if ($fileId) { $introspectArgs += @('--file', $fileId) }
+# Link-driven scope, and the only one: introspect the linked file and drill into
+# each linked node so the snapshot carries frame-level detail (fills, typography,
+# layout). Reaching here means $linkFile is set — the no-link path returned
+# above — so the config mapping no longer derives a scope of its own. It still
+# decides whether the target participates at all (the target-* skips above), and
+# /speckit.figma.introspect remains the way to introspect a mapped team/project.
+$introspectArgs += @('--file', $linkFile)
+foreach ($nodeId in $linkNodes) {
+    $introspectArgs += @('--node', $nodeId)
+}
+$configFileId = [string](Get-JsonValue $detect @('figmaFileId') '')
+if ($configFileId -and $configFileId -ne $linkFile) {
+    Write-FigmaStderr "INFO: direct Figma link overrides the mapped file '$configFileId' for this run."
 }
 
 if ($dryRun) {

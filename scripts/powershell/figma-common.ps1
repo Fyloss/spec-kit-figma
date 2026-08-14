@@ -17,6 +17,7 @@
 #   figma_cache_dir            -> Get-FigmaCacheDir (.figma/cache/)
 #   figma_cache_path           -> Get-FigmaCachePath (snapshot cache path)
 #   figma_section_path <phase> -> Get-FigmaSectionPath (rendered-section path)
+#   figma_gc_cache             -> Invoke-FigmaCacheGc (collects orphaned cache entries)
 # Dependencies: PowerShell 7+, git
 # =============================================================================
 # NOTE: This file is meant to be dot-sourced; do not change global preferences here.
@@ -79,10 +80,252 @@ function Get-FigmaCacheDir { Join-Path (Get-FigmaStateDir) 'cache' }
 
 function Get-FigmaCachePath { Join-Path (Get-FigmaCacheDir) 'context-snapshot.json' }
 
-# Path of the rendered, ready-to-paste section for a phase (spec|plan|tasks).
+# Per-file snapshot store. Get-FigmaCachePath above is a single slot: the
+# snapshot of the CURRENT run, and the well-known path every command prompt hands
+# to the agent. One slot is enough to PUBLISH a snapshot but not to CACHE one —
+# two features pointing at different Figma files evict each other, so the "fresh"
+# path never hits and every phase re-pays a full file + nodes fetch. Keyed by
+# file, snapshots survive that alternation; the current slot is a copy of
+# whichever one this run resolved. Returns $null when the key cannot name a file.
+function Get-FigmaSnapshotStorePath {
+    param([string]$FileId)
+    if (-not $FileId) { return $null }
+    # Figma file keys are [A-Za-z0-9_-], but the value reaches us from a URL or a
+    # config field: squeeze anything else so it can never escape the directory.
+    $key = ($FileId -replace '[^A-Za-z0-9._-]', '-')
+    if ($key.Length -gt 100) { $key = $key.Substring(0, 100) }
+    if (-not $key -or $key -match '^\.+$') { return $null }
+    return Join-Path (Join-Path (Get-FigmaCacheDir) 'snapshots') "$key.json"
+}
+
+# Path of the rendered, ready-to-paste section for a phase (spec|plan|tasks),
+# scoped to the current feature.
+#
+# The scoping is load-bearing, not tidiness. figma-verify-section decides
+# "Figma applied to this run" from the EXISTENCE of this file, while resolving a
+# per-feature document — so while every feature shared one slot, a design-less
+# feature erased the renders of a design one, and that feature's after-hook then
+# reported not-applicable. A --strict CI gate passed for a document genuinely
+# missing its design section: fail-open, which is exactly what the gate exists to
+# prevent.
 function Get-FigmaSectionPath {
     param([string]$Phase)
-    Join-Path (Get-FigmaCacheDir) "section.$Phase.md"
+    Join-Path (Join-Path (Join-Path (Get-FigmaCacheDir) 'sections') (Get-FigmaFeatureKey)) "$Phase.md"
+}
+
+# Identity of the feature being worked on, used to scope the remembered design
+# links. Precedence mirrors SpecKit's own resolution: SPECIFY_FEATURE, then
+# .specify/feature.json's feature_directory, then the git branch. Returns
+# 'default' when nothing identifies a feature.
+#
+# Scoping is the whole point: the links are remembered so /speckit.plan and
+# /speckit.tasks inherit what /speckit.specify detected, and a single shared file
+# would make the NEXT feature inherit them too — reinstating the very problem
+# (a design section forced onto a feature that has no mockup) the link
+# requirement exists to prevent.
+function Get-FigmaFeatureKey {
+    $key = $env:SPECIFY_FEATURE
+    if (-not $key) {
+        $featureJson = Join-Path (Get-FigmaRepoRoot) '.specify/feature.json'
+        if (Test-Path -LiteralPath $featureJson -PathType Leaf) {
+            try {
+                $key = [string](Read-FigmaJsonFile $featureJson).feature_directory
+                $key = ($key.TrimEnd('/', '\') -split '[/\\]')[-1]
+            } catch { $key = '' }
+        }
+    }
+    if (-not $key) {
+        $branch = git rev-parse --abbrev-ref HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and $branch -and $branch -ne 'HEAD') {
+            $key = ($branch | Select-Object -First 1)
+        }
+    }
+    if (-not $key) { return 'default' }
+    # Squeeze to a safe, bounded filename: the value reaches us from an env var,
+    # a JSON field or a branch name, any of which may carry '/' or '..'. Mapping
+    # every other character to '-' makes traversal impossible; a key left as only
+    # dots ('.', '..') would still name a directory entry we must not write.
+    $key = ($key -replace '[^A-Za-z0-9._-]', '-')
+    if ($key.Length -gt 100) { $key = $key.Substring(0, 100) }
+    if (-not $key -or $key -match '^\.+$') { return 'default' }
+    return $key
+}
+
+# Where the Figma links detected in the feature input are remembered, per
+# feature, so later phases inherit them without the developer re-pasting.
+function Get-FigmaFeatureLinksPath {
+    Join-Path (Join-Path (Get-FigmaCacheDir) 'links') "$(Get-FigmaFeatureKey).json"
+}
+
+# True when a cache key still names something: the feature this very run is
+# working on, or a SpecKit feature directory. specs/<key>/ is committed and
+# outlives the branch that produced it, which is what makes it the durable
+# ownership signal — a merged feature keeps its entry, an ad-hoc branch that
+# never became a feature does not.
+function Test-FigmaGcKeyIsLive {
+    param([string]$Key, [string]$CurrentKey, [string]$RepoRoot)
+    if ($Key -eq $CurrentKey) { return $true }
+    return (Test-Path -LiteralPath (Join-Path (Join-Path $RepoRoot 'specs') $Key) -PathType Container)
+}
+
+# Reclaim cache entries whose owner is gone. .figma/cache/ only ever grew: every
+# branch that ran a phase left a links/<key>.json and a sections/<key>/, and every
+# Figma file ever linked left a snapshots/<file>.json. Disk is not the problem (a
+# links file is a few hundred bytes) — key REUSE is. A key derives from a branch
+# name, so a new feature on a recycled name inherits the previous one's remembered
+# links, which is precisely the "design section forced onto a feature that has no
+# mockup" regression the link requirement exists to prevent.
+#
+# The policy is ownership first, age second: an entry is collected only when BOTH
+# say it is garbage.
+#   * Ownership — a key with a specs/<key>/ directory is a real feature and is
+#     kept indefinitely. Collecting a live feature's sections/<key>/ would be
+#     unsafe on top of wasteful: figma-verify-section reads "Figma applied to this
+#     run" from the existence of those files, so deleting them turns a --strict CI
+#     gate fail-open (the very failure Get-FigmaSectionPath's scoping fixed). What
+#     has no such directory is the garbage: ad-hoc branches, and the 'default' key
+#     of a detached HEAD.
+#   * Age — nothing is collected before FIGMA_CACHE_RETENTION_DAYS (7) of
+#     inactivity, so a feature whose specs/ directory does not exist YET — the
+#     /speckit.specify run that is about to create it — is never collected
+#     mid-flight.
+# The CURRENT feature is exempt from both: a run must never collect the state it
+# is itself about to read.
+#
+# Snapshots are keyed by Figma file, not by feature, so they have no owner to
+# check: they are pure caches of remote data and go on age alone. Their window is
+# never shorter than the freshness window, so a snapshot that a run could still
+# restore is never taken from under it.
+#
+# Throttled to once a day through .gc-stamp, since this runs inside a hook on
+# every phase. FIGMA_CACHE_GC=off disables it entirely, =force ignores the
+# throttle. Best-effort by design: nothing here is allowed to be the reason a
+# hook blocks generation, so every failure is swallowed.
+function Invoke-FigmaCacheGc {
+    $mode = if ($env:FIGMA_CACHE_GC) { $env:FIGMA_CACHE_GC } else { 'auto' }
+    if ($mode -eq 'off') { return }
+    $cache = Get-FigmaCacheDir
+    if (-not (Test-Path -LiteralPath $cache -PathType Container)) { return }
+
+    $days = 7
+    if ($env:FIGMA_CACHE_RETENTION_DAYS -match '^[1-9][0-9]*$') {
+        $days = [int]$env:FIGMA_CACHE_RETENTION_DAYS
+    }
+    $now = Get-Date
+    $cutoff = $now.AddDays(-$days)
+
+    # -Force throughout: a dot-prefixed name is a HIDDEN file, and both Get-Item
+    # and Set-Content skip hidden files without it — silently, which would leave
+    # the throttle permanently un-armed and sweep on every single phase.
+    $stamp = Join-Path $cache '.gc-stamp'
+    if ($mode -ne 'force' -and (Test-Path -LiteralPath $stamp -PathType Leaf)) {
+        $last = (Get-Item -LiteralPath $stamp -Force -ErrorAction SilentlyContinue).LastWriteTime
+        if ($last -and $last -gt $now.AddDays(-1)) { return }
+    }
+    # Stamped BEFORE the sweep: a sweep that dies halfway must not make every
+    # subsequent run retry it.
+    try { Set-Content -LiteralPath $stamp -Value '' -NoNewline -Force -ErrorAction Stop } catch { }
+
+    $root = Get-FigmaRepoRoot
+    $current = Get-FigmaFeatureKey
+    $removed = 0
+
+    foreach ($entry in @(Get-ChildItem -LiteralPath (Join-Path $cache 'links') -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+        if (Test-FigmaGcKeyIsLive $entry.BaseName $current $root) { continue }
+        if ($entry.LastWriteTime -ge $cutoff) { continue }
+        try { Remove-Item -LiteralPath $entry.FullName -Force -ErrorAction Stop; $removed++ } catch { }
+    }
+
+    foreach ($entry in @(Get-ChildItem -LiteralPath (Join-Path $cache 'sections') -Directory -ErrorAction SilentlyContinue)) {
+        if (Test-FigmaGcKeyIsLive $entry.Name $current $root) { continue }
+        # A directory's own mtime only moves when an entry is added or removed, so
+        # the renders decide: any one of them touched inside the window keeps the
+        # whole directory.
+        $renders = @(Get-ChildItem -LiteralPath $entry.FullName -Filter '*.md' -File -ErrorAction SilentlyContinue)
+        if ($renders | Where-Object { $_.LastWriteTime -ge $cutoff }) { continue }
+        # The renders, then the directory once it is empty — never a recursive
+        # delete of a path assembled from a key, and never a file this extension
+        # did not write.
+        foreach ($render in $renders) {
+            Remove-Item -LiteralPath $render.FullName -Force -ErrorAction SilentlyContinue
+        }
+        try {
+            if (-not @(Get-ChildItem -LiteralPath $entry.FullName -Force -ErrorAction SilentlyContinue)) {
+                Remove-Item -LiteralPath $entry.FullName -Force -ErrorAction Stop
+                $removed++
+            }
+        } catch { }
+    }
+
+    # Past the freshness window a stored snapshot is dead weight: Test-SnapshotIsCurrent
+    # would reject it anyway. It is still kept for the whole retention window (the
+    # window is a floor, not the policy), and never dropped below a caller's own —
+    # possibly much longer — freshness window.
+    $snapCutoff = $cutoff
+    if ($env:FIGMA_SNAPSHOT_MAX_AGE_MINUTES -match '^[1-9][0-9]*$') {
+        $byWindow = $now.AddMinutes(-[int]$env:FIGMA_SNAPSHOT_MAX_AGE_MINUTES)
+        if ($byWindow -lt $snapCutoff) { $snapCutoff = $byWindow }
+    }
+    foreach ($entry in @(Get-ChildItem -LiteralPath (Join-Path $cache 'snapshots') -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+        if ($entry.LastWriteTime -ge $snapCutoff) { continue }
+        try { Remove-Item -LiteralPath $entry.FullName -Force -ErrorAction Stop; $removed++ } catch { }
+    }
+
+    if ($removed -gt 0) {
+        $noun = if ($removed -eq 1) { 'entry' } else { 'entries' }
+        Write-FigmaStderr "INFO: cache housekeeping reclaimed $removed stale $noun under .figma/cache/ (features with no specs/ directory, unused snapshots). Set FIGMA_CACHE_RETENTION_DAYS to change the $days-day window, FIGMA_CACHE_GC=off to disable."
+    }
+}
+
+# Locate the SpecKit document of a phase (spec|plan|tasks) in the standard
+# layout. Precedence: specs/<feature-key>/<phase>.md (honours SPECIFY_FEATURE and
+# .specify/feature.json, not just the branch), then specs/<branch>/<phase>.md,
+# then the single specs/*/<phase>.md when there is exactly one.
+#
+# With SEVERAL candidates and no feature identity the target is genuinely
+# ambiguous, so this returns $null rather than picking the most recent: callers
+# verify (and gate CI on) or read design links from the document, and both are
+# wrong on the wrong feature's file.
+#
+# -IdentifiedOnly drops BOTH guesses — the branch and the last-resort single
+# candidate — so ONLY a document the current feature positively owns is returned.
+# A caller that READS design context out of the document needs that: "the
+# branch's spec" and "the only spec around" both belong to some OTHER feature
+# whenever they differ from the feature key, and inheriting their creative
+# re-creates the regression the link requirement exists to prevent. A caller that
+# merely verifies a document generated by this very run can afford the looser
+# rule (its failure mode is a warning, not a silent injection).
+function Get-FigmaPhaseDoc {
+    param([Parameter(Mandatory)][string]$Phase, [switch]$IdentifiedOnly)
+    $root = Get-FigmaRepoRoot
+    $candidate = Join-Path $root 'specs' (Get-FigmaFeatureKey) "$Phase.md"
+    if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    # Everything below is a guess, so it is gated. The branch is already the LAST
+    # resort inside Get-FigmaFeatureKey: it can only disagree with the key
+    # resolved above when SPECIFY_FEATURE or .specify/feature.json named another
+    # feature — which makes specs/<branch>/ that other feature's directory.
+    if ($IdentifiedOnly) { return $null }
+    $branch = ''
+    try {
+        $branch = git -C $root rev-parse --abbrev-ref HEAD 2>$null
+        if ($LASTEXITCODE -ne 0) { $branch = '' }
+    } catch { $branch = '' }
+    if ($branch) {
+        $candidate = Join-Path $root 'specs' $branch "$Phase.md"
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+    $specsDir = Join-Path $root 'specs'
+    $matched = @()
+    if (Test-Path -LiteralPath $specsDir -PathType Container) {
+        $matched = @(Get-ChildItem -LiteralPath $specsDir -Directory |
+            ForEach-Object { Join-Path $_.FullName "$Phase.md" } |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
+    }
+    if ($matched.Count -eq 1) { return $matched[0] }
+    if ($matched.Count -gt 1) {
+        Write-FigmaStderr "WARN: $($matched.Count) candidate specs/*/$Phase.md documents and no feature identity resolves one of them; name the document explicitly."
+    }
+    return $null
 }
 
 # Canonical form of a Figma node id, as expected by the REST API and by every

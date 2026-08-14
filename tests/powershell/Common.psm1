@@ -18,7 +18,8 @@ function Get-FixturesDir { $script:FixturesDir }
 function Reset-FigmaEnvironment {
     foreach ($name in @('FIGMA_PAT', 'FIGMA_PAT_COMMAND', 'FIGMA_CONFIG', 'FIGMA_API_BASE',
             'FIGMA_DIAG_FILE', 'FIGMA_API_MAX_ATTEMPTS', 'FIGMA_API_RETRY_DELAY',
-            'FIGMA_SNAPSHOT_MAX_AGE_MINUTES', 'CLAUDECODE', 'AI_AGENT')) {
+            'FIGMA_SNAPSHOT_MAX_AGE_MINUTES', 'FIGMA_CACHE_GC', 'FIGMA_CACHE_RETENTION_DAYS',
+            'CLAUDECODE', 'AI_AGENT', 'SPECIFY_FEATURE')) {
         Remove-Item "Env:$name" -ErrorAction SilentlyContinue
     }
     $env:FIGMA_NO_PLUGIN_ADVICE = '1'
@@ -31,6 +32,19 @@ function New-TempWorkspace {
     $dir = Join-Path ([System.IO.Path]::GetTempPath()) "figma-pester-$([System.IO.Path]::GetRandomFileName())"
     $null = New-Item -ItemType Directory -Force -Path (Join-Path $dir '.figma/cache')
     return (Resolve-Path $dir).Path
+}
+
+# Turn a workspace into a git repository checked out on a given branch, so a
+# test can exercise the branch-derived paths. An empty commit is needed because
+# `git rev-parse --abbrev-ref HEAD` prints "HEAD" (and fails) on an unborn
+# branch. Returns the root as git reports it: on macOS git resolves /var/... to
+# its real /private/var/... path, and so do the scripts.
+function Initialize-GitWorkspace {
+    param([Parameter(Mandatory)][string]$Workspace, [Parameter(Mandatory)][string]$Branch)
+    git init -q -b $Branch $Workspace | Out-Null
+    git -C $Workspace -c user.email=test@example.com -c user.name=Test `
+        -c commit.gpgsign=false commit -q --allow-empty -m 'init' | Out-Null
+    return (git -C $Workspace rev-parse --show-toplevel)
 }
 
 # Run one of the scripts under test from inside a workspace directory, capturing
@@ -108,6 +122,71 @@ function Install-SectionTemplates {
         Copy-Item -Destination $dest
 }
 
+# Path of the rendered section for the feature the test is acting as — mirrors
+# Get-FigmaSectionPath, which scopes renders per feature so a design-less feature
+# cannot wipe a design one's. Falls back to "default" exactly as the helper does
+# when nothing identifies a feature (the temp workspace is not a git repo).
+function Get-SectionPath {
+    param([string]$Workspace, [string]$Phase)
+    $key = if ($env:SPECIFY_FEATURE) { $env:SPECIFY_FEATURE } else { 'default' }
+    Join-Path (Join-Path (Join-Path $Workspace '.figma/cache/sections') $key) "$Phase.md"
+}
+
+# Stage a fake rendered section, creating the per-feature directory the real
+# renderer would have created.
+function Set-FakeSection {
+    param([string]$Workspace, [string]$Phase, [string]$Content = 'stale')
+    $path = Get-SectionPath $Workspace $Phase
+    $null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path)
+    Set-Content -LiteralPath $path -Value $Content
+    return $path
+}
+
+# Set a file's mtime N minutes in the past — mirrors backdate_file in the bats
+# helpers, so the cache-housekeeping tests can age an entry past its window.
+function Set-FigmaFileAge {
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][int]$Minutes)
+    (Get-Item -LiteralPath $Path).LastWriteTime = (Get-Date).AddMinutes(-$Minutes)
+}
+
+# Stage a remembered-links file for an arbitrary feature key (Set-FakeSection
+# covers the current one), optionally aged past the retention window.
+function Set-FakeLinksEntry {
+    param([Parameter(Mandatory)][string]$Workspace, [Parameter(Mandatory)][string]$Key,
+        [int]$AgeMinutes = 0)
+    $dir = Join-Path $Workspace '.figma/cache/links'
+    $null = New-Item -ItemType Directory -Force -Path $dir
+    $path = Join-Path $dir "$Key.json"
+    Set-Content -LiteralPath $path -Value '[{"fileId":"F1","nodeId":"1:2"}]'
+    if ($AgeMinutes -gt 0) { Set-FigmaFileAge -Path $path -Minutes $AgeMinutes }
+    return $path
+}
+
+# Same, for a rendered section belonging to an arbitrary feature key.
+function Set-FakeSectionFor {
+    param([Parameter(Mandatory)][string]$Workspace, [Parameter(Mandatory)][string]$Key,
+        [string]$Phase = 'spec', [int]$AgeMinutes = 0)
+    $dir = Join-Path (Join-Path $Workspace '.figma/cache/sections') $Key
+    $null = New-Item -ItemType Directory -Force -Path $dir
+    $path = Join-Path $dir "$Phase.md"
+    Set-Content -LiteralPath $path -Value 'rendered'
+    if ($AgeMinutes -gt 0) { Set-FigmaFileAge -Path $path -Minutes $AgeMinutes }
+    return $path
+}
+
+# Same, for a per-file snapshot in the store.
+function Set-FakeStoredSnapshot {
+    param([Parameter(Mandatory)][string]$Workspace, [Parameter(Mandatory)][string]$FileId,
+        [int]$AgeMinutes = 0)
+    $dir = Join-Path $Workspace '.figma/cache/snapshots'
+    $null = New-Item -ItemType Directory -Force -Path $dir
+    $path = Join-Path $dir "$FileId.json"
+    Set-Content -LiteralPath $path -Value "{`"fileId`":`"$FileId`",`"pages`":[]}"
+    if ($AgeMinutes -gt 0) { Set-FigmaFileAge -Path $path -Minutes $AgeMinutes }
+    return $path
+}
+
 Export-ModuleMember -Function Get-RepoRoot, Get-ScriptsDir, Get-FixturesDir,
-    Reset-FigmaEnvironment, New-TempWorkspace, Invoke-FigmaScript,
-    Write-FakeSnapshot, Install-SectionTemplates
+    Reset-FigmaEnvironment, New-TempWorkspace, Initialize-GitWorkspace, Invoke-FigmaScript,
+    Write-FakeSnapshot, Install-SectionTemplates, Get-SectionPath, Set-FakeSection,
+    Set-FigmaFileAge, Set-FakeLinksEntry, Set-FakeSectionFor, Set-FakeStoredSnapshot

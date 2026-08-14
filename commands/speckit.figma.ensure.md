@@ -39,6 +39,17 @@ script skips harmlessly when the extension is not configured, the target is
 excluded, or `.figma/cache/context-snapshot.json` is already fresh and covers the
 linked nodes.
 
+**A Figma link is what makes a run a design run.** No link in the input means
+`"reason": "no-figma-link"` and `"mustInject": false` — nothing to introspect,
+nothing to paste (see section 4). Pass the input **verbatim**: swallowing or
+paraphrasing the developer's link is what turns a design feature into a
+link-less one. The link is pasted once, at `/speckit.specify`; the script
+remembers it for the feature, so `/speckit.plan` and `/speckit.tasks` inherit it
+without the developer re-pasting. That memory is a git-ignored cache, so when it
+is missing (fresh clone, CI, a teammate's checkout) the script reads the link
+back from the committed `spec.md` — which is why the section marker pasted into
+`spec.md` must never be stripped.
+
 ## 2. Integrate the rendered section — MANDATORY when `mustInject` is true
 
 When the status JSON has `"mustInject": true` (it is, for `"ran": true` and for
@@ -99,10 +110,38 @@ When `"linkScope": "frame"`, the creative is already pinned: proceed directly.
 
 ## 4. Other skip reasons
 
-For any other `reason` (`no-config`, `unresolved-placeholders`, `target-excluded`,
-`target-not-mapped`, `target-disabled`, `ambiguous-target`, `invalid-config`,
-`dry-run`) — proceed without Figma context and add a short note mentioning the
-reason. Never block generation.
+For any other `reason` (`no-config`, `unresolved-placeholders`,
+`target-excluded`, `target-not-mapped`, `target-disabled`, `ambiguous-target`,
+`invalid-config`, `dry-run`) — proceed without Figma context and add a short note
+mentioning the reason. Never block generation.
+
+`no-figma-link` is the one exception, and it overrides that rule: it adds
+**nothing at all** to the document, not even a note naming the reason. See the
+next section.
+
+### `no-figma-link` — the feature has no mockup; add NOTHING to the document
+
+This is the normal outcome for every feature that is not driven by a creative (a
+back-end endpoint, a refactor, a CI fix). Say nothing about Figma in the
+generated document: no design section, no placeholder, no "no mockup was
+provided" note. A config that maps this target to a Figma file does **not**
+change that — the mapping says where a creative would live, not whether this
+feature has one.
+
+**The document and your chat reply are not the same surface.** "Add NOTHING"
+scopes to the document. In your chat reply, state the fact once, in a single
+plain sentence — e.g. *"No Figma link detected; the spec was generated without
+design context."* Nothing distinguishes a front-end feature whose author simply
+forgot to paste the link from a back-end one that legitimately has none, and the
+document is deliberately silent, so this sentence is the only signal the
+developer can still act on while the run is fresh.
+
+State it; do not turn it into a question. Do not ask the developer for a link, do
+not block, do not offer to wait, and do not go looking for one with a Figma MCP
+tool. If they meant to attach a mockup they will paste the link and re-run. The
+one case that deserves more than a sentence is seeing a link in their message
+while the status says `no-figma-link`: that means the input was not forwarded
+verbatim to the script — re-run it with the raw text.
 
 ### `missing-dependency` — the deterministic path is gone; do NOT improvise ids
 

@@ -18,7 +18,7 @@
 #     [--config <path>] [--snapshot <path>]
 #     [--links <json-array>] [--candidate-frames <json-array>] [--out <path>]
 #
-# Output: writes <root>/.figma/cache/section.<phase>.md (git-ignored) and prints its
+# Output: writes <root>/.figma/cache/sections/<feature>/<phase>.md (git-ignored) and prints its
 # path on stdout. Templates are resolved from the workspace
 # (<root>/.specify/templates/) first, then the extension checkout
 # (<script>/../../templates/).
@@ -150,7 +150,9 @@ LINKS_TABLE="$(echo "$LINKS_JSON" | jq -r '
   def esc: (. // "—") | tostring | gsub("[|]"; "\\|") | gsub("[\n\r]+"; " ");
   if (length == 0) then "_None — context derived from the page mapping._"
   else "| URL | File | Node |\n|-----|------|------|\n"
-       + ( [ .[] | "| \(.url | esc) | `\(.fileId)` | `\(.nodeId // "—")` |" ] | join("\n") )
+       # A prototype link with no node-id is still pinned, by its flow starting
+       # point: reporting "—" there would understate what was introspected.
+       + ( [ .[] | "| \(.url | esc) | `\(.fileId)` | `\(.nodeId // .startNodeId // "—")` |" ] | join("\n") )
   end')"
 
 CANDIDATE_TABLE="$(echo "$CANDIDATE_FRAMES_JSON" | jq -r '

@@ -8,6 +8,17 @@
 # whether Figma applies to the run and re-introspects only when the snapshot
 # is missing or stale.
 #
+# WHAT MAKES FIGMA APPLY: a Figma link in the feature input, and nothing else.
+# A valid config with a mapped, enabled target is a precondition, not a trigger:
+# it says WHERE a creative would live, not WHETHER this feature has one. Without
+# a link the run ends at "no-figma-link" — no introspection, no rendered section,
+# mustInject=false — so a purely back-end feature never comes back with a Figma
+# design section stapled to its spec. The link is pasted once, at
+# /speckit.specify; it is then remembered per feature (see
+# figma_feature_links_path) so /speckit.plan and /speckit.tasks inherit it, and
+# when that git-ignored cache is absent (fresh clone, CI, a teammate's checkout)
+# it is recovered from the committed spec.md.
+#
 # Designed as a SAFE NO-OP for generation flow: every configuration problem
 # (missing config, unresolved placeholders, excluded target, failed
 # introspection, ...) is reported as a skip reason with exit 0 so spec/tasks
@@ -28,6 +39,9 @@
 # treated as stale. Same contract as /speckit.figma.introspect section 0, so
 # no manual introspection run is ever needed for pasted links.
 # FIGMA_SNAPSHOT_MAX_AGE_MINUTES overrides the default freshness window (60).
+# Every real (non-dry) run also sweeps the cache once a day (figma_gc_cache):
+# FIGMA_CACHE_RETENTION_DAYS overrides the 7-day window, FIGMA_CACHE_GC=off
+# disables it, =force ignores the daily throttle.
 #
 # Prints a JSON status object on stdout:
 #   { "ran": true|false, "reason": "...", "code": "NETWORK|AUTH|NOT_FOUND|...|null",
@@ -40,9 +54,10 @@
 #     "specSection": "...", "planSection": "...", "tasksSection": "..." }
 # When mustInject=true the agent MUST paste the rendered <phase>Section file
 # verbatim into the generated document, then complete the judgement fields.
-# Reasons: introspected | fresh | dry-run | no-config | invalid-config |
-#   unresolved-placeholders | ambiguous-target | target-excluded |
-#   target-not-mapped | target-disabled | introspect-failed | missing-dependency
+# Reasons: introspected | fresh | dry-run | no-figma-link | no-config |
+#   invalid-config | unresolved-placeholders | ambiguous-target |
+#   target-excluded | target-not-mapped | target-disabled | introspect-failed |
+#   missing-dependency
 # =============================================================================
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -85,12 +100,25 @@ if [[ ! "$MAX_AGE_MIN" =~ ^[1-9][0-9]*$ ]]; then
   exit 1
 fi
 
+# Housekeeping, placed BEFORE every early exit below so it runs on all kinds of
+# phase — including the design-less ones, which are exactly the runs that leave
+# orphaned keys behind. A dry run is a rehearsal and must leave no trace, so it
+# skips the sweep; `|| true` keeps a housekeeping failure from ever blocking a
+# hook whose contract is "never block, always answer".
+if [[ "$DRY_RUN" != "true" ]]; then
+  figma_gc_cache || true
+fi
+
 CONFIG="$(figma_default_config)"
 SNAPSHOT="$(figma_cache_path)"
 INTROSPECT_ARGS=()
 LINKS_JSON="[]"
 LINK_FILE=""
 LINK_NODES=()
+# True when the links were freshly resolved (this phase's input, or recovered
+# from spec.md) rather than read back from the per-feature cache — only those are
+# worth writing to it.
+RECORD_LINKS="false"
 # Injection contract: filled once a usable snapshot exists (introspected|fresh).
 MUST_INJECT="false"
 LINK_SCOPE="none"          # none | frame | broad
@@ -126,6 +154,20 @@ emit() { # $1 = ran (true|false), $2 = reason
       tasksSection: (if $tasksSection == "" then null else $tasksSection end),
       introspectArgs: $ARGS.positional}' \
     --args -- ${INTROSPECT_ARGS[@]+"${INTROSPECT_ARGS[@]}"}
+}
+
+# Node ids to deep-fetch for LINK_FILE, from whichever source filled LINKS_JSON.
+# A prototype link contributes two: the frame that was being viewed and the
+# flow's starting point (startNodeId) — both are creatives, and both ride the
+# same batched /nodes request, so there is nothing to save by dropping one.
+collect_link_nodes() {
+  LINK_NODES=()
+  local node_id
+  while IFS= read -r node_id; do
+    [[ -n "$node_id" ]] && LINK_NODES+=("$node_id")
+  done < <(jq -r --arg f "$LINK_FILE" \
+    '[ .[] | select(.fileId == $f) | (.nodeId, .startNodeId) | select(. != null) ] | unique | .[]' \
+    <<< "$LINKS_JSON")
 }
 
 # Classify the directly-linked nodes against the snapshot and, for broad links
@@ -194,21 +236,31 @@ prepare_injection() {
   rm -f "$err"
 }
 
-# True when the current snapshot already targets the linked file and contains
+# True when the given snapshot already targets the linked file and contains
 # every linked node — only then can a link-driven run be considered fresh.
-snapshot_covers_links() {
+snapshot_covers_links() { # $1 = snapshot path
+  local snap="$1"
   [[ -z "$LINK_FILE" ]] && return 0
-  jq -e --arg f "$LINK_FILE" '.fileId == $f' "$SNAPSHOT" >/dev/null 2>&1 || return 1
+  jq -e --arg f "$LINK_FILE" '.fileId == $f' "$snap" >/dev/null 2>&1 || return 1
   local node_id
   for node_id in ${LINK_NODES[@]+"${LINK_NODES[@]}"}; do
-    jq -e --arg n "$node_id" '(.nodes.nodes // {}) | has($n)' "$SNAPSHOT" >/dev/null 2>&1 || return 1
+    jq -e --arg n "$node_id" '(.nodes.nodes // {}) | has($n)' "$snap" >/dev/null 2>&1 || return 1
   done
   return 0
 }
 
+# Age-and-config half of the freshness test: the snapshot exists, is not older
+# than the config that shaped it, and is younger than the max-age window
+# (find -mmin is portable across GNU and BSD/macOS).
+snapshot_is_current() { # $1 = snapshot path
+  local snap="$1"
+  [[ -f "$snap" && ! "$CONFIG" -nt "$snap" ]] || return 1
+  [[ -n "$(find "$snap" -mmin "-${MAX_AGE_MIN}" 2>/dev/null)" ]]
+}
+
 # Stale rendered sections from a previous run must not outlive it: the verifier
 # (figma-verify-section.sh) keys "Figma applied to this run" on the existence of
-# .figma/cache/section.<phase>.md. clear_rendered_sections drops them so only THIS
+# .figma/cache/sections/<feature>/<phase>.md. clear_rendered_sections drops them so only THIS
 # run's renders remain.
 #
 # It is called on the paths where Figma DEFINITIVELY does not apply (no/invalid
@@ -218,8 +270,11 @@ snapshot_covers_links() {
 # verifier would report "not-applicable" and let a --strict CI gate silently pass
 # for a run where Figma genuinely applies; leaving the prior render keeps the
 # gate honest (fail-closed, consistent with verify's own --strict policy).
+# Scoped to THIS feature: wiping every feature's renders would erase a design
+# feature's evidence whenever a design-less one runs (see figma_section_path).
 clear_rendered_sections() {
-  rm -f "$(figma_cache_dir)"/section.*.md 2>/dev/null || true
+  local dir; dir="$(dirname "$(figma_section_path spec)")"
+  rm -f "${dir}"/*.md 2>/dev/null || true
 }
 
 if [[ ! -f "$CONFIG" ]]; then
@@ -285,48 +340,134 @@ if [[ -n "$INPUT_TEXT" ]]; then
     if [[ "$DISTINCT_FILES" -gt 1 ]]; then
       echo "WARN: the input links reference ${DISTINCT_FILES} distinct Figma files; auto-introspecting the first ('${LINK_FILE}') — run /speckit.figma.introspect --file <id> for the others." >&2
     fi
-    while IFS= read -r node_id; do
-      LINK_NODES+=("$node_id")
-    done < <(jq -r --arg f "$LINK_FILE" \
-      '[.[] | select(.fileId == $f and .nodeId != null) | .nodeId] | unique | .[]' <<< "$LINKS_JSON")
+    collect_link_nodes
+    RECORD_LINKS="true"
   fi
 fi
 
-# Fresh = snapshot exists, is newer than the config, is younger than the
-# max-age window (find -mmin is portable across GNU and BSD/macOS), and covers
-# any directly-linked file/nodes from the input.
-if [[ -f "$SNAPSHOT" && ! "$CONFIG" -nt "$SNAPSHOT" ]] \
-   && [[ -n "$(find "$SNAPSHOT" -mmin "-${MAX_AGE_MIN}" 2>/dev/null)" ]] \
-   && snapshot_covers_links; then
+# A Figma link in the feature input is what makes a run a design run. Without
+# one, the extension has nothing to ground itself in and MUST stay out of the
+# way: a valid config and a mapped target used to be enough to introspect and
+# force the design section into spec.md, so a feature like "add a Redis cache on
+# the billing endpoint" came back carrying a Figma section it had no business
+# carrying. The mapping describes WHERE a creative would live, not WHETHER this
+# feature has one; only the link answers that.
+#
+# The developer pastes the link once, at /speckit.specify. /speckit.plan and
+# /speckit.tasks receive a different input that no longer carries it, so the
+# links are remembered per feature and inherited by the later phases — otherwise
+# spec.md would carry the design section and plan.md would not.
+if [[ -z "$LINK_FILE" ]]; then
+  LINKS_FILE="$(figma_feature_links_path)"
+  # `select` emits nothing unless the file really holds a non-empty ARRAY, so a
+  # truncated or hand-edited file degrades to "no remembered links" instead of
+  # feeding a malformed value to the `.[0].fileId` below — which would abort the
+  # script under `set -e` and break the never-block contract. The root type is
+  # not enough on its own: an ENTRY missing fileId would leave `jq -r` printing
+  # the literal "null", non-empty and therefore indistinguishable from a real
+  # file key, so `// empty` turns that into the same silent no-link path.
+  if [[ -f "$LINKS_FILE" ]] \
+     && REMEMBERED="$(jq -c 'select(type == "array" and length > 0)' "$LINKS_FILE" 2>/dev/null)" \
+     && [[ -n "$REMEMBERED" ]] \
+     && LINK_FILE="$(jq -r '.[0].fileId // empty' <<< "$REMEMBERED")" \
+     && [[ -n "$LINK_FILE" ]]; then
+    LINKS_JSON="$REMEMBERED"
+    collect_link_nodes
+    echo "INFO: no Figma link in this phase's input; reusing the link(s) recorded for feature '$(figma_feature_key)'." >&2
+  fi
+fi
+
+# Last source: the spec.md an earlier phase already produced. The per-feature
+# cache above lives under .figma/cache/, which is git-ignored, so it does NOT
+# travel with the branch — a teammate who pulls it, a fresh clone or a CI job
+# reaches /speckit.plan with the spec but no cache. Falling through to
+# "no-figma-link" there is worse than doing nothing: the agent is instructed to
+# say NOTHING about Figma, so plan.md silently loses the design section spec.md
+# carries. The committed document is the durable record of the link.
+#
+# Two guards keep this from re-creating the regression it protects against.
+# "identified-only": the document must be one the CURRENT feature owns — with
+# nothing identifying the feature, "the only spec around" belongs to another one,
+# and inheriting its creative is exactly the bug. The machine marker: a
+# figma.com URL merely mentioned in the prose of a spec is not a design section,
+# and must not become a trigger.
+if [[ -z "$LINK_FILE" ]]; then
+  SPEC_DOC="$(figma_resolve_phase_doc spec identified-only 2>/dev/null || true)"
+  if [[ -n "$SPEC_DOC" ]] && grep -qF 'speckit-figma:section phase=spec' "$SPEC_DOC"; then
+    RECOVERED="$("${SCRIPT_DIR}/figma-parse-links.sh" < "$SPEC_DOC" | jq -s '.')"
+    if [[ "$(jq -r 'length' <<< "$RECOVERED")" -gt 0 ]]; then
+      LINKS_JSON="$RECOVERED"
+      LINK_FILE="$(jq -r '.[0].fileId' <<< "$LINKS_JSON")"
+      collect_link_nodes
+      # Re-warm the cache: recovered links are as authoritative as pasted ones.
+      RECORD_LINKS="true"
+      echo "INFO: no Figma link in this phase's input and none cached for feature '$(figma_feature_key)'; recovered it from ${SPEC_DOC#"$(figma_repo_root)/"}." >&2
+    fi
+  fi
+fi
+
+if [[ -z "$LINK_FILE" ]]; then
+  # Actionable on purpose. The document stays silent, so this line is the only
+  # place a forgotten link can still be caught — and it only works if it says
+  # what to do. Nothing downstream distinguishes a front-end feature whose author
+  # forgot the link from a back-end one that legitimately has none.
+  echo "INFO: no Figma link in the feature input; proceeding without Figma context. If this feature does have a mockup, paste the Figma link into /speckit.specify and re-run — nothing further will flag the omission." >&2
+  clear_rendered_sections
+  emit false "no-figma-link"
+  exit 0
+fi
+
+# Remember this phase's links for the next one. A dry run is a rehearsal: it must
+# not leave state behind that changes what a later real run decides.
+if [[ "$RECORD_LINKS" == "true" && "$DRY_RUN" != "true" ]]; then
+  LINKS_FILE="$(figma_feature_links_path)"
+  mkdir -p "$(dirname "$LINKS_FILE")"
+  printf '%s\n' "$LINKS_JSON" > "$LINKS_FILE"
+fi
+
+# Fresh = the snapshot is current (exists, newer than the config, within the
+# max-age window) AND covers the directly-linked file/nodes.
+if snapshot_is_current "$SNAPSHOT" && snapshot_covers_links "$SNAPSHOT"; then
   # Figma applies and the snapshot is usable → the section is mandatory; render it.
   prepare_injection
   emit false "fresh"
   exit 0
 fi
 
-if [[ -n "$LINK_FILE" ]]; then
-  # Link-driven scope: introspect the linked file and drill into each linked
-  # node so the snapshot carries frame-level detail (fills, typography, layout).
-  INTROSPECT_ARGS+=(--file "$LINK_FILE")
-  for node_id in ${LINK_NODES[@]+"${LINK_NODES[@]}"}; do
-    INTROSPECT_ARGS+=(--node "$node_id")
-  done
-  CONFIG_FILE_ID="$(jq -r '.figmaFileId // empty' <<< "$DETECT")"
-  if [[ -n "$CONFIG_FILE_ID" && "$CONFIG_FILE_ID" != "$LINK_FILE" ]]; then
-    echo "INFO: direct Figma link overrides the mapped file '${CONFIG_FILE_ID}' for this run." >&2
+# The current slot holds another file's snapshot — but the per-file store may
+# already hold a usable one for THIS link. Without this lookup, alternating
+# between two features that target different Figma files re-introspects on every
+# single phase, because each run evicts the other's snapshot from the one slot.
+STORED_SNAPSHOT="$(figma_snapshot_store_path "$LINK_FILE" 2>/dev/null || true)"
+if [[ -n "$STORED_SNAPSHOT" && "$STORED_SNAPSHOT" != "$SNAPSHOT" ]] \
+   && snapshot_is_current "$STORED_SNAPSHOT" && snapshot_covers_links "$STORED_SNAPSHOT"; then
+  # Publish it as the current one: every command prompt hands the agent the
+  # well-known path, so restoring has to happen there and not only in memory.
+  # `-p` because snapshot_is_current keys freshness on the slot's mtime: a plain
+  # copy would stamp it "now" and let the restored data outlive the max-age
+  # window — restore it at minute 50 of 60 and it stays "fresh" until 110.
+  if cp -p "$STORED_SNAPSHOT" "$SNAPSHOT" 2>/dev/null; then
+    echo "INFO: reused the cached snapshot of file '${LINK_FILE}'; no re-introspection needed." >&2
+    prepare_injection
+    emit false "fresh"
+    exit 0
   fi
-else
-  # Derive the introspection scope from the detected target (team > project >
-  # file, same precedence as /speckit.figma.introspect).
-  while IFS= read -r team_id; do
-    INTROSPECT_ARGS+=(--team "$team_id")
-  done < <(jq -r '(.figmaTeamIds // [])[]' <<< "$DETECT")
-  TEAM_ID="$(jq -r '.figmaTeamId // empty' <<< "$DETECT")"
-  if [[ -n "$TEAM_ID" ]]; then INTROSPECT_ARGS+=(--team "$TEAM_ID"); fi
-  PROJECT_ID="$(jq -r '.figmaProjectId // empty' <<< "$DETECT")"
-  if [[ -n "$PROJECT_ID" ]]; then INTROSPECT_ARGS+=(--project "$PROJECT_ID"); fi
-  FILE_ID="$(jq -r '.figmaFileId // empty' <<< "$DETECT")"
-  if [[ -n "$FILE_ID" ]]; then INTROSPECT_ARGS+=(--file "$FILE_ID"); fi
+  echo "WARN: could not restore the cached snapshot of '${LINK_FILE}'; re-introspecting." >&2
+fi
+
+# Link-driven scope, and the only one: introspect the linked file and drill into
+# each linked node so the snapshot carries frame-level detail (fills, typography,
+# layout). Reaching here means LINK_FILE is set — the no-link path returned
+# above — so the config mapping no longer derives a scope of its own. It still
+# decides whether the target participates at all (the target-* skips above), and
+# /speckit.figma.introspect remains the way to introspect a mapped team/project.
+INTROSPECT_ARGS+=(--file "$LINK_FILE")
+for node_id in ${LINK_NODES[@]+"${LINK_NODES[@]}"}; do
+  INTROSPECT_ARGS+=(--node "$node_id")
+done
+CONFIG_FILE_ID="$(jq -r '.figmaFileId // empty' <<< "$DETECT")"
+if [[ -n "$CONFIG_FILE_ID" && "$CONFIG_FILE_ID" != "$LINK_FILE" ]]; then
+  echo "INFO: direct Figma link overrides the mapped file '${CONFIG_FILE_ID}' for this run." >&2
 fi
 
 if [[ "$DRY_RUN" == "true" ]]; then

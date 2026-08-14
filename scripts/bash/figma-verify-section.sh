@@ -6,7 +6,7 @@
 # section and guarantees the FILE exists, but it cannot guarantee the agent
 # actually PASTED it into the generated spec.md / plan.md / tasks.md. This
 # verification runs AFTER generation and checks that — when a Figma mockup was
-# detected for the run (i.e. the rendered `.figma/cache/section.<phase>.md` exists) —
+# detected for the run (i.e. the rendered `.figma/cache/sections/<feature>/<phase>.md` exists) —
 # the corresponding document really contains the Figma section marker.
 #
 # Designed as a SAFE NO-OP by default: when Figma does not apply, the document
@@ -60,7 +60,6 @@ if [[ "$STRICT" != "true" ]] \
   STRICT="true"
 fi
 
-ROOT="$(figma_repo_root)"
 RENDERED="$(figma_section_path "$PHASE")"
 # Phase-specific machine marker emitted by figma-render-section.sh: decoupled
 # from the (translatable) heading text and able to detect a wrong-phase section.
@@ -88,29 +87,13 @@ emit() { # $1 verified(bool)  $2 applicable(bool)  $3 reason  $4 remedy
       remedy: (if $remedy == "" then null else $remedy end)}'
 }
 
-# Resolve the SpecKit document for this phase when not given explicitly.
+# Resolve the SpecKit document for this phase when not given explicitly. The
+# layout rules (and the refusal to guess between several candidates, which under
+# --strict would gate CI on the WRONG feature's doc) live in figma_resolve_phase_doc.
 resolve_doc() {
   [[ -n "$DOC" ]] && return 0
-  local branch; branch="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-  if [[ -n "$branch" && -f "${ROOT}/specs/${branch}/${PHASE}.md" ]]; then
-    DOC="${ROOT}/specs/${branch}/${PHASE}.md"; return 0
-  fi
-  # No branch-named feature dir: fall back ONLY when the choice is unambiguous —
-  # a single specs/*/<phase>.md. With several candidates, picking the most-recent
-  # one could verify (and, under --strict, gate CI on) the WRONG feature's doc,
-  # so refuse and ask for --doc instead.
-  local matches=()
-  local f
-  # SpecKit feature dirs are `NNN-slug` (alphanumeric); the glob is safe here.
-  for f in "${ROOT}"/specs/*/"${PHASE}.md"; do
-    [[ -f "$f" ]] && matches+=("$f")
-  done
-  if [[ ${#matches[@]} -eq 1 ]]; then
-    DOC="${matches[0]}"; return 0
-  elif [[ ${#matches[@]} -gt 1 ]]; then
-    echo "WARN: ${#matches[@]} candidate specs/*/${PHASE}.md documents and branch '${branch}' has no specs/${branch}/${PHASE}.md; pass --doc to disambiguate." >&2
-  fi
-  return 1
+  DOC="$(figma_resolve_phase_doc "$PHASE" || true)"
+  [[ -n "$DOC" ]]
 }
 
 # Not applicable: no rendered section => Figma did not apply to this run.

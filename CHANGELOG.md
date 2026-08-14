@@ -5,6 +5,149 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-08-11
+
+### Changed
+
+- **BREAKING — a Figma link in the feature input is now what triggers the
+  extension.** `figma-ensure-context` used to treat a valid config with a mapped,
+  enabled target as enough: it introspected and forced the design section into
+  every `spec.md`, `plan.md` and `tasks.md`, so a feature like "add a Redis cache
+  on the billing endpoint" came back carrying a Figma section it had no business
+  carrying. The mapping in `figma.projects.config.json` says *where* a creative
+  would live, not *whether* a feature has one — only the link answers that. With
+  no link the run now ends at the new `no-figma-link` reason: no introspection,
+  no rendered section, `mustInject: false`, and the `after_*` verify hooks report
+  `not-applicable`.
+- Workspaces that relied on `pageToPackageMapping` alone to obtain design context
+  without pasting a link must now paste the Figma link in the feature
+  description, or run `/speckit.figma.introspect` by hand.
+- **BREAKING — `/speckit.figma.setup` is renamed `/speckit.figma.config`.** The
+  command never installed anything (`install.sh` / `install.ps1` do that): it
+  detects the topology, writes `figma.projects.config.json`, and validates
+  connectivity. `config` says what it does, and matches the sibling extension
+  `spec-kit-charter`, which already exposes `/speckit.charter.config`. Re-run
+  `specify extension add` to register the new name; no alias is kept, because two
+  names for one command is the confusion the rename removes.
+- **`role` is no longer required on a target.** Validation rejected a config
+  without it, yet no helper branched on it: `figma-detect-target` copies it into
+  its JSON output and nothing reads it back. It stays enum-validated when present
+  — a value outside the enum is a typo, not a choice — and stays documented,
+  because it tells a human what a target is. Existing configs are unaffected.
+- **Rendered sections moved to `.figma/cache/sections/<feature>/<phase>.md`**,
+  from the flat `.figma/cache/section.<phase>.md`. Both installers drop the old
+  flat files. Nothing needs to reference these paths by hand — the orchestrator
+  reports them in `specSection` / `planSection` / `tasksSection` — but a
+  workspace that hardcoded them somewhere must follow.
+- As a consequence, `figma-ensure-context` no longer derives an introspection
+  scope from the config (`--team` / `--project` / `--file`); that path was
+  unreachable once a link became mandatory. `/speckit.figma.introspect` remains
+  the way to introspect a mapped team or project.
+
+### Added
+
+- Figma links detected in the feature input are remembered **per feature**
+  (`.figma/cache/links/<feature>.json`, already covered by the `.figma/cache/`
+  gitignore entry), so the link is pasted once at `/speckit.specify` and
+  `/speckit.plan` / `/speckit.tasks` inherit it. Scoping is per feature so the
+  next, design-less feature never inherits the previous one's link. The feature
+  identity follows SpecKit's own resolution: `SPECIFY_FEATURE`, then
+  `.specify/feature.json`, then the git branch.
+- When that per-feature memory is absent, the link is recovered from the
+  committed `spec.md`. `.figma/cache/` is git-ignored, so the memory does not
+  travel with the branch: a fresh clone, a CI job or a teammate who just pulled
+  reached `/speckit.plan` with no link and fell through to `no-figma-link` —
+  under which the agent is told to add *nothing* about Figma, so `plan.md`
+  silently lost the design section `spec.md` carries. The recovery is gated on
+  the `speckit-figma:section phase=spec` marker: a `figma.com` URL merely
+  mentioned in the prose of a spec is not a design section and must not become a
+  trigger. The document must also be one the current feature positively owns
+  (`identified-only`): with nothing identifying the feature, "the only spec
+  around" belongs to another one, and inheriting its creative would re-create
+  the very regression this release removes. A recovered link re-warms the cache.
+- Prototype links keep their flow starting point. A `/proto/` URL names two
+  frames — `node-id`, whatever the designer was viewing when they copied the
+  link, and `starting-point-node-id`, the entry point of the parcours — and only
+  the first was introspected. Both are now deep-fetched (same batched request, so
+  no extra API cost), which also pins a prototype link whose `node-id` is
+  missing instead of degrading it to a broad link. Parsed links carry a new
+  `startNodeId` field.
+- The `no-figma-link` outcome is now surfaced conversationally, without touching
+  the document. Nothing distinguishes a front-end feature whose author simply
+  forgot to paste the link from a back-end one that legitimately has none, and
+  the document is deliberately silent — so a forgotten link produced a spec with
+  no design context and no signal at all, through `plan.md` and `tasks.md` too.
+  The console line now names the remedy, and the agent instructions separate the
+  two surfaces: nothing in the generated document, one plain sentence in the chat
+  reply. It stays a statement, not a question: the agent still never asks for a
+  link, blocks, or goes looking for one with an MCP tool.
+- Snapshots are cached per Figma file under `.figma/cache/snapshots/`, on top of
+  the single `context-snapshot.json` slot. That slot is the snapshot of the
+  *current* run — the well-known path every command prompt hands to the agent —
+  and one slot is enough to publish a snapshot but not to cache one: two features
+  targeting different Figma files evicted each other, so the `fresh` path never
+  hit and every phase re-paid a full file fetch plus a nodes fetch for a snapshot
+  that had been valid minutes earlier. A run whose link is already covered by a
+  stored snapshot now restores it instead of re-introspecting.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) maps the subsystems with Mermaid
+  diagrams: the decision flow and every skip reason, link resolution and its
+  guards, the introspection pipeline, engine selection, credential resolution,
+  the section lifecycle, and which parts of the config are executable versus
+  written for human readers. Installed into workspaces alongside the other
+  guides.
+- The README now states that `figma.contextSource: "mcp"` does **not** replace
+  the PAT. The deterministic introspection always goes through the REST API,
+  whatever the configured engine; MCP improves how the agent *renders* the
+  design, not how the snapshot is *collected*. A local Dev Mode server alone,
+  with no PAT, fails with `"reason": "introspect-failed"` and `"code": "AUTH"`.
+- The schema now says what `pageToPackageMapping` is: guidance in the
+  `/speckit.figma.introspect` prompt, not a mapping any helper parses. Same for
+  `role`.
+- **Cache housekeeping.** `.figma/cache/` only ever grew: a `links/<key>.json`
+  and a `sections/<key>/` per branch that ever ran a phase, a
+  `snapshots/<fileId>.json` per Figma file ever linked. Disk was not the problem
+  — key *reuse* was: a key derives from a branch name, so a new feature on a
+  recycled name inherited the remembered links of whatever used the name before
+  it, and came back carrying a design section for someone else's mockup. Every
+  real (non-dry) run now sweeps the cache at most once a day, on an
+  ownership-first policy: an entry survives as long as `specs/<key>/` exists —
+  the signal is committed, so it outlives the branch — and is collected only when
+  it is *both* orphaned and untouched for `FIGMA_CACHE_RETENTION_DAYS` (7).
+  Stored snapshots have no owner to consult and go on age alone, never below the
+  freshness window a caller configured. The feature of the run doing the sweep is
+  exempt unconditionally, and a live feature's renders are never collected —
+  `figma-verify-section` reads "Figma applied to this run" from their existence,
+  so collecting them would turn a `--strict` gate fail-open. `FIGMA_CACHE_GC=off`
+  disables the sweep, `=force` ignores the daily throttle.
+- `figma_gc_cache` / `figma_gc_key_is_live` (bash) and `Invoke-FigmaCacheGc` /
+  `Test-FigmaGcKeyIsLive` (PowerShell).
+- `figma_snapshot_store_path` (bash) / `Get-FigmaSnapshotStorePath` (PowerShell).
+- `figma_feature_key` / `figma_feature_links_path` / `figma_resolve_phase_doc`
+  (bash) and `Get-FigmaFeatureKey` / `Get-FigmaFeatureLinksPath` /
+  `Get-FigmaPhaseDoc` (PowerShell). `figma-verify-section` now shares the
+  document resolver instead of carrying its own copy, and the resolver honours
+  the feature identity (`SPECIFY_FEATURE`, `.specify/feature.json`) before
+  falling back to the branch.
+
+### Fixed
+
+- **A design-less feature could make a `--strict` CI gate pass for a document
+  genuinely missing its design section.** `figma-verify-section` decides "Figma
+  applied to this run" from the *existence* of the rendered section, while
+  resolving a per-feature document — but the section lived in a single global
+  slot. Running a feature without a mockup deleted the renders of a feature with
+  one, whose `after_*` hook then reported `not-applicable`: fail-open, precisely
+  what the gate exists to prevent. Sections are now scoped per feature, resolved
+  through the same feature identity as the remembered links, so `ensure` and
+  `verify` always agree and a wipe only ever touches the current feature.
+- The PowerShell port accepted any remembered-links file that parsed, including a
+  JSON object root, where bash requires an array. A hand-edited
+  `.figma/cache/links/<feature>.json` holding a single object instead of a
+  one-element array was honoured on Windows and ignored everywhere else. The
+  check now reads the JSON root off the text, because `ConvertFrom-Json` unrolls
+  a one-element array into a bare object and the deserialized shape cannot tell
+  the two apart.
+
 ## [1.7.0] - 2026-08-10
 
 ### Fixed

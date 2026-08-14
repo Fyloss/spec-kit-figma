@@ -105,7 +105,7 @@ JSON
 @test "figma_section_path points at the per-phase section under .figma" {
   run figma_section_path plan
   [ "$status" -eq 0 ]
-  [[ "$output" == *"/.figma/cache/section.plan.md" ]]
+  [[ "$output" == *"/.figma/cache/sections/default/plan.md" ]]
 }
 
 @test "figma_context_source defaults to rest without a config" {
@@ -536,4 +536,210 @@ JSON
     [ -n "$output" ]
     refute_glued_comment "$output"
   done
+}
+
+# --- Phase-document resolution -----------------------------------------------
+
+stage_phase_doc() { # $1 = feature dir, $2 = phase
+  mkdir -p "${WORKSPACE}/specs/$1"
+  printf '# %s\n' "$1" > "${WORKSPACE}/specs/$1/$2.md"
+}
+
+@test "figma_resolve_phase_doc in identified-only mode ignores the branch's doc" {
+  # The branch is a FALLBACK identity, not an override. When SPECIFY_FEATURE
+  # names another feature, specs/<branch>/spec.md belongs to someone else, and a
+  # caller that reads design links out of it inherits that feature's creative —
+  # the very regression the link requirement exists to prevent.
+  make_workspace_git "002-checkout-redesign"
+  stage_phase_doc "002-checkout-redesign" spec
+  export SPECIFY_FEATURE="003-redis-cache"
+  run figma_resolve_phase_doc spec identified-only
+  [ "$status" -ne 0 ]
+  [ -z "$output" ]
+}
+
+@test "figma_resolve_phase_doc falls back to the branch's doc in loose mode" {
+  # Loose mode serves a caller that merely VERIFIES a document — its failure
+  # mode is a warning, not a silent injection — so the branch stays a usable
+  # guess there.
+  make_workspace_git "002-checkout-redesign"
+  stage_phase_doc "002-checkout-redesign" spec
+  export SPECIFY_FEATURE="003-redis-cache"
+  run figma_resolve_phase_doc spec
+  [ "$status" -eq 0 ]
+  [ "$output" = "${WORKSPACE}/specs/002-checkout-redesign/spec.md" ]
+}
+
+@test "figma_resolve_phase_doc prefers the identified feature over the branch" {
+  make_workspace_git "002-checkout-redesign"
+  stage_phase_doc "002-checkout-redesign" spec
+  stage_phase_doc "003-redis-cache" spec
+  export SPECIFY_FEATURE="003-redis-cache"
+  run figma_resolve_phase_doc spec identified-only
+  [ "$status" -eq 0 ]
+  [ "$output" = "${WORKSPACE}/specs/003-redis-cache/spec.md" ]
+}
+
+# --- Cache housekeeping (figma_gc_cache) --------------------------------------
+# The cache only ever grew: one links/<key>.json and one sections/<key>/ per
+# branch that ever ran a phase, one snapshots/<file>.json per Figma file ever
+# linked. Disk is not the point — a recycled branch name would hand a brand-new
+# feature the remembered links of the one that used the name before it.
+# 10080 minutes = the 7-day default retention window.
+
+stage_links_entry() { # $1 = feature key, $2 = age in minutes (optional)
+  mkdir -p "${WORKSPACE}/.figma/cache/links"
+  printf '[{"fileId":"F1","nodeId":"1:2"}]\n' > "${WORKSPACE}/.figma/cache/links/$1.json"
+  if [ -n "${2:-}" ]; then backdate_file "${WORKSPACE}/.figma/cache/links/$1.json" "$2"; fi
+}
+
+stage_sections_entry() { # $1 = feature key, $2 = age in minutes (optional)
+  mkdir -p "${WORKSPACE}/.figma/cache/sections/$1"
+  printf 'rendered\n' > "${WORKSPACE}/.figma/cache/sections/$1/spec.md"
+  if [ -n "${2:-}" ]; then backdate_file "${WORKSPACE}/.figma/cache/sections/$1/spec.md" "$2"; fi
+}
+
+stage_stored_snapshot() { # $1 = file id, $2 = age in minutes (optional)
+  mkdir -p "${WORKSPACE}/.figma/cache/snapshots"
+  printf '{"fileId":"%s","pages":[]}\n' "$1" > "${WORKSPACE}/.figma/cache/snapshots/$1.json"
+  if [ -n "${2:-}" ]; then backdate_file "${WORKSPACE}/.figma/cache/snapshots/$1.json" "$2"; fi
+}
+
+@test "figma_gc_cache collects an orphaned feature's remembered links" {
+  # No specs/ directory means no feature ever owned this key: an ad-hoc branch,
+  # or the 'default' key of a detached HEAD. Recycle the name and the next
+  # feature inherits its Figma link — a design section on a feature with no
+  # mockup, the regression the link requirement exists to prevent.
+  export SPECIFY_FEATURE="003-redis-cache"
+  stage_links_entry "throwaway-spike" 11520
+  run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [ ! -f "${WORKSPACE}/.figma/cache/links/throwaway-spike.json" ]
+}
+
+@test "figma_gc_cache keeps a key whose specs/ directory still exists" {
+  # specs/<key>/ is committed, so it outlives the branch: a merged feature keeps
+  # its entry however old it is. Ownership decides before age does.
+  export SPECIFY_FEATURE="003-redis-cache"
+  mkdir -p "${WORKSPACE}/specs/001-checkout"
+  stage_links_entry "001-checkout" 43200
+  run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/.figma/cache/links/001-checkout.json" ]
+}
+
+@test "figma_gc_cache never collects the feature of the run doing the sweep" {
+  # /speckit.specify writes the links BEFORE the specs/ directory exists, so a
+  # sweep that went on ownership alone would collect the state its own run is
+  # about to read back.
+  export SPECIFY_FEATURE="004-brand-new"
+  stage_links_entry "004-brand-new" 43200
+  stage_sections_entry "004-brand-new" 43200
+  run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/.figma/cache/links/004-brand-new.json" ]
+  [ -f "${WORKSPACE}/.figma/cache/sections/004-brand-new/spec.md" ]
+}
+
+@test "figma_gc_cache leaves a recent orphan alone until the window elapses" {
+  export SPECIFY_FEATURE="003-redis-cache"
+  stage_links_entry "yesterdays-branch" 1440
+  run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/.figma/cache/links/yesterdays-branch.json" ]
+}
+
+@test "figma_gc_cache drops an orphan's renders but never a live feature's" {
+  # figma-verify-section reads "Figma applied to this run" from the EXISTENCE of
+  # sections/<key>/<phase>.md. Collecting a live feature's renders would make a
+  # --strict CI gate pass for a document genuinely missing its design section.
+  export SPECIFY_FEATURE="003-redis-cache"
+  mkdir -p "${WORKSPACE}/specs/001-checkout"
+  stage_sections_entry "001-checkout" 43200
+  stage_sections_entry "throwaway-spike" 11520
+  run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/.figma/cache/sections/001-checkout/spec.md" ]
+  [ ! -d "${WORKSPACE}/.figma/cache/sections/throwaway-spike" ]
+}
+
+@test "figma_gc_cache collects stored snapshots on age alone" {
+  # Snapshots are keyed by Figma file, not by feature: no owner to consult, and
+  # past the freshness window snapshot_is_current would reject them anyway.
+  export SPECIFY_FEATURE="003-redis-cache"
+  stage_stored_snapshot "OldFILE" 11520
+  stage_stored_snapshot "FreshFILE" 10
+  run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [ ! -f "${WORKSPACE}/.figma/cache/snapshots/OldFILE.json" ]
+  [ -f "${WORKSPACE}/.figma/cache/snapshots/FreshFILE.json" ]
+}
+
+@test "figma_gc_cache never collects a snapshot a longer freshness window covers" {
+  # A caller running with a 30-day window would still restore this snapshot; the
+  # retention window is a floor, and must never cut below the caller's own.
+  export SPECIFY_FEATURE="003-redis-cache"
+  export FIGMA_SNAPSHOT_MAX_AGE_MINUTES=43200
+  stage_stored_snapshot "LongWindowFILE" 11520
+  run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/.figma/cache/snapshots/LongWindowFILE.json" ]
+}
+
+@test "figma_gc_cache leaves the current-run snapshot slot alone" {
+  # context-snapshot.json is the path every command prompt hands to the agent,
+  # not a per-key entry: sweeping it would pull the design facts out from under
+  # a run that already decided they were fresh.
+  export SPECIFY_FEATURE="003-redis-cache"
+  printf '{"fileId":"F1"}\n' > "${WORKSPACE}/.figma/cache/context-snapshot.json"
+  backdate_file "${WORKSPACE}/.figma/cache/context-snapshot.json" 43200
+  run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/.figma/cache/context-snapshot.json" ]
+}
+
+@test "figma_gc_cache sweeps at most once a day, and =force overrides that" {
+  # It runs inside a hook fired on every phase; a full sweep per phase is waste.
+  export SPECIFY_FEATURE="003-redis-cache"
+  run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/.figma/cache/.gc-stamp" ]
+
+  stage_links_entry "throwaway-spike" 11520
+  run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/.figma/cache/links/throwaway-spike.json" ]
+
+  FIGMA_CACHE_GC=force run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [ ! -f "${WORKSPACE}/.figma/cache/links/throwaway-spike.json" ]
+}
+
+@test "figma_gc_cache honours FIGMA_CACHE_GC=off and FIGMA_CACHE_RETENTION_DAYS" {
+  export SPECIFY_FEATURE="003-redis-cache"
+  stage_links_entry "throwaway-spike" 11520
+  FIGMA_CACHE_GC=off run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/.figma/cache/links/throwaway-spike.json" ]
+
+  # 30 days: the same entry is now well inside the window.
+  FIGMA_CACHE_RETENTION_DAYS=30 FIGMA_CACHE_GC=force run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [ -f "${WORKSPACE}/.figma/cache/links/throwaway-spike.json" ]
+
+  FIGMA_CACHE_RETENTION_DAYS=1 FIGMA_CACHE_GC=force run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [ ! -f "${WORKSPACE}/.figma/cache/links/throwaway-spike.json" ]
+}
+
+@test "figma_gc_cache reports what it reclaimed, and how to tune it" {
+  # Silent deletion of state a developer may be debugging is not acceptable; the
+  # line is the only place the two knobs are ever surfaced.
+  export SPECIFY_FEATURE="003-redis-cache"
+  stage_links_entry "throwaway-spike" 11520
+  run figma_gc_cache
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"reclaimed 1 stale entry"* ]]
+  [[ "$output" == *"FIGMA_CACHE_RETENTION_DAYS"* ]]
+  [[ "$output" == *"FIGMA_CACHE_GC=off"* ]]
 }

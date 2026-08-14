@@ -79,6 +79,42 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$(echo "$output" | jq -r '.kind')" == "proto" ]]
   [[ "$(echo "$output" | jq -r '.fileId')" == "PrOtO1" ]]
+  [[ "$(echo "$output" | jq -r '.startNodeId')" == "null" ]]
+}
+
+@test "a prototype link keeps the flow start alongside the viewed frame" {
+  # A prototype URL carries TWO frames: node-id is whatever the designer was
+  # looking at when they copied the link, starting-point-node-id is the entry
+  # point of the flow. Dropping the latter leaves the snapshot without the
+  # frame the parcours actually starts from.
+  run "$SCRIPT" "https://www.figma.com/proto/PrOtO1/Demo?page-id=0%3A1&node-id=12-345&starting-point-node-id=1%3A2&t=Xy9Z-4"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -r '.nodeId')" == "12:345" ]]
+  [[ "$(echo "$output" | jq -r '.startNodeId')" == "1:2" ]]
+}
+
+@test "a prototype link with only a starting point still pins that frame" {
+  # Hand-trimmed and embed URLs drop node-id; without the fallback the link
+  # degrades to 'broad' and the agent has to ask which frame — although the
+  # URL names it.
+  run "$SCRIPT" "https://www.figma.com/proto/PrOtO1/Demo?starting-point-node-id=1%3A2"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -r '.nodeId')" == "null" ]]
+  [[ "$(echo "$output" | jq -r '.startNodeId')" == "1:2" ]]
+}
+
+@test "a malformed starting-point-node-id is reported as null, never forwarded" {
+  run "$SCRIPT" "https://www.figma.com/proto/PrOtO1/Demo?starting-point-node-id=nope"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -r '.startNodeId')" == "null" ]]
+}
+
+@test "starting-point-node-id is not mistaken for node-id" {
+  # '&starting-point-node-id=' ends with the literal 'node-id=' — a regex
+  # anchored loosely would read the flow start as the viewed frame.
+  run "$SCRIPT" "https://www.figma.com/proto/PrOtO1/Demo?starting-point-node-id=1%3A2&node-id=12-345"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -r '.nodeId')" == "12:345" ]]
 }
 
 @test "parses multiple links from free-form text" {

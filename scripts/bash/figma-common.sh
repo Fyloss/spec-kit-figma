@@ -10,8 +10,13 @@
 #   figma_api <PATH>           -> GET against the Figma API with 429/5xx exponential backoff
 #   figma_state_dir            -> prints the per-workspace Figma state directory (.figma/)
 #   figma_cache_dir            -> prints the generated/cached-artifacts directory (.figma/cache/)
-#   figma_cache_path           -> prints the snapshot cache path
+#   figma_cache_path           -> prints the current-run snapshot path
+#   figma_snapshot_store_path <fileId> -> prints the per-file snapshot cache path
 #   figma_section_path <phase> -> prints the rendered-section path for a phase
+#   figma_feature_key          -> prints the current feature's identity (filename-safe)
+#   figma_feature_links_path   -> prints where this feature's design links are remembered
+#   figma_gc_cache             -> collects cache entries whose feature/file is gone
+#   figma_resolve_phase_doc <phase> [identified-only] -> prints specs/<feature>/<phase>.md, or fails
 #   figma_normalize_node_id <id> -> prints the canonical node id ('12:345'), or fails
 # Dependencies: bash 4+, curl, jq
 # =============================================================================
@@ -79,9 +84,229 @@ figma_cache_path() {
   echo "$(figma_cache_dir)/context-snapshot.json"
 }
 
-# Path of the rendered, ready-to-paste section for a phase (spec|plan|tasks).
+# Per-file snapshot store. figma_cache_path above is a single slot: the snapshot
+# of the CURRENT run, and the well-known path every command prompt hands to the
+# agent. One slot is enough to PUBLISH a snapshot but not to CACHE one — two
+# features pointing at different Figma files evict each other, so the "fresh"
+# path never hits and every phase re-pays a full file + nodes fetch. Keyed by
+# file, snapshots survive that alternation; the current slot is a copy of
+# whichever one this run resolved.
+# Prints the store path, or returns 1 when the key cannot name a file.
+figma_snapshot_store_path() {
+  local key="${1:-}"
+  [[ -n "$key" ]] || return 1
+  # Figma file keys are [A-Za-z0-9_-], but the value reaches us from a URL or a
+  # config field: squeeze anything else so it can never escape the directory.
+  key="$(printf '%s' "$key" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-100)"
+  [[ "$key" =~ ^\.+$ ]] && return 1
+  echo "$(figma_cache_dir)/snapshots/${key}.json"
+}
+
+# Path of the rendered, ready-to-paste section for a phase (spec|plan|tasks),
+# scoped to the current feature.
+#
+# The scoping is load-bearing, not tidiness. figma-verify-section decides
+# "Figma applied to this run" from the EXISTENCE of this file, while resolving a
+# per-feature document — so while every feature shared one slot, a design-less
+# feature erased the renders of a design one, and that feature's after-hook then
+# reported not-applicable. A --strict CI gate passed for a document genuinely
+# missing its design section: fail-open, which is exactly what the gate exists to
+# prevent.
 figma_section_path() {
-  echo "$(figma_cache_dir)/section.$1.md"
+  echo "$(figma_cache_dir)/sections/$(figma_feature_key)/$1.md"
+}
+
+# Identity of the feature being worked on, used to scope the remembered design
+# links. Precedence mirrors SpecKit's own resolution (core_pack/scripts/bash/
+# common.sh): SPECIFY_FEATURE, then .specify/feature.json's feature_directory,
+# then the git branch. Prints "default" when nothing identifies a feature.
+#
+# Scoping is the whole point: the links are remembered so /speckit.plan and
+# /speckit.tasks inherit what /speckit.specify detected, and a single shared file
+# would make the NEXT feature inherit them too — reinstating the very problem
+# (a design section forced onto a feature that has no mockup) the link
+# requirement exists to prevent.
+figma_feature_key() {
+  local key="${SPECIFY_FEATURE:-}"
+  if [[ -z "$key" ]]; then
+    local fj; fj="$(figma_repo_root)/.specify/feature.json"
+    if [[ -f "$fj" ]] && command -v jq >/dev/null 2>&1; then
+      key="$(jq -r '.feature_directory // empty' "$fj" 2>/dev/null || true)"
+      key="${key%/}"; key="${key##*/}"
+    fi
+  fi
+  [[ -n "$key" ]] || key="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  [[ -n "$key" && "$key" != "HEAD" ]] || key="default"
+  # Squeeze to a safe, bounded filename: the value reaches us from an env var, a
+  # JSON field or a branch name, any of which may carry '/' or '..'. Mapping
+  # every other byte to '-' makes traversal impossible; a key left as only dots
+  # ('.', '..') would still name a directory entry we must not write, so it
+  # falls back to "default".
+  key="$(printf '%s' "$key" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-100)"
+  [[ "$key" =~ ^\.+$ ]] && key="default"
+  printf '%s' "${key:-default}"
+}
+
+# Where the Figma links detected in the feature input are remembered, per
+# feature, so later phases inherit them without the developer re-pasting.
+figma_feature_links_path() {
+  echo "$(figma_cache_dir)/links/$(figma_feature_key).json"
+}
+
+# True when a cache key still names something: the feature this very run is
+# working on, or a SpecKit feature directory. specs/<key>/ is committed and
+# outlives the branch that produced it, which is what makes it the durable
+# ownership signal — a merged feature keeps its entry, an ad-hoc branch that
+# never became a feature does not.
+figma_gc_key_is_live() { # $1 = key, $2 = current key, $3 = repo root
+  [[ "$1" == "$2" ]] && return 0
+  [[ -d "$3/specs/$1" ]] && return 0
+  return 1
+}
+
+# Reclaim cache entries whose owner is gone. .figma/cache/ only ever grew: every
+# branch that ran a phase left a links/<key>.json and a sections/<key>/, and every
+# Figma file ever linked left a snapshots/<file>.json. Disk is not the problem (a
+# links file is a few hundred bytes) — key REUSE is. A key derives from a branch
+# name, so a new feature on a recycled name inherits the previous one's remembered
+# links, which is precisely the "design section forced onto a feature that has no
+# mockup" regression the link requirement exists to prevent.
+#
+# The policy is ownership first, age second: an entry is collected only when BOTH
+# say it is garbage.
+#   * Ownership — a key with a specs/<key>/ directory is a real feature and is
+#     kept indefinitely. Collecting a live feature's sections/<key>/ would be
+#     unsafe on top of wasteful: figma-verify-section reads "Figma applied to this
+#     run" from the existence of those files, so deleting them turns a --strict CI
+#     gate fail-open (the very failure figma_section_path's scoping fixed). What
+#     has no such directory is the garbage: ad-hoc branches, and the "default" key
+#     of a detached HEAD.
+#   * Age — nothing is collected before FIGMA_CACHE_RETENTION_DAYS (7) of
+#     inactivity, so a feature whose specs/ directory does not exist YET — the
+#     /speckit.specify run that is about to create it — is never collected
+#     mid-flight.
+# The CURRENT feature is exempt from both: a run must never collect the state it
+# is itself about to read.
+#
+# Snapshots are keyed by Figma file, not by feature, so they have no owner to
+# check: they are pure caches of remote data and go on age alone. Their window is
+# never shorter than the freshness window, so a snapshot that a run could still
+# restore is never taken from under it.
+#
+# Throttled to once a day through .gc-stamp, since this runs inside a hook on
+# every phase. FIGMA_CACHE_GC=off disables it entirely, =force ignores the
+# throttle. Best-effort by design: nothing here is allowed to be the reason a
+# hook blocks generation, so every failure is swallowed.
+figma_gc_cache() {
+  local mode="${FIGMA_CACHE_GC:-auto}"
+  [[ "$mode" == "off" ]] && return 0
+  local cache; cache="$(figma_cache_dir)"
+  [[ -d "$cache" ]] || return 0
+
+  local days="${FIGMA_CACHE_RETENTION_DAYS:-7}"
+  [[ "$days" =~ ^[1-9][0-9]*$ ]] || days=7
+  local retain_min=$(( days * 1440 ))
+
+  local stamp="${cache}/.gc-stamp"
+  if [[ "$mode" != "force" && -f "$stamp" ]]; then
+    # `find -mmin +1440` prints the stamp only once it is over a day old; no
+    # output means the last sweep is recent enough and this run skips it.
+    [[ -n "$(find "$stamp" -mmin +1440 2>/dev/null)" ]] || return 0
+  fi
+  # Stamped BEFORE the sweep: a sweep that dies halfway must not make every
+  # subsequent run retry it.
+  touch "$stamp" 2>/dev/null || true
+
+  local root current entry key removed=0
+  root="$(figma_repo_root)"
+  current="$(figma_feature_key)"
+
+  for entry in "${cache}"/links/*.json; do
+    [[ -f "$entry" ]] || continue
+    key="${entry##*/}"; key="${key%.json}"
+    figma_gc_key_is_live "$key" "$current" "$root" && continue
+    [[ -n "$(find "$entry" -mmin "+${retain_min}" 2>/dev/null)" ]] || continue
+    rm -f "$entry" 2>/dev/null && removed=$(( removed + 1 ))
+  done
+
+  for entry in "${cache}"/sections/*/; do
+    [[ -d "$entry" ]] || continue
+    key="${entry%/}"; key="${key##*/}"
+    figma_gc_key_is_live "$key" "$current" "$root" && continue
+    # A directory's own mtime only moves when an entry is added or removed, so
+    # the renders decide: any one of them touched inside the window keeps the
+    # whole directory.
+    [[ -z "$(find "$entry" -maxdepth 1 -name '*.md' -mmin "-${retain_min}" 2>/dev/null)" ]] || continue
+    # The renders, then the directory once it is empty — never a recursive delete
+    # of a path assembled from a key, and never a file this extension did not write.
+    rm -f "${entry}"*.md 2>/dev/null || true
+    rmdir "$entry" 2>/dev/null && removed=$(( removed + 1 ))
+  done
+
+  # Past the freshness window a stored snapshot is dead weight: snapshot_is_current
+  # would reject it anyway. It is still kept for the whole retention window (the
+  # window is a floor, not the policy), and never dropped below a caller's own —
+  # possibly much longer — freshness window.
+  local snap_min="$retain_min" max_age="${FIGMA_SNAPSHOT_MAX_AGE_MINUTES:-60}"
+  [[ "$max_age" =~ ^[1-9][0-9]*$ ]] && (( max_age > snap_min )) && snap_min="$max_age"
+  for entry in "${cache}"/snapshots/*.json; do
+    [[ -f "$entry" ]] || continue
+    [[ -n "$(find "$entry" -mmin "+${snap_min}" 2>/dev/null)" ]] || continue
+    rm -f "$entry" 2>/dev/null && removed=$(( removed + 1 ))
+  done
+
+  if (( removed > 0 )); then
+    local noun="entries"
+    if (( removed == 1 )); then noun="entry"; fi
+    echo "INFO: cache housekeeping reclaimed ${removed} stale ${noun} under .figma/cache/ (features with no specs/ directory, unused snapshots). Set FIGMA_CACHE_RETENTION_DAYS to change the ${days}-day window, FIGMA_CACHE_GC=off to disable." >&2
+  fi
+  return 0
+}
+
+# Locate the SpecKit document of a phase (spec|plan|tasks) in the standard
+# layout. Precedence: specs/<feature-key>/<phase>.md (honours SPECIFY_FEATURE and
+# .specify/feature.json, not just the branch), then specs/<branch>/<phase>.md,
+# then the single specs/*/<phase>.md when there is exactly one.
+#
+# With SEVERAL candidates and no feature identity the target is genuinely
+# ambiguous, so this returns 1 rather than picking the most recent: callers
+# verify (and gate CI on) or read design links from the document, and both are
+# wrong on the wrong feature's file. Prints the path on success.
+#
+# Usage: figma_resolve_phase_doc <phase> [identified-only]
+# "identified-only" drops BOTH guesses — the branch and the last-resort single
+# candidate — so ONLY a document the current feature positively owns is
+# returned. A caller that READS design context out of the document needs that:
+# "the branch's spec" and "the only spec around" both belong to some OTHER
+# feature whenever they differ from the feature key, and inheriting their
+# creative re-creates the regression the link requirement exists to prevent. A
+# caller that merely verifies a document generated by this very run can afford
+# the looser rule (its failure mode is a warning, not a silent injection).
+figma_resolve_phase_doc() {
+  local phase="$1" mode="${2:-}" root doc branch
+  root="$(figma_repo_root)"
+  doc="${root}/specs/$(figma_feature_key)/${phase}.md"
+  [[ -f "$doc" ]] && { printf '%s' "$doc"; return 0; }
+  # Everything below is a guess, so it is gated. The branch is already the LAST
+  # resort inside figma_feature_key: it can only disagree with the key resolved
+  # above when SPECIFY_FEATURE or .specify/feature.json named another feature —
+  # which makes specs/<branch>/ that other feature's directory, not ours.
+  [[ "$mode" == "identified-only" ]] && return 1
+  branch="$(git -C "$root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [[ -n "$branch" && -f "${root}/specs/${branch}/${phase}.md" ]]; then
+    printf '%s' "${root}/specs/${branch}/${phase}.md"; return 0
+  fi
+  local matches=() f
+  # SpecKit feature dirs are `NNN-slug` (alphanumeric); the glob is safe here.
+  for f in "${root}"/specs/*/"${phase}.md"; do
+    [[ -f "$f" ]] && matches+=("$f")
+  done
+  if [[ ${#matches[@]} -eq 1 ]]; then
+    printf '%s' "${matches[0]}"; return 0
+  elif [[ ${#matches[@]} -gt 1 ]]; then
+    echo "WARN: ${#matches[@]} candidate specs/*/${phase}.md documents and no feature identity resolves one of them; name the document explicitly." >&2
+  fi
+  return 1
 }
 
 # Default config path. Precedence: FIGMA_CONFIG env override > <root>/figma.projects.config.json.

@@ -7,7 +7,11 @@
 #   figma-parse-links.sh "https://www.figma.com/design/AbC123/Flow?node-id=12-345 ..."
 #   echo "$INPUT" | figma-parse-links.sh
 # Output: one JSON object per detected link:
-#   {"fileId":"AbC123","nodeId":"12:345","kind":"design","url":"..."}
+#   {"fileId":"AbC123","nodeId":"12:345","startNodeId":null,"kind":"design","url":"..."}
+# startNodeId carries a prototype's `starting-point-node-id`: a /proto/ URL names
+# TWO frames — the one the designer was viewing (node-id) and the entry point of
+# the flow — and both are creatives the spec needs. Callers treat it as an
+# additional node id, which also pins a link whose node-id is missing.
 # =============================================================================
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,6 +46,12 @@ printf '%s\n' "$LINKS" \
       # API/MCP server will reject.
       raw_node="$(printf '%s' "$url" | grep -oE '[?&](amp;)*node-id=[^&#[:space:]]+' | head -n1 | sed -E 's/^[?&](amp;)*node-id=//' || true)"
       node="$(figma_normalize_node_id "$raw_node" || true)"
-      jq -n --arg f "$key" --arg n "${node:-}" --arg k "$kind" --arg u "$url" \
-        '{fileId:$f, nodeId:(if $n=="" then null else $n end), kind:$k, url:$u}'
+      # The prototype's entry frame. Anchoring on '[?&](amp;)*' also keeps the
+      # node-id match above from reading THIS parameter (it ends in 'node-id=',
+      # but preceded by '-', never by a separator).
+      raw_start="$(printf '%s' "$url" | grep -oE '[?&](amp;)*starting-point-node-id=[^&#[:space:]]+' | head -n1 | sed -E 's/^[?&](amp;)*starting-point-node-id=//' || true)"
+      start="$(figma_normalize_node_id "$raw_start" || true)"
+      jq -n --arg f "$key" --arg n "${node:-}" --arg s "${start:-}" --arg k "$kind" --arg u "$url" \
+        '{fileId:$f, nodeId:(if $n=="" then null else $n end),
+          startNodeId:(if $s=="" then null else $s end), kind:$k, url:$u}'
     done

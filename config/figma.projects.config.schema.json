@@ -115,7 +115,7 @@
   "definitions": {
     "target": {
       "type": "object",
-      "required": ["enabled", "role"],
+      "required": ["enabled"],
       "additionalProperties": false,
       "anyOf": [
         { "required": ["figmaFileId"] },
@@ -131,7 +131,7 @@
         "role": {
           "type": "string",
           "enum": ["design-system", "app-host", "app", "lib"],
-          "description": "Architectural role. 'design-system' is the shared UI inventory; 'app-host' is a mono-repo containing multiple apps; 'app'/'lib' are leaf packages."
+          "description": "Optional architectural role, for human readers only — no helper branches on it. 'design-system' is the shared UI inventory; 'app-host' is a mono-repo containing multiple apps; 'app'/'lib' are leaf packages."
         },
         "figmaFileId": {
           "type": "string",
@@ -181,7 +181,7 @@
         },
         "pageToPackageMapping": {
           "type": "object",
-          "description": "Maps Figma page names to a target package. 'targetPackage: null' forces routing-rule resolution. 'shared: true' marks frames common to several apps.",
+          "description": "Guidance for the AGENT, not a rule any helper enforces: no script reads this mapping. It tells /speckit.figma.introspect which Figma pages belong to which package, so extraction stays scoped in a mono-repo. Maps Figma page names to a target package. 'targetPackage: null' forces routing-rule resolution. 'shared: true' marks frames common to several apps.",
           "additionalProperties": {
             "type": "object",
             "additionalProperties": false,

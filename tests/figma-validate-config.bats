@@ -89,10 +89,26 @@ setup() {
   [[ "$output" == *"contextSource=rest"* ]]
 }
 
-@test "rejects a target missing the required enabled/role fields" {
+@test "rejects a target missing the required enabled field" {
   run "$SCRIPT" "${FIXTURES_DIR}/missing-target-fields.json"
   [ "$status" -eq 1 ]
   [[ "$output" == *"enabled"* ]]
+}
+
+@test "accepts a target that declares no role" {
+  # 'role' is documentation: no script branches on it, so requiring it only
+  # rejected otherwise-usable configs. It is still validated WHEN PRESENT.
+  cfg="${BATS_TEST_TMPDIR:-$BATS_TMPDIR}/no-role.json"
+  jq 'del(.repo.role)' "${FIXTURES_DIR}/singlerepo-valid.json" > "$cfg"
+  run "$SCRIPT" "$cfg"
+  [ "$status" -eq 0 ]
+}
+
+@test "still rejects a role outside the enum when one is declared" {
+  cfg="${BATS_TEST_TMPDIR:-$BATS_TMPDIR}/bad-role.json"
+  jq '.repo.role = "banana"' "${FIXTURES_DIR}/singlerepo-valid.json" > "$cfg"
+  run "$SCRIPT" "$cfg"
+  [ "$status" -eq 1 ]
   [[ "$output" == *"role"* ]]
 }
 

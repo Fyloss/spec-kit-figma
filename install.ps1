@@ -17,7 +17,7 @@
 #   - installs the design-rules constitution base into .figma/ (committed;
 #     extension-owned, always refreshed) and creates the user overlay
 #     .figma/figma-design-rules.custom.md once (skip-if-exists)
-#   - copies the user guides (CREDENTIALS / INSTALL / MONOREPO) to .figma/docs/
+#   - copies the guides (CREDENTIALS / INSTALL / MONOREPO / ARCHITECTURE) to .figma/docs/
 #   - appends/refreshes a managed "Figma design context" section in the
 #     workspace README.md (created if missing); --no-readme skips it entirely
 #   - by default LEAVES the /speckit.specify, /speckit.plan and /speckit.tasks
@@ -188,6 +188,9 @@ Remove-Item -Path (Join-Path $target '.figma-section.*.md') -Force -ErrorAction 
 # they will be regenerated under .figma/cache/ on the next introspect run.
 Remove-Item -Path (Join-Path $target '.figma/context-snapshot.json') -Force -ErrorAction SilentlyContinue
 Remove-Item -Path (Join-Path $target '.figma/section.*.md') -Force -ErrorAction SilentlyContinue
+# Rendered sections are now scoped per feature under .figma/cache/sections/;
+# the flat files earlier versions wrote are dead weight the verifier ignores.
+Remove-Item -Path (Join-Path $target '.figma/cache/section.*.md') -Force -ErrorAction SilentlyContinue
 
 # The introspect command mandates loading this constitution file, so it must
 # always be installed — into .figma/ (committed), not the git-ignored cache/.
@@ -237,7 +240,7 @@ if (-not $isSelf) {
     $guides = Get-ChildItem -Path (Join-Path $extDir 'docs') -Filter '*.md' -ErrorAction SilentlyContinue
     if ($guides) {
         $guides | Copy-Item -Destination $docsDest
-        Write-Output 'ADDED: .figma/docs/ (CREDENTIALS / INSTALL / MONOREPO guides, synced to this version)'
+        Write-Output 'ADDED: .figma/docs/ (CREDENTIALS / INSTALL / MONOREPO / ARCHITECTURE guides, synced to this version)'
     } else {
         Write-Stderr "WARN: no guides found in $extDir/docs/ — the README links to .figma/docs/ will dangle."
     }
@@ -396,6 +399,14 @@ Before generating, refresh the Figma design context:
    the extension is not configured, the target is excluded, or
    `.figma/cache/context-snapshot.json` is already fresh and covers the linked
    nodes.
+
+   A Figma link is what makes a run a design run: with none in the input the
+   script reports `"reason": "no-figma-link"` and there is nothing to inject.
+   Forward the input VERBATIM — paraphrasing away the developer's link is what
+   turns a design feature into a link-less one. The link is pasted once, at
+   /speckit.specify, and remembered for the feature, so /speckit.plan and
+   /speckit.tasks inherit it — or, when that git-ignored cache is missing, read
+   back from the committed spec.md. Never strip the section marker it carries.
 2. When it prints `"ran": true` or `"reason": "fresh"` with `"mustInject": true`,
    the Figma design section is MANDATORY in this document — never omit it,
    whatever the agent model. The script renders a ready-to-paste section to the
@@ -406,7 +417,15 @@ Before generating, refresh the Figma design context:
    (sections 3-7: frame confirmation, component placement, token gaps, tests +
    Storybook sub-tasks). Treat any `links` reported in the status JSON as
    authoritative design targets for the affected components.
-3. For any other skip reason, proceed without Figma context and add a short
+3. On `"reason": "no-figma-link"` the feature has no mockup: add NOTHING about
+   Figma to the document — no section, no placeholder, no "no mockup was
+   provided" note. This is the normal outcome for any feature that is not driven
+   by a creative. That silence scopes to the DOCUMENT: in your chat reply, state
+   the fact once in a single plain sentence ("No Figma link detected; generated
+   without design context") — it is the only signal a developer who simply forgot
+   to paste the link can still act on. State it, do not ask for a link, and do
+   not block.
+4. For any other skip reason, proceed without Figma context and add a short
    note mentioning the reason.
 <!-- END SPECKIT-FIGMA AUTO-CONTEXT -->
 '@
@@ -503,7 +522,7 @@ Next steps:
   4. Register the extension commands (commands/speckit.figma.*.md)
      with your SpecKit agent of choice — or install natively with
      'specify extension add' (see extension.yml / docs/INSTALL.md), which registers
-     /speckit.figma.setup, /speckit.figma.update, /speckit.figma.ensure,
+     /speckit.figma.config, /speckit.figma.update, /speckit.figma.ensure,
      /speckit.figma.introspect and /speckit.figma.verify for you.
 "@
 exit 0
