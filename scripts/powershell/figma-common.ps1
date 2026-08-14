@@ -601,7 +601,7 @@ function Get-FigmaSecretStoreHint {
         $observed = " Vault config: Authentication=$Authentication, Interaction=$Interaction."
     }
     return @"
-HINT: 'Get-Secret' failed — the PAT itself is fine.$observed
+HINT: 'Get-Secret' failed — this can happen with a correctly stored PAT.$observed
       A SecretStore vault created with the defaults requires an interactive
       password unlock, which an agent hook can never answer, so every
       non-interactive lookup fails. Switch the vault to no-password mode — the

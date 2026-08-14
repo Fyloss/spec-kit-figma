@@ -549,8 +549,8 @@ figma_secretstore_hint() {
     *) return 0 ;;
   esac
   cat <<'EOF'
-HINT: FIGMA_PAT_COMMAND is a PowerShell SecretStore lookup. Two things stop it
-      from working non-interactively — the PAT itself is fine:
+HINT: FIGMA_PAT_COMMAND is a PowerShell SecretStore lookup. Two things stop such
+      a lookup working non-interactively, even with a correctly stored PAT:
       1. 'Get-Secret' is a cmdlet, not an executable. The bash helpers exec the
          command directly, so wrap it in a shell that knows the cmdlet:
            export FIGMA_PAT_COMMAND="pwsh -NoProfile -NonInteractive -Command Get-Secret figma-pat -AsPlainText"
