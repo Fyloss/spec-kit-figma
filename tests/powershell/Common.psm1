@@ -113,10 +113,26 @@ function Write-FakeSnapshot {
     return $path
 }
 
-# Install the section templates into a workspace so the renderer finds them.
+# Stage the extension tree exactly where `specify extension add` installs it.
+# That tree is where the helpers and templates LIVE AND RUN FROM, so install.ps1
+# requires it (and refuses to run without it), and figma-render-section resolves
+# its templates relative to it. Copied, not linked: the suite deletes the
+# workspace, which must never reach back into the checkout.
+function Install-ExtensionTree {
+    param([Parameter(Mandatory)][string]$Workspace)
+    $treeHome = Join-Path $Workspace '.specify/extensions/figma'
+    $null = New-Item -ItemType Directory -Force -Path $treeHome
+    Copy-Item -Path (Join-Path (Get-RepoRoot) 'scripts') -Destination $treeHome -Recurse -Force
+    Copy-Item -Path (Join-Path (Get-RepoRoot) 'templates') -Destination $treeHome -Recurse -Force
+    return $treeHome
+}
+
+# Install the section templates where the renderer under test resolves them: in
+# the tree it lives in. Kept as a thin wrapper so the render/verify tests read
+# the same as before.
 function Install-SectionTemplates {
     param([string]$Workspace)
-    $dest = Join-Path $Workspace '.specify/templates'
+    $dest = Join-Path $Workspace '.specify/extensions/figma/templates'
     $null = New-Item -ItemType Directory -Force -Path $dest
     Get-ChildItem -Path (Join-Path (Get-RepoRoot) 'templates') -Filter '*figma-section.template.md' |
         Copy-Item -Destination $dest
@@ -188,5 +204,6 @@ function Set-FakeStoredSnapshot {
 
 Export-ModuleMember -Function Get-RepoRoot, Get-ScriptsDir, Get-FixturesDir,
     Reset-FigmaEnvironment, New-TempWorkspace, Initialize-GitWorkspace, Invoke-FigmaScript,
-    Write-FakeSnapshot, Install-SectionTemplates, Get-SectionPath, Set-FakeSection,
-    Set-FigmaFileAge, Set-FakeLinksEntry, Set-FakeSectionFor, Set-FakeStoredSnapshot
+    Write-FakeSnapshot, Install-ExtensionTree, Install-SectionTemplates, Get-SectionPath,
+    Set-FakeSection, Set-FigmaFileAge, Set-FakeLinksEntry, Set-FakeSectionFor,
+    Set-FakeStoredSnapshot

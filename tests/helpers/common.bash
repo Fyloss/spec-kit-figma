@@ -26,6 +26,19 @@ make_temp_workspace() {
   printf '%s' "$dir"
 }
 
+# Stage the extension tree exactly where `specify extension add` installs it.
+# That tree is where the helpers and templates LIVE AND RUN FROM, so install.sh
+# requires it (and refuses to run without it), and figma-render-section resolves
+# its templates relative to it. Copied, not symlinked: the suite chmods and
+# deletes the workspace, which must never reach back into the checkout.
+stage_extension_tree() { # $1 = workspace (defaults to $WORKSPACE)
+  local home="${1:-$WORKSPACE}/.specify/extensions/figma"
+  mkdir -p "$home"
+  cp -R "${REPO_ROOT}/scripts" "$home/"
+  cp -R "${REPO_ROOT}/templates" "$home/"
+  printf '%s' "$home"
+}
+
 # Turn the temp workspace into a git repository checked out on a given branch,
 # so a test can exercise the branch-derived paths. An empty commit is needed
 # because `git rev-parse --abbrev-ref HEAD` prints "HEAD" (and fails) on an

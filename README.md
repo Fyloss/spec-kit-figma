@@ -37,7 +37,7 @@ submodules) layouts.
 ├── extension.yml                        # SpecKit extension manifest (read by `specify extension add`)
 ├── CHANGELOG.md                        # version history (Keep a Changelog format)
 ├── .extensionignore                    # development-only files excluded from the installed copy
-├── install.sh                          # optional manual installer (single/mono/multi-repo)
+├── install.sh                          # project wiring, run from the installed tree (single/mono/multi-repo)
 ├── install.ps1                         # the same installer for Windows (PowerShell 7+)
 ├── commands/                           # agent-agnostic command templates
 │   ├── speckit.figma.config.md
@@ -90,7 +90,7 @@ This registers the `/speckit.figma.config`, `/speckit.figma.update`,
 **Figma context is refreshed automatically:** the manifest's
 `before_specify` / `before_plan` / `before_tasks` hooks invoke
 `/speckit.figma.ensure`, which runs
-`./.specify/scripts/bash/figma-ensure-context.sh` before generation, piping in the
+`./.specify/extensions/figma/scripts/bash/figma-ensure-context.sh` before generation, piping in the
 user's raw feature input (`--input -`). When Figma applies, the script renders a
 ready-to-paste design section per phase and reports `mustInject: true` so the
 agent integrates it **regardless of model** — never silently omitting it. After
@@ -151,31 +151,37 @@ branches that never became a feature (see
 
 The workspace's `/speckit.specify`, `/speckit.plan` and `/speckit.tasks` prompt
 files are **never modified by default**. If your agent does not support SpecKit
-extension hooks, opt into prompt injection with `./install.sh --prompt-hooks`
+extension hooks, opt into prompt injection with `./.specify/extensions/figma/install.sh --prompt-hooks`
 (a managed block, refreshed in place on re-runs); a default `install.sh` run
 removes any block injected by a previous extension version.
 
-### Manual install (alternative)
+### Then wire it to the project
+
+`specify extension add` above brings the extension's code in; this second step
+configures the project around it (config example, design rules, guides, README
+block, optional prompt hooks). It runs **from the installed tree** and refuses to
+run if that tree is missing:
 ```bash
 # run from the target workspace root (or pass --target /path/to/workspace-root)
 # single-repo (default)
-./install.sh
+./.specify/extensions/figma/install.sh
 
 # mono-repo
-./install.sh --mode mono-repo
+./.specify/extensions/figma/install.sh --mode mono-repo
 
 # multi-repo (git submodules)
-./install.sh --mode multi-repo
+./.specify/extensions/figma/install.sh --mode multi-repo
 
 # then edit figma.projects.config.json, add credentials, and:
-./.specify/scripts/bash/figma-validate-config.sh
+./.specify/extensions/figma/scripts/bash/figma-validate-config.sh
 ```
 
 On **Windows**, run the PowerShell 7+ port instead — same flags, same output
-(`./install.ps1`, then `./.specify/scripts/powershell/figma-validate-config.ps1`).
-Both installers copy **both** script families into the workspace
-(`.specify/scripts/bash/` and `.specify/scripts/powershell/`), so a mixed
-macOS/Linux/Windows team shares one committed setup.
+(`pwsh -File ./.specify/extensions/figma/install.ps1`, then `./.specify/extensions/figma/scripts/powershell/figma-validate-config.ps1`).
+`specify extension add` installs **both** script families at
+`.specify/extensions/figma/scripts/`, whatever your own platform, so a mixed
+macOS/Linux/Windows team shares one setup — and the helpers run straight from
+there, never copied elsewhere in the workspace.
 The installer also copies these guides into the workspace at `.figma/docs/`
 (refreshed on every update, so they match the installed version) and appends a
 short managed **figma section** to the workspace `README.md` (created if
@@ -192,13 +198,13 @@ diagrams.
 
 ## Requirements
 - `git`, plus one script toolchain per developer machine:
-  - **macOS / Linux**: `bash` 4+, `curl`, `jq` (runs `.specify/scripts/bash/*.sh`). `jq`
+  - **macOS / Linux**: `bash` 4+, `curl`, `jq` (runs `.specify/extensions/figma/scripts/bash/*.sh`). `jq`
     is required, not optional: without it the auto-context hook reports
     `"reason": "missing-dependency"` and the agent loses the deterministic path.
     No `sudo` / non-writable Homebrew? Install the static binary into
     `~/.local/bin` — see
     [docs/INSTALL.md → Prerequisites](docs/INSTALL.md#prerequisites);
-  - **Windows**: PowerShell 7+ (`pwsh`) — runs the `.specify/scripts/powershell/*.ps1`
+  - **Windows**: PowerShell 7+ (`pwsh`) — runs the `.specify/extensions/figma/scripts/powershell/*.ps1`
     ports, which use PowerShell's built-in JSON and HTTP support (no `curl`,
     no `jq`). Same flags, same JSON output, same exit codes as the bash
     helpers, so commands, hooks and CI gates behave identically.
@@ -286,7 +292,7 @@ With `"mcp"`, configure `figma.mcp` (`url`, optional `serverName`,
 **transparently falls back to REST** — unless `fallbackToRest: false`, which makes
 an absent server a hard error. Resolve the effective engine at any time:
 ```bash
-./.specify/scripts/bash/figma-resolve-source.sh
+./.specify/extensions/figma/scripts/bash/figma-resolve-source.sh
 # -> {"requested":"mcp","effective":"rest","fellBack":true,
 #     "claudeCode":{"detected":true,"officialFigmaPlugin":false}, ...}
 ```

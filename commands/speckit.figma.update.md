@@ -12,16 +12,20 @@ version.
 
 Updating an extension is two complementary jobs, and they are NOT the same tool:
 
-- **Assets + hooks** (`.specify/scripts`, `.specify/templates`, the design-rules
-  base `.figma/figma-design-rules.md`, the local guides `.figma/docs/`, the
-  managed figma section of the workspace `README.md`, the prompt hooks) → the
-  extension's own `install.sh`. The base, guides and README section are always
+- **The extension's own code** (`scripts/`, `templates/`) **and the slash-command
+  registration** (the `speckit.figma.*` files, per agent format) → SpecKit's
+  native `specify extension add`. It installs the tree at
+  `.specify/extensions/figma/`, which is where the helpers and templates *run
+  from* — they are never copied elsewhere in the workspace — and it records the
+  installed version at `.specify/extensions/figma/extension.yml`.
+- **The project wiring** (the design-rules base `.figma/figma-design-rules.md`,
+  the local guides `.figma/docs/`, the managed figma section of the workspace
+  `README.md`, the prompt hooks) → the extension's own `install.sh`, run from the
+  freshly-registered tree. The base, guides and README section are always
   refreshed (the README outside the marked block is never touched); the user
   overlay `.figma/figma-design-rules.custom.md` is created once and never
-  overwritten.
-- **Slash-command registration** (the `speckit.figma.*` command files, per agent
-  format) → SpecKit's native `specify extension add`. This is also what records
-  the installed version at `.specify/extensions/figma/extension.yml`.
+  overwritten. It **requires** the step above and stops with actionable guidance
+  when the tree is missing.
 
 Both are idempotent and self-healing, so **no uninstall is needed**. The
 authoritative installed version lives in SpecKit's manifest
@@ -78,23 +82,31 @@ stamp.
    `specify` is not available, report the exact command for the user to run and
    continue.
 
-3. **Re-sync assets and hooks.** From the workspace root, run the freshly
-   cloned source's installer. It is idempotent: it refreshes the helper scripts,
-   section templates and design-rules constitution, re-wires the hooks, and reports
-   coherence against SpecKit's registered version — `in sync at <version>` once
-   step 2 has re-registered, or `WARN: figma version mismatch …` if registration
-   was skipped or failed:
+3. **Re-sync the project wiring.** From the workspace root, run the installer of
+   the tree step 2 just registered — NOT the one in the temporary clone. The
+   helpers and templates now run from `.specify/extensions/figma/`, so running its
+   own installer is what guarantees the wiring matches the version SpecKit
+   recorded. It is idempotent: it refreshes the design-rules constitution and the
+   guides, re-wires the hooks, drops the helper/template copies earlier versions
+   left in `.specify/scripts/` and `.specify/templates/`, and reports coherence
+   against SpecKit's registered version — `in sync at <version>` once step 2 has
+   re-registered, or `WARN: figma version mismatch …` if registration was skipped
+   or failed:
 
    ```bash
-   "$EXT_SRC"/install.sh --target "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+   ./.specify/extensions/figma/install.sh --target "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
    ```
 
    On Windows (PowerShell 7+), run the installer's port instead — same flags,
    same output:
 
    ```powershell
-   & (Join-Path $extSrc 'install.ps1') --target ((git rev-parse --show-toplevel 2>$null) ?? $PWD)
+   & './.specify/extensions/figma/install.ps1' --target ((git rev-parse --show-toplevel 2>$null) ?? $PWD)
    ```
+
+   If it stops with "the Figma extension tree is missing", step 2 did not
+   actually run (no `specify` on PATH, or it failed): report that, with the
+   command the user must run, instead of falling back to the clone's installer.
 
    Add `--prompt-hooks` only if this workspace relies on prompt injection rather
    than SpecKit extension hooks (the same flag used at install time).

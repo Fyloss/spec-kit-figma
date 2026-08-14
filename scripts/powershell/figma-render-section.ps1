@@ -17,9 +17,10 @@
 #     [--links <json-array>] [--candidate-frames <json-array>] [--out <path>]
 #
 # Output: writes <root>/.figma/cache/sections/<feature>/<phase>.md (git-ignored) and prints its
-# path on stdout. Templates are resolved from the workspace
-# (<root>/.specify/templates/) first, then the extension checkout
-# (<script>/../../templates/).
+# path on stdout. Templates are resolved next to this script
+# (<script>/../../templates/, i.e. the installed extension tree), then from the
+# workspace (<root>/.specify/templates/) for workspaces still holding the copy
+# earlier versions installed there.
 # =============================================================================
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/figma-common.ps1"
@@ -77,15 +78,20 @@ try {
 $links = @($links)
 $candidateFrames = @($candidateFrames)
 
-# Resolve the template: workspace install first, then the extension checkout.
+# Resolve the template from the tree this script itself lives in, first. The
+# templates ship WITH the extension, so they are always exactly the version of
+# the renderer reading them. The workspace copy comes second and only serves
+# workspaces installed by an earlier version, which copied the templates into
+# .specify/templates/: precedence is the other way round from before, so a stale
+# leftover can never shadow the installed one.
 $template = ''
 foreach ($cand in @(
-        (Join-Path $root '.specify/templates' $templateName),
-        (Join-Path $PSScriptRoot '../../templates' $templateName))) {
+        (Join-Path $PSScriptRoot '../../templates' $templateName),
+        (Join-Path $root '.specify/templates' $templateName))) {
     if (Test-Path -LiteralPath $cand -PathType Leaf) { $template = $cand; break }
 }
 if (-not $template) {
-    Write-FigmaStderr "ERROR: template '$templateName' not found in .specify/templates/ or the extension checkout."
+    Write-FigmaStderr "ERROR: template '$templateName' not found next to the helpers (.specify/extensions/figma/templates/). Re-run 'specify extension add figma' to restore the extension tree."
     exit 1
 }
 

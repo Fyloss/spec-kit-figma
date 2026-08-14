@@ -23,26 +23,58 @@ BeforeAll {
 Describe 'install.ps1' {
     BeforeEach {
         $script:ws = New-TempWorkspace
+        # `specify extension add` is a prerequisite of the installer now, so every
+        # workspace under test starts with the tree it installs.
+        $null = Install-ExtensionTree -Workspace $script:ws
     }
 
-    It 'copies BOTH helper-script families into the target workspace' {
+    It 'never copies the helpers back into .specify/scripts/' {
+        # The helpers run from the tree `specify extension add` installs. A second
+        # copy can drift from the version SpecKit records, and the stale one is
+        # the one a developer reads.
         $r = Invoke-Installer $ws
         $r.ExitCode | Should -Be 0
+        Test-Path (Join-Path $ws '.specify/scripts/bash/figma-common.sh') | Should -BeFalse
+        Test-Path (Join-Path $ws '.specify/scripts/powershell/figma-common.ps1') | Should -BeFalse
+        Test-Path (Join-Path $ws '.specify/templates/spec-figma-section.template.md') | Should -BeFalse
         foreach ($stem in @('figma-validate-config', 'figma-detect-target', 'figma-resolve-source', 'figma-introspect', 'figma-ensure-context')) {
-            Test-Path (Join-Path $ws ".specify/scripts/bash/$stem.sh") | Should -BeTrue
-            Test-Path (Join-Path $ws ".specify/scripts/powershell/$stem.ps1") | Should -BeTrue
+            Test-Path (Join-Path $ws ".specify/extensions/figma/scripts/bash/$stem.sh") | Should -BeTrue
+            Test-Path (Join-Path $ws ".specify/extensions/figma/scripts/powershell/$stem.ps1") | Should -BeTrue
         }
-        Test-Path (Join-Path $ws '.specify/scripts/bash/figma-common.sh') | Should -BeTrue
-        Test-Path (Join-Path $ws '.specify/scripts/powershell/figma-common.ps1') | Should -BeTrue
     }
 
-    It 'scaffolds the config, design rules, overlay, templates and guides' {
+    It 'stops when the extension tree is missing, naming the fix' {
+        Remove-Item -LiteralPath (Join-Path $ws '.specify/extensions') -Recurse -Force
+        $r = Invoke-Installer $ws
+        $r.ExitCode | Should -Not -Be 0
+        $r.Stderr | Should -Match 'specify extension add figma'
+        # It must stop BEFORE writing anything into the workspace.
+        Test-Path (Join-Path $ws 'figma.projects.config.json') | Should -BeFalse
+        Test-Path (Join-Path $ws '.figma/figma-design-rules.md') | Should -BeFalse
+    }
+
+    It 'removes the duplicated copies an earlier version left behind' {
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $ws '.specify/scripts/bash')
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $ws '.specify/templates')
+        Set-Content (Join-Path $ws '.specify/scripts/bash/figma-common.sh') 'stale'
+        Set-Content (Join-Path $ws '.specify/templates/spec-figma-section.template.md') 'stale'
+        # A SpecKit file sharing those directories must survive: they are SpecKit's.
+        Set-Content (Join-Path $ws '.specify/templates/spec-template.md') 'speckit'
+
+        $r = Invoke-Installer $ws
+        $r.ExitCode | Should -Be 0
+        $r.Stdout | Should -Match 'REMOVED:'
+        Test-Path (Join-Path $ws '.specify/scripts/bash/figma-common.sh') | Should -BeFalse
+        Test-Path (Join-Path $ws '.specify/templates/spec-figma-section.template.md') | Should -BeFalse
+        Test-Path (Join-Path $ws '.specify/templates/spec-template.md') | Should -BeTrue
+    }
+
+    It 'scaffolds the config, design rules, overlay and guides' {
         $r = Invoke-Installer $ws
         $r.ExitCode | Should -Be 0
         Test-Path (Join-Path $ws 'figma.projects.config.json') | Should -BeTrue
         Test-Path (Join-Path $ws '.figma/figma-design-rules.md') | Should -BeTrue
         Test-Path (Join-Path $ws '.figma/figma-design-rules.custom.md') | Should -BeTrue
-        Test-Path (Join-Path $ws '.specify/templates/spec-figma-section.template.md') | Should -BeTrue
         Test-Path (Join-Path $ws '.figma/docs/CREDENTIALS.md') | Should -BeTrue
         (Get-Content (Join-Path $ws '.gitignore')) | Should -Contain '.figma/cache/'
     }
@@ -146,12 +178,12 @@ Describe 'install.ps1' {
         $r.Stderr | Should -Match '\.claude/commands'
     }
 
-    It 'the workspace scripts validate a config end-to-end after install' {
+    It 'the installed helpers validate a config end-to-end after install' {
         $null = Invoke-Installer $ws
         Copy-Item (Join-Path (Get-FixturesDir) 'singlerepo-valid.json') (Join-Path $ws 'figma.projects.config.json') -Force
         Push-Location $ws
         try {
-            $out = & (Join-Path $ws '.specify/scripts/powershell/figma-validate-config.ps1')
+            $out = & (Join-Path $ws '.specify/extensions/figma/scripts/powershell/figma-validate-config.ps1')
             $LASTEXITCODE | Should -Be 0
             $out | Should -Match '^OK: '
         } finally {

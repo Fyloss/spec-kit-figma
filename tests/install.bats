@@ -6,6 +6,9 @@ load helpers/common
 setup() {
   INSTALL="${REPO_ROOT}/install.sh"
   WORKSPACE="$(make_temp_workspace)"
+  # `specify extension add` is a prerequisite of the installer now, so every
+  # workspace under test starts with the tree it installs.
+  stage_extension_tree >/dev/null
 }
 
 teardown() {
@@ -13,14 +16,50 @@ teardown() {
   [ -n "$WORKSPACE" ] && rm -rf "$WORKSPACE"
 }
 
-@test "install copies the helper scripts into the target workspace" {
+@test "install never copies the helpers back into .specify/scripts/" {
+  # The helpers run from the tree `specify extension add` installs. A second copy
+  # under .specify/scripts/ can drift from the version SpecKit records, and the
+  # stale one is the one a developer reads.
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
-  [ -x "${WORKSPACE}/.specify/scripts/bash/figma-validate-config.sh" ]
-  [ -x "${WORKSPACE}/.specify/scripts/bash/figma-detect-target.sh" ]
-  [ -x "${WORKSPACE}/.specify/scripts/bash/figma-resolve-source.sh" ]
-  [ -x "${WORKSPACE}/.specify/scripts/bash/figma-introspect.sh" ]
-  [ -f "${WORKSPACE}/.specify/scripts/bash/figma-common.sh" ]
+  [ ! -e "${WORKSPACE}/.specify/scripts/bash/figma-common.sh" ]
+  [ ! -e "${WORKSPACE}/.specify/scripts/powershell/figma-common.ps1" ]
+  [ ! -e "${WORKSPACE}/.specify/templates/spec-figma-section.template.md" ]
+  # …and the tree it does rely on is reported as found.
+  [[ "$output" == *".specify/extensions/figma/scripts/"* ]]
+}
+
+@test "install stops when the extension tree is missing, naming the fix" {
+  # Wiring a project around helpers that are not there produces a workspace that
+  # looks installed and fails on every hook, with an error about a path the
+  # developer never heard of.
+  rm -rf "${WORKSPACE}/.specify/extensions"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"specify extension add figma"* ]]
+  # It must stop BEFORE writing anything into the workspace.
+  [ ! -f "${WORKSPACE}/figma.projects.config.json" ]
+  [ ! -f "${WORKSPACE}/.figma/figma-design-rules.md" ]
+}
+
+@test "install removes the duplicated copies an earlier version left behind" {
+  mkdir -p "${WORKSPACE}/.specify/scripts/bash" "${WORKSPACE}/.specify/scripts/powershell" \
+           "${WORKSPACE}/.specify/templates"
+  printf 'stale\n' > "${WORKSPACE}/.specify/scripts/bash/figma-common.sh"
+  printf 'stale\n' > "${WORKSPACE}/.specify/scripts/powershell/figma-common.ps1"
+  printf 'stale\n' > "${WORKSPACE}/.specify/templates/spec-figma-section.template.md"
+  # A SpecKit file sharing those directories must survive: they are SpecKit's.
+  printf 'speckit\n' > "${WORKSPACE}/.specify/templates/spec-template.md"
+  printf 'speckit\n' > "${WORKSPACE}/.specify/scripts/bash/common.sh"
+
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  [ ! -e "${WORKSPACE}/.specify/scripts/bash/figma-common.sh" ]
+  [ ! -e "${WORKSPACE}/.specify/scripts/powershell/figma-common.ps1" ]
+  [ ! -e "${WORKSPACE}/.specify/templates/spec-figma-section.template.md" ]
+  [ -f "${WORKSPACE}/.specify/templates/spec-template.md" ]
+  [ -f "${WORKSPACE}/.specify/scripts/bash/common.sh" ]
+  [[ "$output" == *"REMOVED:"* ]]
 }
 
 @test "install puts the design-rules constitution in .figma/" {
@@ -210,22 +249,23 @@ OLD
   [[ "$output" == *"no /speckit.specify, /speckit.plan or /speckit.tasks command files found"* ]]
 }
 
-@test "install copies the ensure-context helper script" {
+@test "the ensure-context helper is reachable at the path the hooks invoke" {
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
-  [ -x "${WORKSPACE}/.specify/scripts/bash/figma-ensure-context.sh" ]
+  [ -x "${WORKSPACE}/.specify/extensions/figma/scripts/bash/figma-ensure-context.sh" ]
 }
 
 # --- Update / sync awareness -------------------------------------------------
 
-@test "re-running install restores a helper script removed from the workspace" {
+@test "install is idempotent and never touches the extension tree it runs from" {
+  # Restoring a deleted helper is `specify extension add`'s job now; this
+  # installer must not write into the tree, only read it.
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
-  rm -f "${WORKSPACE}/.specify/scripts/bash/figma-introspect.sh"
-  [ ! -f "${WORKSPACE}/.specify/scripts/bash/figma-introspect.sh" ]
+  before="$(cksum "${WORKSPACE}/.specify/extensions/figma/scripts/bash/figma-introspect.sh")"
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
-  [ -x "${WORKSPACE}/.specify/scripts/bash/figma-introspect.sh" ]
+  [ "$(cksum "${WORKSPACE}/.specify/extensions/figma/scripts/bash/figma-introspect.sh")" = "$before" ]
 }
 
 @test "install keeps no parallel version stamp (SpecKit's manifest is the source of truth)" {
@@ -489,7 +529,7 @@ OLD
   [ ! -e "${WORKSPACE}/README.md" ]
 }
 
-@test "the readme block template is not copied to .specify/templates/ (section templates only)" {
+@test "the readme block template stays a template, never installed as one" {
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
   [ ! -e "${WORKSPACE}/.specify/templates/figma-readme-block.template.md" ]

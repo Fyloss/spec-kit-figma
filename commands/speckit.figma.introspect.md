@@ -17,7 +17,7 @@ or override any base rule; **on conflict, the overlay wins**.
 > so a fresh snapshot is usually already present — **including node-level
 > detail for any direct Figma links pasted in the feature input**, which the
 > hook parses and introspects on its own. (Agents without extension-hook
-> support can opt into prompt injection with `install.sh --prompt-hooks`.)
+> support can opt into prompt injection with `./.specify/extensions/figma/install.sh --prompt-hooks`.)
 > Run this command manually for deep dives (specific nodes, custom depth,
 > team/project exploration) or to force a refresh.
 
@@ -25,17 +25,17 @@ or override any base rule; **on conflict, the overlay wins**.
 
 Run these from the workspace root. The short names used below map to:
 
-- `detect` → `./.specify/scripts/bash/figma-detect-target.sh`
-- `parse` → `./.specify/scripts/bash/figma-parse-links.sh`
-- `resolve` → `./.specify/scripts/bash/figma-resolve-source.sh`
-- `introspect` → `./.specify/scripts/bash/figma-introspect.sh`
-- `ensure` → `./.specify/scripts/bash/figma-ensure-context.sh` (auto pre-specify/tasks
+- `detect` → `./.specify/extensions/figma/scripts/bash/figma-detect-target.sh`
+- `parse` → `./.specify/extensions/figma/scripts/bash/figma-parse-links.sh`
+- `resolve` → `./.specify/extensions/figma/scripts/bash/figma-resolve-source.sh`
+- `introspect` → `./.specify/extensions/figma/scripts/bash/figma-introspect.sh`
+- `ensure` → `./.specify/extensions/figma/scripts/bash/figma-ensure-context.sh` (auto pre-specify/tasks
   hook: introspects only when the snapshot is missing or stale; safe no-op
   otherwise)
 
 On Windows, use the PowerShell 7+ ports instead — same flags, same JSON output:
-replace `./.specify/scripts/bash/<name>.sh` with
-`./.specify/scripts/powershell/<name>.ps1` (run from `pwsh`).
+replace `./.specify/extensions/figma/scripts/bash/<name>.sh` with
+`./.specify/extensions/figma/scripts/powershell/<name>.ps1` (run from `pwsh`).
 
 ## 0. Inputs & direct Figma links
 
@@ -245,8 +245,8 @@ The design section is **mandatory** in spec/plan/tasks whenever Figma applies,
 regardless of the agent model. Do not hand-assemble it from scratch:
 
 1. Run the renderer for the phase you are generating, e.g.
-   `./.specify/scripts/bash/figma-render-section.sh --phase spec` (or `plan` /
-   `tasks`; on Windows `./.specify/scripts/powershell/figma-render-section.ps1`).
+   `./.specify/extensions/figma/scripts/bash/figma-render-section.sh --phase spec` (or `plan` /
+   `tasks`; on Windows `./.specify/extensions/figma/scripts/powershell/figma-render-section.ps1`).
    It fills every deterministic placeholder from the snapshot (file,
    pages, top-level frames, components/styles, context engine, input links) and
    writes `.figma/cache/sections/<feature>/<phase>.md`. The `ensure` hook already does this and
@@ -257,6 +257,7 @@ regardless of the agent model. Do not hand-assemble it from scratch:
    the project's policy, token mappings, token gaps, tests and component-catalog
    sub-tasks) using the rules above.
 
-The templates live at `./.specify/templates/{spec,plan,tasks}-figma-section.template.md`
-(installed by `install.sh` / `install.ps1`) — used by the renderer and as a manual
+The templates live at `./.specify/extensions/figma/templates/{spec,plan,tasks}-figma-section.template.md`
+(installed by `specify extension add`, alongside the helpers that read them) —
+used by the renderer and as a manual
 fallback if it fails. Never omit the section when a Figma creation applies.

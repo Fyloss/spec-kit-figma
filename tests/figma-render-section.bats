@@ -106,26 +106,44 @@ JSON
 
 @test "substitutes the full-enum mode placeholder {{single-repo | mono-repo | multi-repo}}" {
   # The schema enum is single-repo|mono-repo|multi-repo; the renderer must fill
-  # the placeholder that spells out the full enum, wherever the template lives.
-  mkdir -p "${WORKSPACE}/.specify/templates"
+  # the placeholder that spells out the full enum. Exercised through the tree the
+  # renderer really runs from, where its templates ship beside it.
+  home="$(stage_extension_tree)"
   printf '## Figma Design Plan *(extension: figma)*\n\n- **Mode**: {{single-repo | mono-repo | multi-repo}}\n' \
-    > "${WORKSPACE}/.specify/templates/plan-figma-section.template.md"
-  run "$SCRIPT" --phase plan --snapshot "$SNAP"
+    > "${home}/templates/plan-figma-section.template.md"
+  run "${home}/scripts/bash/figma-render-section.sh" --phase plan --snapshot "$SNAP"
   [ "$status" -eq 0 ]
   ! grep -qF '{{single-repo | mono-repo | multi-repo}}' "$output"   # placeholder filled
   grep -qF '**Mode**: single-repo' "$output"                        # schema default applied
 }
 
 @test "still substitutes the legacy mode placeholder {{multi-repo | mono-repo}}" {
-  # Workspaces installed before the enum was completed may still carry the old
-  # placeholder in <root>/.specify/templates/ — the renderer must keep filling it.
-  mkdir -p "${WORKSPACE}/.specify/templates"
+  # A workspace installed before the enum was completed may still carry the old
+  # placeholder — the renderer must keep filling it.
+  home="$(stage_extension_tree)"
   printf '## Figma Design Plan *(extension: figma)*\n\n- **Mode**: {{multi-repo | mono-repo}}\n' \
-    > "${WORKSPACE}/.specify/templates/plan-figma-section.template.md"
-  run "$SCRIPT" --phase plan --snapshot "$SNAP"
+    > "${home}/templates/plan-figma-section.template.md"
+  run "${home}/scripts/bash/figma-render-section.sh" --phase plan --snapshot "$SNAP"
   [ "$status" -eq 0 ]
   ! grep -qF '{{multi-repo | mono-repo}}' "$output"
   grep -qF '**Mode**: single-repo' "$output"
+}
+
+@test "the templates that ship with the helpers win over a workspace leftover" {
+  # Precedence is script-relative first. A copy an earlier version installed into
+  # .specify/templates/ must never shadow the one the running renderer shipped
+  # with — that is how a workspace ends up rendering with a template from another
+  # version.
+  home="$(stage_extension_tree)"
+  printf '## Figma Design Plan *(extension: figma)*\n\nshipped\n' \
+    > "${home}/templates/plan-figma-section.template.md"
+  mkdir -p "${WORKSPACE}/.specify/templates"
+  printf '## Figma Design Plan *(extension: figma)*\n\nleftover\n' \
+    > "${WORKSPACE}/.specify/templates/plan-figma-section.template.md"
+  run "${home}/scripts/bash/figma-render-section.sh" --phase plan --snapshot "$SNAP"
+  [ "$status" -eq 0 ]
+  grep -qF 'shipped' "$output"
+  ! grep -qF 'leftover' "$output"
 }
 
 @test "rejects a non-array --candidate-frames" {

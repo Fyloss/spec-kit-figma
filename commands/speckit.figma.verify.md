@@ -26,13 +26,13 @@ From the workspace root, run the verifier with the matching phase (substitute
 `<phase>` using the table above):
 
 ```bash
-./.specify/scripts/bash/figma-verify-section.sh --phase <phase>
+./.specify/extensions/figma/scripts/bash/figma-verify-section.sh --phase <phase>
 ```
 
 On Windows, run the PowerShell 7+ port instead (same flags, same JSON output):
 
 ```powershell
-./.specify/scripts/powershell/figma-verify-section.ps1 --phase <phase>
+./.specify/extensions/figma/scripts/powershell/figma-verify-section.ps1 --phase <phase>
 ```
 
 Pass `--doc <path>` if you know the exact document path; otherwise it resolves
