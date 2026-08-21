@@ -460,6 +460,10 @@ Before generating, refresh the Figma design context:
    URL and call a Figma MCP tool with it, which is how "the provided node ID was
    not found in the file" happens. The snapshot the hook just refreshed is the
    authoritative source.
+6. **`/speckit.converge` appends to an existing `tasks.md`.** The Figma tasks
+   section is very likely already there from the original `/speckit.tasks` run:
+   keep it and its `speckit-figma:section phase=tasks` marker, add the newly
+   derived design tasks into it, and never paste a second copy of the section.
 <!-- END SPECKIT-FIGMA AUTO-CONTEXT -->
 HOOK
   echo "${action}: ${file#"$TARGET"/}"
@@ -468,7 +472,7 @@ HOOK
 if [[ "$HOOKS" != "off" ]]; then
   HOOKED_ANY="false"
   for dir in "${AGENT_CMD_DIRS[@]}"; do
-    for stem in specify plan tasks analyze implement; do
+    for stem in specify plan tasks analyze converge implement; do
       for f in "$TARGET/$dir/speckit.${stem}.md" "$TARGET/$dir/speckit.${stem}.prompt.md"; do
         [[ -f "$f" ]] || continue
         if [[ "$HOOKS" == "inject" ]]; then

@@ -1,11 +1,11 @@
 ---
-description: Verify that the Figma design section was actually integrated into the just-generated spec/plan/tasks document when a Figma mockup was detected, and self-correct if it is missing. Invoked by the after_specify/after_plan/after_tasks hooks; safe no-op when Figma does not apply.
+description: Verify that the Figma design section was actually integrated into the just-generated spec/plan/tasks document when a Figma mockup was detected, and self-correct if it is missing. Invoked by the after_specify/after_plan/after_tasks/after_converge hooks; safe no-op when Figma does not apply.
 ---
 
 # /speckit.figma.verify — Post-generation section check
 
 You are the design-context verifier. This command runs automatically AFTER
-generation (via the `after_specify` / `after_plan` / `after_tasks` hooks) to
+generation (via the `after_specify` / `after_plan` / `after_tasks` / `after_converge` hooks) to
 confirm that the mandatory Figma section made it into the document. Do NOT ask
 for approval; it is a safe no-op when Figma does not apply.
 
@@ -21,6 +21,7 @@ plan/tasks section pass silently (and pass a `--strict` CI gate).
 | `after_specify` | `spec.md` | `--phase spec` |
 | `after_plan` | `plan.md` | `--phase plan` |
 | `after_tasks` | `tasks.md` | `--phase tasks` |
+| `after_converge` | `tasks.md` (rewritten) | `--phase tasks` |
 
 From the workspace root, run the verifier with the matching phase (substitute
 `<phase>` using the table above):

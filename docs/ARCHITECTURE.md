@@ -120,7 +120,7 @@ why the test suite can exercise every skip reason without a Figma token.
 
 ## 3. Hook wiring — where the extension runs
 
-`extension.yml` binds three commands to nine hooks. All nine are
+`extension.yml` binds three commands to eleven hooks. All eleven are
 `optional: false`, so the agent cannot decline them.
 
 | Phase | Before | After | What the phase produces |
@@ -128,6 +128,7 @@ why the test suite can exercise every skip reason without a Figma token.
 | `specify` | `figma.ensure` | `figma.verify` | `spec.md` |
 | `plan` | `figma.ensure` | `figma.verify` | `plan.md` |
 | `tasks` | `figma.ensure` | `figma.verify` | `tasks.md` |
+| `converge` | `figma.ensure` | `figma.verify` | appends to `tasks.md` |
 | `analyze` | `figma.ensure` | `figma.drift` | *(no document)* |
 | `implement` | `figma.ensure` | — | *(code)* |
 
@@ -136,6 +137,18 @@ renders a section and `verify` confirms it was pasted. `analyze` and `implement`
 produce none: there `ensure` exists to load the **context** — the effective
 ruleset (`.figma/figma-design-rules.md` plus the project overlay) and a current
 snapshot.
+
+`converge` sits with the first group: it assesses the codebase against the three
+documents and **appends the remaining unbuilt work to `tasks.md`**, which makes
+it a task-generating phase like `/speckit.tasks`. Converging without design
+context means the unbuilt UI work is re-derived from prose alone, and
+`implement` then builds from those valueless tasks. Because it *rewrites* a
+document that already carries a section, `after_converge` runs the same
+`--phase tasks` check as `after_tasks`: a rewrite is where a marker gets dropped.
+
+`converge` is also the only reason `requires.speckit_version` is `>=0.11.2` —
+its command template, and therefore its hook points, first ship in that release.
+Every other hook here has existed since at least v0.9.5.
 
 `implement` is the phase that actually writes the code, so it is the phase where
 the rules bind — placement, token mapping, unit conversion, tests. Without its

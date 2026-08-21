@@ -1,12 +1,13 @@
 ---
-description: Automatically refresh the Figma design context before spec/plan/tasks generation, and reload it before analyze/implement. Invoked by the extension's before_specify/before_plan/before_tasks/before_analyze/before_implement hooks — the developer never runs it by hand. Safe no-op when Figma does not apply to the run.
+description: Automatically refresh the Figma design context before spec/plan/tasks/converge generation, and reload it before analyze/implement. Invoked by the extension's before_* hooks — the developer never runs it by hand. Safe no-op when Figma does not apply to the run.
 ---
 
 # /speckit.figma.ensure — Automatic Figma design context
 
 You are the design-context bootstrap. This command is invoked automatically by
 the extension hooks (`before_specify` / `before_plan` / `before_tasks` /
-`before_analyze` / `before_implement`) — do NOT ask the developer for approval:
+`before_converge` / `before_analyze` / `before_implement`) — do NOT ask the
+developer for approval:
 the underlying script is a safe no-op whenever Figma does not apply, and it never
 blocks a run.
 
@@ -15,7 +16,18 @@ blocks a run.
 | Invoking hook | What the phase produces | What you do with the status |
 |---|---|---|
 | `before_specify` / `before_plan` / `before_tasks` | a document | paste the rendered section (§2) |
+| `before_converge` | appends to `tasks.md` | §2, but see the rule below |
 | `before_analyze` / `before_implement` | no document | load the context (§2 bis) |
+
+**`before_converge` is a task-generating phase**, so the design context applies
+exactly as it does at `/speckit.tasks`: the work `converge` appends is unbuilt UI
+work, and without the context it is re-derived from prose with no Figma value
+behind it. One rule of its own: `tasks.md` very likely **already carries** the
+Figma tasks section from the original `/speckit.tasks` run. Do NOT paste a second
+copy — keep the existing section and its `speckit-figma:section phase=tasks`
+marker intact, and add the newly derived design tasks into it. A rewrite is
+exactly where that marker gets dropped, and `after_converge` checks that it did
+not.
 
 Sections 2 and 3 below describe the document family. Section 2 bis describes the
 other one — read it instead when you were invoked by `before_analyze` or

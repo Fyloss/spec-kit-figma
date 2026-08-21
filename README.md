@@ -89,8 +89,8 @@ and `/speckit.figma.drift` commands with your agent. Then run
 `/speckit.figma.config` once.
 
 **Figma context is refreshed automatically:** the manifest's
-`before_specify` / `before_plan` / `before_tasks` / `before_analyze` /
-`before_implement` hooks invoke
+`before_specify` / `before_plan` / `before_tasks` / `before_converge` /
+`before_analyze` / `before_implement` hooks invoke
 `/speckit.figma.ensure`, which runs
 `./.specify/extensions/figma/scripts/bash/figma-ensure-context.sh` before generation, piping in the
 user's raw feature input (`--input -`). When Figma applies, the script renders a
@@ -108,6 +108,16 @@ unconfigured, the target is excluded, or the snapshot is fresh (and covers the
 linked nodes) — and it never blocks spec/tasks generation. Running
 `/speckit.figma.introspect` manually remains available for deep dives
 (specific nodes, custom depth).
+
+**`/speckit.converge` is covered as a task-generating phase.** It assesses the
+codebase against spec/plan/tasks and appends the remaining unbuilt work to
+`tasks.md`, so it needs the design context exactly as `/speckit.tasks` does —
+without it the appended UI tasks are re-derived from prose with no Figma value
+behind them, and `implement` builds from those. Because converge *rewrites* a
+document that already carries the section, `after_converge` re-runs the same
+check as `after_tasks`. **This is why the extension now requires SpecKit
+`>=0.11.2`** — converge's command template, and therefore its hook points, first
+ship in that release; every other hook has existed far longer.
 
 **`analyze` and `implement` are covered too, differently.** They generate no
 document, so there is no section to paste; what `ensure` gives them is the
