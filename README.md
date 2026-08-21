@@ -140,6 +140,41 @@ snapshot, reports it in the chat, and never edits a document. `--strict` (or
 `figma.verifyStrict`) makes a real drift fail the build; being unable to check
 never does.
 
+### Optional: autonomous introspection, per target
+
+By default the extension does nothing without a Figma link — see the paragraph
+below. A target whose Figma file is small enough to reason about as a whole can
+re-open the config-derived path:
+
+```jsonc
+"repo": {
+  "figmaFileId": "…",
+  "autoIntrospect": { "mode": "on-request", "maxFrames": 60 }
+}
+```
+
+| `mode` | Trigger | Use it for |
+|--------|---------|-----------|
+| `off` *(default)* | a link, and nothing else | everything, unless you decide otherwise |
+| **`on-request`** *(recommended)* | the agent judges the feature to have a creative and passes `--assume-design` | a Figma file you are happy to have read whole |
+| `always` | any run on a mapped, enabled target | small, front-end-only projects |
+
+**The config authorizes, the agent triggers.** `--assume-design` grants nothing
+on a target left at `off` — the authorization lives in a committed file,
+reviewable in a PR, so an agent can never grant it to itself.
+
+**`maxFrames` is a hard budget, not advice.** When the mapped file holds more
+top-level frames than that, the run stops at `too-large-for-auto` and asks for a
+link pinning the frame, because context that wide is too diluted to implement
+faithfully. Large Figma files should keep `mode: "off"` and pass a node id — that
+is the whole point of the distinction. Autonomous runs also have nothing pinning
+the creative, so the frame-confirmation checkpoint always applies before tasks
+are generated (`confirmFrames: false` opts out, for a file with one unambiguous
+creative).
+
+Requires `figmaFileId` on the target: introspecting a whole project or team is
+`/speckit.figma.introspect`, run by hand — never an automatic pre-generation hook.
+
 **A Figma link is what makes a run a design run.** Paste one in the feature
 description at `/speckit.specify` and the design section is generated and made
 mandatory; paste none and the hooks report `no-figma-link` and add nothing at

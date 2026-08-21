@@ -46,6 +46,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`autoIntrospect` — opt-in autonomous introspection, per target.** 2.0.0 made a
+  Figma link the sole trigger, which removed the agent's ability to fetch design
+  context when it judges the feature to need it. A target can now re-open the
+  config-derived path in `figma.projects.config.json`:
+
+  ```jsonc
+  "repo": { "autoIntrospect": { "mode": "on-request", "maxFrames": 60 } }
+  ```
+
+  `off` is the **default**, so nothing changes for a workspace that says nothing
+  and the 2.0.0 contract is preserved. `on-request` (recommended) has the
+  committed config *authorise* and the agent *trigger*, by passing the new
+  `--assume-design` flag when the feature plainly describes UI work; on a target
+  left at `off` the flag is ignored with a warning, so an agent can never grant
+  itself design context. `always` restores the pre-2.0.0 behaviour for the
+  targets that want it.
+
+  Three properties keep this from re-creating the regression 2.0.0 removed:
+
+  - **The autonomous path introspects the mapped file and nothing wider.** A
+    project or team id would crawl an organisation — that is
+    `/speckit.figma.introspect`'s job, never an automatic pre-generation hook's.
+    A target with no `figmaFileId` reports the new reason `auto-unavailable`, and
+    the schema refuses the combination outright.
+  - **`maxFrames` (default 60) is a hard, measured budget.** Over it, the run
+    stops at `too-large-for-auto` with nothing rendered and asks for a node id,
+    because context that wide is too diluted to implement faithfully. It is
+    checked at all three points that reach a usable snapshot — the fresh slot,
+    the restored per-file copy and a fresh introspection — and never applies to a
+    link-driven run, whose node id already pins the creative.
+  - **The rule-5 confirmation checkpoint fires by construction.** An autonomous
+    run contributes no node id, so the scope computation classifies it `broad`
+    and the candidate frames are enumerated for confirmation — the existing
+    safety net, reused rather than rebuilt. `confirmFrames: false` opts out, for
+    a file holding one unambiguous creative.
+
+  The status object gains `trigger` (`link` | `auto` | `none`) and
+  `confirmFrames`, rather than duplicating every reason into an `auto-*` variant,
+  plus the terminal reasons `auto-declined`, `auto-unavailable` and
+  `too-large-for-auto`.
 - **`/speckit.converge` is hooked as a task-generating phase.** Converge assesses
   the codebase against spec/plan/tasks and **appends the remaining unbuilt work
   to `tasks.md`**, which puts it in the same class as `/speckit.tasks` — already

@@ -29,7 +29,8 @@
 #
 # Usage:
 #   figma-ensure-context.ps1 [<target-name>] [--config <path>]
-#     [--max-age-minutes N] [--input <text> | --input -] [--dry-run]
+#     [--max-age-minutes N] [--input <text> | --input -] [--assume-design]
+#     [--dry-run]
 # <target-name> defaults to "repo" (single-/mono-repo); for multi-repo it is
 # auto-resolved only when exactly one enabled target exists.
 # --input carries the user's raw feature input ("-" reads stdin): any direct
@@ -53,9 +54,16 @@
 #     "specSection": "...", "planSection": "...", "tasksSection": "..." }
 # When mustInject=true the agent MUST paste the rendered <phase>Section file
 # verbatim into the generated document, then complete the judgement fields.
+# --assume-design is the agent stating "this feature has a creative" when the
+# input carries no link. It grants nothing by itself: it is honoured only on a
+# target whose config declares `autoIntrospect.mode: "on-request"`, so the
+# authorisation stays in the committed config and an agent can never authorise
+# itself. See "Autonomous introspection policy" in figma-common.ps1.
+#
 # Reasons: introspected | fresh | dry-run | no-figma-link | no-config |
 #   invalid-config | unresolved-placeholders | ambiguous-target |
-#   target-excluded | target-not-mapped | target-disabled | introspect-failed
+#   target-excluded | target-not-mapped | target-disabled | introspect-failed |
+#   auto-declined | auto-unavailable | too-large-for-auto
 # =============================================================================
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/figma-common.ps1"
@@ -63,6 +71,7 @@ $ErrorActionPreference = 'Stop'
 $target = ''
 $maxAgeMin = if ($env:FIGMA_SNAPSHOT_MAX_AGE_MINUTES) { $env:FIGMA_SNAPSHOT_MAX_AGE_MINUTES } else { '60' }
 $dryRun = $false
+$assumeDesign = $false
 $inputText = ''
 $i = 0
 while ($i -lt $args.Count) {
@@ -81,6 +90,7 @@ while ($i -lt $args.Count) {
             }
             $i += 2; continue
         }
+        '^--assume-design$' { $assumeDesign = $true; $i += 1; continue }
         '^--dry-run$' { $dryRun = $true; $i += 1; continue }
         '^--' { Write-FigmaStderr "ERROR: unknown arg '$($args[$i])'"; exit 1 }
         default {
@@ -116,6 +126,13 @@ $linkNodes = @()
 $recordLinks = $false
 # Injection contract: filled once a usable snapshot exists (introspected|fresh).
 $mustInject = $false
+# What made this a design run: a pasted/remembered/recovered link ("link"), the
+# target's autoIntrospect policy ("auto"), or nothing yet ("none").
+$trigger = 'none'
+# Autonomous-run policy, resolved from the target once it is known.
+$autoMode = 'off'
+$autoMaxFrames = 60
+$confirmFrames = $true
 $linkScope = 'none'          # none | frame | broad
 $candidateFrames = @()       # top-level frames to confirm when linkScope=broad
 $specSection = ''
@@ -139,6 +156,8 @@ function Emit-Status { # $Ran (bool), $Reason
         snapshot        = $script:snapshotPath
         links           = @($script:links)
         mustInject      = $script:mustInject
+        trigger         = $script:trigger
+        confirmFrames   = $script:confirmFrames
         linkScope       = $script:linkScope
         candidateFrames = @($script:candidateFrames)
         specSection     = if ($script:specSection) { $script:specSection } else { $null }
@@ -229,6 +248,40 @@ function Compute-LinkScope {
 function Clear-RenderedSections {
     $dir = Split-Path -Parent (Get-FigmaSectionPath 'spec')
     Remove-Item -Path (Join-Path $dir '*.md') -Force -ErrorAction SilentlyContinue
+}
+
+# Terminal path for every run that reaches a usable snapshot. It exists so the
+# autonomous frame budget is enforced at ALL THREE of them — the fresh slot, the
+# restored per-file copy, and a just-completed introspection — instead of only at
+# the one that happens to perform the network call.
+#
+# The budget is checked here, AFTER the snapshot exists, because the frame count
+# is not knowable before it: /files/<key>?depth=2 is the call that produces the
+# page/frame index. The fetch is therefore paid once, and the snapshot is kept
+# (it is valid, cached, and a later /speckit.figma.introspect will reuse it) —
+# what the budget refuses is REASONING over a file that wide without a pinned
+# node. Link-driven runs are exempt: their node id already pins the creative.
+function Complete-WithSnapshot { # $Ran (bool), $Reason
+    param([bool]$Ran, [string]$Reason)
+    if ($script:trigger -eq 'auto') {
+        $frames = 0
+        try {
+            $snap = Read-FigmaJsonFile $script:snapshotPath
+            $pages = @(Get-JsonValue $snap @('pages'))
+            foreach ($page in $pages) {
+                $frames += @(Get-JsonValue $page @('frames')).Count
+            }
+        } catch { $frames = 0 }
+        if ($frames -gt $script:autoMaxFrames) {
+            Write-FigmaStderr "WARN: file '$($script:linkFile)' holds $frames top-level frames, over this target's autoIntrospect.maxFrames=$($script:autoMaxFrames). Context that wide is too diluted to implement faithfully: open the frame in Figma, copy its link (right-click > Copy link to selection) and paste it into the feature input to pin the creative."
+            Clear-RenderedSections
+            Emit-Status $false 'too-large-for-auto'
+            exit 0
+        }
+    }
+    Prepare-Injection
+    Emit-Status $Ran $Reason
+    exit 0
 }
 
 # Render the ready-to-paste spec/plan/tasks sections from the fresh snapshot so
@@ -442,15 +495,75 @@ if (-not $linkFile) {
     }
 }
 
+# A link resolved from any of the three sources above pins the creative. That is
+# the default trigger, and the safe one: the developer named the frame.
+if ($linkFile) { $trigger = 'link' }
+
+# No link anywhere. The 2.0.0 contract ends the run here — and still does, unless
+# THIS target opted into autonomous introspection (`autoIntrospect` in the config;
+# see "Autonomous introspection policy" in figma-common.ps1). The opt-in
+# deliberately lives in the committed config: authorising the extension to work
+# without a link is a team decision, reviewable in a PR, and an agent must never
+# be able to grant it to itself.
 if (-not $linkFile) {
-    # Actionable on purpose. The document stays silent, so this line is the only
-    # place a forgotten link can still be caught — and it only works if it says
-    # what to do. Nothing downstream distinguishes a front-end feature whose
-    # author forgot the link from a back-end one that legitimately has none.
-    Write-FigmaStderr 'INFO: no Figma link in the feature input; proceeding without Figma context. If this feature does have a mockup, paste the Figma link into /speckit.specify and re-run — nothing further will flag the omission.'
-    Clear-RenderedSections
-    Emit-Status $false 'no-figma-link'
-    exit 0
+    $autoMode = Get-FigmaAutoIntrospectMode $detect
+    $autoMaxFrames = Get-FigmaAutoIntrospectMaxFrames $detect
+    $confirmFrames = Test-FigmaAutoIntrospectConfirm $detect
+
+    switch ($autoMode) {
+        'on-request' {
+            # The config unlocks the door, the agent opens it: --assume-design is
+            # the agent stating that this feature has a creative. Without it the
+            # run is a deliberate decline — a distinct outcome from "this target
+            # may not", which is why it does not collapse into no-figma-link.
+            if (-not $assumeDesign) {
+                Write-FigmaStderr "INFO: target '$target' allows autonomous introspection on request, but this run claimed no design intent. Re-run with --assume-design when the feature has a creative, or paste the Figma link to pin it exactly."
+                Clear-RenderedSections
+                Emit-Status $false 'auto-declined'
+                exit 0
+            }
+        }
+        'always' { }  # any run on a mapped, enabled target introspects
+        default {
+            # mode=off (the default): --assume-design must not look like it worked.
+            if ($assumeDesign) {
+                Write-FigmaStderr "WARN: --assume-design was passed but target '$target' declares autoIntrospect.mode='off' (the default); the flag grants nothing. Set it to 'on-request' in $(Split-Path -Leaf $config) to allow autonomous introspection."
+            }
+            # Actionable on purpose. The document stays silent, so this line is the
+            # only place a forgotten link can still be caught — and it only works if
+            # it says what to do. Nothing downstream distinguishes a front-end
+            # feature whose author forgot the link from a back-end one that
+            # legitimately has none.
+            Write-FigmaStderr 'INFO: no Figma link in the feature input; proceeding without Figma context. If this feature does have a mockup, paste the Figma link into /speckit.specify and re-run — nothing further will flag the omission.'
+            Clear-RenderedSections
+            Emit-Status $false 'no-figma-link'
+            exit 0
+        }
+    }
+
+    # Authorised — but the autonomous path introspects the MAPPED FILE and nothing
+    # wider. A team/project id walks every file of an organisation, which is
+    # /speckit.figma.introspect's job and never a hook's: an automatic
+    # pre-generation step must not turn one feature into an org-wide crawl.
+    $autoFileId = [string](Get-JsonValue $detect @('figmaFileId') '')
+    if (-not $autoFileId) {
+        Write-FigmaStderr "WARN: target '$target' enables autoIntrospect but declares no figmaFileId (only a project/team id). An autonomous run needs exactly one file: pin figmaFileId in $(Split-Path -Leaf $config), or run /speckit.figma.introspect --project/--team by hand."
+        Clear-RenderedSections
+        Emit-Status $false 'auto-unavailable'
+        exit 0
+    }
+
+    # From here the run is deliberately indistinguishable from a link-driven one
+    # whose link carried no node id: $linkFile drives freshness, the per-file
+    # snapshot store and the introspection scope, while $links stays empty so the
+    # rendered section reports "context derived from page mapping" instead of
+    # inventing a link the developer never pasted. $linkNodes stays empty too —
+    # which is exactly what makes Compute-LinkScope classify the run as "broad",
+    # so the creative-confirmation checkpoint (design rule 5) fires by
+    # construction rather than by a new code path of its own.
+    $linkFile = $autoFileId
+    $trigger = 'auto'
+    Write-FigmaStderr "INFO: no Figma link; autonomously introspecting the mapped file '$linkFile' for target '$target' (autoIntrospect.mode=$autoMode)."
 }
 
 # Remember this phase's links for the next one. A dry run is a rehearsal: it must
@@ -465,9 +578,7 @@ if ($recordLinks -and -not $dryRun) {
 # max-age window, and covers any directly-linked file/nodes from the input.
 if ((Test-SnapshotIsCurrent $snapshotPath) -and (Test-SnapshotCoversLinks $snapshotPath)) {
     # Figma applies and the snapshot is usable -> the section is mandatory; render it.
-    Prepare-Injection
-    Emit-Status $false 'fresh'
-    exit 0
+    Complete-WithSnapshot $false 'fresh'
 }
 
 # The current slot holds another file's snapshot -- but the per-file store may
@@ -482,20 +593,20 @@ if ($storedSnapshot -and $storedSnapshot -ne $snapshotPath `
     try {
         Copy-Item -LiteralPath $storedSnapshot -Destination $snapshotPath -Force
         Write-FigmaStderr "INFO: reused the cached snapshot of file '$linkFile'; no re-introspection needed."
-        Prepare-Injection
-        Emit-Status $false 'fresh'
-        exit 0
+        Complete-WithSnapshot $false 'fresh'
     } catch {
         Write-FigmaStderr "WARN: could not restore the cached snapshot of '$linkFile'; re-introspecting."
     }
 }
 
-# Link-driven scope, and the only one: introspect the linked file and drill into
-# each linked node so the snapshot carries frame-level detail (fills, typography,
-# layout). Reaching here means $linkFile is set — the no-link path returned
-# above — so the config mapping no longer derives a scope of its own. It still
-# decides whether the target participates at all (the target-* skips above), and
-# /speckit.figma.introspect remains the way to introspect a mapped team/project.
+# File-level scope: introspect the resolved file and drill into each linked node
+# so the snapshot carries frame-level detail (fills, typography, layout).
+# Reaching here means $linkFile is set, from one of exactly two triggers — a link
+# ($trigger = link), or the target's autoIntrospect policy resolving the mapped
+# figmaFileId ($trigger = auto). An autonomous run contributes no --node, so the
+# snapshot stays file-wide and the frame budget in Complete-WithSnapshot decides
+# whether it is usable at all. Team/project scopes are never derived here:
+# /speckit.figma.introspect remains the way to walk a mapped team or project.
 $introspectArgs += @('--file', $linkFile)
 foreach ($nodeId in $linkNodes) {
     $introspectArgs += @('--node', $nodeId)
@@ -521,8 +632,7 @@ try {
         ForEach-Object { Write-FigmaStderr $_ }
     $introspectRc = $LASTEXITCODE
     if ($introspectRc -eq 0) {
-        Prepare-Injection
-        Emit-Status $true 'introspected'
+        Complete-WithSnapshot $true 'introspected'
     } else {
         if ((Test-Path -LiteralPath $diagFile.FullName) -and (Get-Item -LiteralPath $diagFile.FullName).Length -gt 0) {
             try {

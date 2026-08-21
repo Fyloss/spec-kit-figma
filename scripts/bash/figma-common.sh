@@ -470,6 +470,54 @@ figma_resolve_context_source() {
 }
 
 # -----------------------------------------------------------------------------
+# Autonomous introspection policy (per target)
+# -----------------------------------------------------------------------------
+# Since 2.0.0 a Figma link in the feature input is what makes a run a design run.
+# That default stays, because the mapping says WHERE a creative would live, not
+# WHETHER this feature has one — the regression it removed was a back-end feature
+# coming back with a Figma section stapled to its spec. A target may nonetheless
+# re-open the config-derived path by declaring `autoIntrospect` (see the schema).
+#
+# All three accessors read the target node as figma-detect-target.sh emits it
+# ({..., "node": {...full target...}}), not the raw config: target resolution is
+# mode-dependent (single-repo/mono-repo `.repo` vs multi-repo `.submodules[$t]`)
+# and detect-target already owns it. Taking the JSON as an argument also keeps
+# them pure, so the decision table is unit-testable without a workspace.
+
+# Declared mode: "off" (default) | "on-request" | "always".
+# An unknown value degrades to "off": the permissive reading of a typo would
+# silently grant a target more autonomy than its author wrote down.
+figma_auto_introspect_mode() { # $1 = detect JSON
+  local mode
+  mode="$(jq -r '(.node.autoIntrospect.mode // "off")' <<< "${1:-}" 2>/dev/null || true)"
+  case "$mode" in
+    off|on-request|always) printf '%s' "$mode" ;;
+    *) printf 'off' ;;
+  esac
+}
+
+# Frame budget above which the autonomous path refuses to reason over the file.
+# Non-integer / non-positive values fall back to the default rather than
+# disabling the guard: a malformed budget must not read as "no budget".
+figma_auto_introspect_max_frames() { # $1 = detect JSON
+  local max
+  max="$(jq -r '(.node.autoIntrospect.maxFrames // empty)' <<< "${1:-}" 2>/dev/null || true)"
+  [[ "$max" =~ ^[1-9][0-9]*$ ]] || max="60"
+  printf '%s' "$max"
+}
+
+# Whether the creative-confirmation checkpoint (design rule 5) stays on for
+# autonomous runs. Tristate absent/true/false mapped through a string so the
+# `//`-treats-false-as-empty pitfall cannot flip the default (same guard as
+# figma_mcp_fallback_enabled).
+figma_auto_introspect_confirm() { # $1 = detect JSON
+  local v
+  v="$(jq -r 'if .node.autoIntrospect.confirmFrames == false then "false" else "true" end' \
+        <<< "${1:-}" 2>/dev/null || true)"
+  [[ "$v" != "false" ]]
+}
+
+# -----------------------------------------------------------------------------
 # Claude Code / official Figma plugin advisory
 # -----------------------------------------------------------------------------
 # Inside Claude Code, the most reliable way to obtain rich MCP design context is

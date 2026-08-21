@@ -140,6 +140,41 @@ the phase where it finally binds — it is the only one that writes code.
 Do not paste a section, do not edit `spec.md` / `plan.md` / `tasks.md`, and do not
 report `mustInject` — none of that applies to a phase that generates no document.
 
+## 2 ter. No link in the input — when may you introspect anyway?
+
+Default: **you may not**. A Figma link is what makes a run a design run, and the
+status reports `no-figma-link`. Say it once in the chat reply and move on.
+
+A target can re-open that path in `figma.projects.config.json`:
+
+```jsonc
+"repo": { "autoIntrospect": { "mode": "on-request", "maxFrames": 60 } }
+```
+
+| `mode` | What you do |
+|---|---|
+| `off` *(default)* | Nothing. The run is `no-figma-link`. |
+| `on-request` | **Judge whether this feature has a creative.** If it plainly describes UI work — a screen, a component, a layout, a visual state — re-run the script with `--assume-design`. If it does not (an endpoint, a migration, a cron job), do not pass it: the run reports `auto-declined`, which is correct. |
+| `always` | Nothing extra — the script introspects the mapped file on its own. |
+
+`--assume-design` is you *stating that this feature has a creative*. It is not an
+authorisation: on a target left at `off` the script ignores it and warns. The
+config authorises, you trigger — never the other way round, and never ask the
+developer to change the config so you can proceed.
+
+Two outcomes are specific to this path and neither is an error:
+
+- `too-large-for-auto` — the mapped file holds more top-level frames than
+  `maxFrames`. Context that wide is too diluted to implement faithfully. Report
+  it and ask for a Figma link pinning the frame. Do NOT retry, and do NOT raise
+  `maxFrames` yourself.
+- `auto-unavailable` — the target declares only a project/team id. Report it;
+  introspecting a whole team is `/speckit.figma.introspect`, run by hand.
+
+When it does introspect, `trigger` is `auto`, `links` is empty and `linkScope` is
+`broad` — nothing pins the creative, so §3's confirmation checkpoint applies in
+full before any task is generated.
+
 ## 3. Broad / ambiguous Figma links → confirm a frame, never skip silently
 
 When `"linkScope": "broad"`, the input pointed at a whole file or page (multiple

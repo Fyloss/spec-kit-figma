@@ -15,6 +15,7 @@
     "figmaFileId": "REPLACE_WITH_MAIN_FILE_ID",
     "figmaProjectId": "REPLACE_WITH_FIGMA_PROJECT_ID",
     "submodulePath": ".",
+    "autoIntrospect": { "mode": "on-request", "maxFrames": 60 },
     "designSystem": {
       "submodulePath": "src/design-system",
       "tokenSource": "src/design-system/tokens/**/*.json"

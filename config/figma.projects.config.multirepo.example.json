@@ -15,6 +15,7 @@
       "role": "design-system",
       "figmaFileId": "REPLACE_WITH_DESIGN_SYSTEM_FILE_ID",
       "submodulePath": "submodules/design-system",
+      "autoIntrospect": { "mode": "always", "maxFrames": 40 },
       "monorepo": {
         "type": "nx",
         "apps": ["storybook"],
@@ -38,6 +39,7 @@
       "figmaFileId": "REPLACE_WITH_STOREFRONT_FILE_ID",
       "figmaProjectId": "REPLACE_WITH_STOREFRONT_PROJECT_ID",
       "submodulePath": "submodules/storefront",
+      "autoIntrospect": { "mode": "off" },
       "monorepo": {
         "type": "nx",
         "apps": ["app-catalog", "app-checkout", "app-account"],

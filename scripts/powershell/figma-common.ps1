@@ -495,6 +495,50 @@ function Resolve-FigmaContextSource {
 }
 
 # -----------------------------------------------------------------------------
+# Autonomous introspection policy (per target)
+# -----------------------------------------------------------------------------
+# Since 2.0.0 a Figma link in the feature input is what makes a run a design run.
+# That default stays, because the mapping says WHERE a creative would live, not
+# WHETHER this feature has one. A target may nonetheless re-open the
+# config-derived path by declaring `autoIntrospect` (see the schema).
+#
+# All three accessors read the target node as figma-detect-target.ps1 emits it
+# ({..., "node": {...full target...}}), not the raw config: target resolution is
+# mode-dependent and detect-target already owns it. Taking the object as an
+# argument also keeps them pure, so the decision table is unit-testable without a
+# workspace.
+
+# Declared mode: "off" (default) | "on-request" | "always". An unknown value
+# degrades to "off": the permissive reading of a typo would silently grant a
+# target more autonomy than its author wrote down.
+function Get-FigmaAutoIntrospectMode {
+    param($Detect)
+    $mode = [string](Get-JsonValue $Detect @('node', 'autoIntrospect', 'mode'))
+    if ($mode -in @('off', 'on-request', 'always')) { return $mode }
+    return 'off'
+}
+
+# Frame budget above which the autonomous path refuses to reason over the file.
+# Non-integer / non-positive values fall back to the default rather than
+# disabling the guard: a malformed budget must not read as "no budget".
+function Get-FigmaAutoIntrospectMaxFrames {
+    param($Detect)
+    $max = Get-JsonValue $Detect @('node', 'autoIntrospect', 'maxFrames')
+    if ($max -is [int] -and $max -gt 0) { return $max }
+    if ("$max" -match '^[1-9][0-9]*$') { return [int]"$max" }
+    return 60
+}
+
+# Whether the creative-confirmation checkpoint (design rule 5) stays on for
+# autonomous runs. Tristate absent/true/false, with the same guard as
+# Test-FigmaMcpFallbackEnabled so an explicit $false cannot be read as "absent".
+function Test-FigmaAutoIntrospectConfirm {
+    param($Detect)
+    $v = Get-JsonValue $Detect @('node', 'autoIntrospect', 'confirmFrames')
+    return -not ($v -is [bool] -and $v -eq $false)
+}
+
+# -----------------------------------------------------------------------------
 # Claude Code / official Figma plugin advisory
 # -----------------------------------------------------------------------------
 # Inside Claude Code, the most reliable way to obtain rich MCP design context is

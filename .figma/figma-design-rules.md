@@ -82,6 +82,14 @@ wins.
   never a silent skip: list the candidate top-level frames and ask which the
   feature targets. Writing "the creative was not explicitly indicated" and moving
   on is forbidden while candidate frames exist and the developer has not answered.
+- **Autonomous runs are broad by definition.** When the design context came from
+  the target's `autoIntrospect` policy rather than from a link (`trigger: "auto"`
+  in the ensure status), NOTHING pins the creative — the scope is the whole mapped
+  file. The confirmation checkpoint therefore always applies, and the status
+  reports `linkScope: "broad"` with the candidate frames already enumerated. A
+  target may switch it off with `autoIntrospect.confirmFrames: false`
+  (`confirmFrames: false` in the status), which is only legitimate when the file
+  holds a single unambiguous creative.
 
 ## 6. Design token mapping & gaps
 - When a Design System is configured, map extracted Figma values to its existing
@@ -121,6 +129,14 @@ wins.
 
 ## 9. Autonomy boundaries
 - Autonomous: page traversal, frame/token extraction, reuse lookup, mapping.
+- **Obtaining design context without a link is NOT autonomous by default.** Since
+  2.0.0 a Figma link is what makes a run a design run. A target may re-open the
+  config-derived path with `autoIntrospect` (see `figma.projects.config.json`),
+  and the recommended mode is `on-request`: the committed config *authorises*,
+  the agent *triggers* by passing `--assume-design` when it judges the feature to
+  have a creative. The agent NEVER grants itself that authorisation — a run
+  against a target left at the default `off` proceeds with no design context, and
+  says so once in the chat reply without asking for a link.
 - Human-in-the-loop (pause and ask): creative confirmation (rule 5), ambiguous
   placement (rule 2), token-gap DS update (rule 6).
 
