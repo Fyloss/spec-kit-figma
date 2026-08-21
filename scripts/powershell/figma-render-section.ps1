@@ -194,7 +194,16 @@ if ($candidateFrames.Count -eq 0) {
 # Stable, phase-specific machine marker so figma-verify-section.ps1 can confirm
 # integration without coupling to the (translatable) heading text, and can tell
 # a wrong-phase section apart. Keep this line when pasting the block.
-$content = "<!-- speckit-figma:section phase=$phase -->`n" +
+#
+# It also CARRIES the two facts a later phase needs to detect design drift: the
+# Figma file and its lastModified at the moment this document was generated.
+# Parsing them back out of the prose below would mean parsing rendered markdown,
+# which breaks the first time a heading is reworded or translated. Appending them
+# here is backward compatible by construction: every existing reader greps the
+# fixed prefix "speckit-figma:section phase=<phase>", which still matches.
+$markerFile = if ([string]::IsNullOrWhiteSpace($fileId)) { 'unknown' } else { $fileId }
+$markerLastModified = if ([string]::IsNullOrWhiteSpace($lastModified)) { 'unknown' } else { $lastModified }
+$content = "<!-- speckit-figma:section phase=$phase file=$markerFile lastModified=$markerLastModified -->`n" +
     $rendered +
     "`n`n<!-- ===== AUTO-FILLED FROM .figma/cache/context-snapshot.json — do not delete; complete the judgement fields above ===== -->`n" +
     "`n### Snapshot facts (auto-filled, deterministic)`n`n" +

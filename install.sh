@@ -24,9 +24,11 @@
 #     the read-only PAT setup, and links to the local .figma/docs/ guides.
 #     Same marker mechanism as the prompt auto-context block; the rest of the
 #     README is never touched. --no-readme skips it entirely.
-#   - by default LEAVES the /speckit.specify, /speckit.plan and /speckit.tasks
+#   - by default LEAVES the /speckit.specify, /speckit.plan, /speckit.tasks,
+#     /speckit.analyze and /speckit.implement
 #     prompts untouched (automatic Figma context runs via the extension.yml hooks
-#     before_specify/before_plan/before_tasks -> /speckit.figma.ensure) and removes any
+#     before_specify/before_plan/before_tasks/before_analyze/before_implement ->
+#     /speckit.figma.ensure, after_analyze -> /speckit.figma.drift) and removes any
 #     auto-context block a previous version injected. --prompt-hooks opts back
 #     into prompt injection for agents without SpecKit extension-hook support;
 #     --no-hooks touches nothing (not even cleanup).
@@ -447,6 +449,17 @@ Before generating, refresh the Figma design context:
    not block.
 4. For any other skip reason, proceed without Figma context and add a short
    note mentioning the reason.
+5. **In `/speckit.implement` and `/speckit.analyze` there is no document section
+   to paste** — those commands generate none. What the status gives you there is
+   the CONTEXT: load `.figma/figma-design-rules.md` and, when present, the
+   `.figma/figma-design-rules.custom.md` overlay (the overlay wins on conflict),
+   then apply them to the code you write. Implementation is the moment those
+   rules bind — component placement, token mapping, unit conversion, tests and
+   catalog entries. Read the design values from the snapshot and the section
+   already present in `spec.md` / `tasks.md`; never re-derive a node id from a
+   URL and call a Figma MCP tool with it, which is how "the provided node ID was
+   not found in the file" happens. The snapshot the hook just refreshed is the
+   authoritative source.
 <!-- END SPECKIT-FIGMA AUTO-CONTEXT -->
 HOOK
   echo "${action}: ${file#"$TARGET"/}"
@@ -455,7 +468,7 @@ HOOK
 if [[ "$HOOKS" != "off" ]]; then
   HOOKED_ANY="false"
   for dir in "${AGENT_CMD_DIRS[@]}"; do
-    for stem in specify plan tasks; do
+    for stem in specify plan tasks analyze implement; do
       for f in "$TARGET/$dir/speckit.${stem}.md" "$TARGET/$dir/speckit.${stem}.prompt.md"; do
         [[ -f "$f" ]] || continue
         if [[ "$HOOKS" == "inject" ]]; then
@@ -468,10 +481,10 @@ if [[ "$HOOKS" != "off" ]]; then
     done
   done
   if [[ "$HOOKS" == "inject" && "$HOOKED_ANY" == "false" ]]; then
-    echo "NOTE: no /speckit.specify, /speckit.plan or /speckit.tasks command files found — run 'specify init' first, then re-run install.sh --prompt-hooks to enable prompt injection."
+    echo "NOTE: no /speckit.specify, /speckit.plan, /speckit.tasks, /speckit.analyze or /speckit.implement command files found — run 'specify init' first, then re-run install.sh --prompt-hooks to enable prompt injection."
   fi
   if [[ "$HOOKS" == "clean" ]]; then
-    echo "INFO: speckit command prompts left untouched — automatic Figma context runs via the extension hooks (before_specify/before_plan/before_tasks -> /speckit.figma.ensure, after_specify/after_plan/after_tasks -> /speckit.figma.verify). Use --prompt-hooks if your agent does not support SpecKit extension hooks."
+    echo "INFO: speckit command prompts left untouched — automatic Figma context runs via the extension hooks (before_specify/before_plan/before_tasks/before_analyze/before_implement -> /speckit.figma.ensure, after_specify/after_plan/after_tasks -> /speckit.figma.verify, after_analyze -> /speckit.figma.drift). Use --prompt-hooks if your agent does not support SpecKit extension hooks."
   fi
 fi
 

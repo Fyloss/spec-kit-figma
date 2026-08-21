@@ -1,13 +1,26 @@
 ---
-description: Automatically refresh the Figma design context before spec/plan/tasks generation. Invoked by the extension's before_specify/before_plan/before_tasks hooks — the developer never runs it by hand. Safe no-op when Figma does not apply to the run.
+description: Automatically refresh the Figma design context before spec/plan/tasks generation, and reload it before analyze/implement. Invoked by the extension's before_specify/before_plan/before_tasks/before_analyze/before_implement hooks — the developer never runs it by hand. Safe no-op when Figma does not apply to the run.
 ---
 
 # /speckit.figma.ensure — Automatic Figma design context
 
 You are the design-context bootstrap. This command is invoked automatically by
-the extension hooks (`before_specify` / `before_plan` / `before_tasks`) — do NOT
-ask the developer for approval: the underlying script is a safe no-op whenever
-Figma does not apply, and it never blocks spec/plan/tasks generation.
+the extension hooks (`before_specify` / `before_plan` / `before_tasks` /
+`before_analyze` / `before_implement`) — do NOT ask the developer for approval:
+the underlying script is a safe no-op whenever Figma does not apply, and it never
+blocks a run.
+
+**Two families of invoking phase, and they need different things from you.**
+
+| Invoking hook | What the phase produces | What you do with the status |
+|---|---|---|
+| `before_specify` / `before_plan` / `before_tasks` | a document | paste the rendered section (§2) |
+| `before_analyze` / `before_implement` | no document | load the context (§2 bis) |
+
+Sections 2 and 3 below describe the document family. Section 2 bis describes the
+other one — read it instead when you were invoked by `before_analyze` or
+`before_implement`, because pasting a section into a document those commands do
+not generate is not a thing you can do.
 
 ## 1. Refresh the snapshot
 
@@ -86,6 +99,34 @@ If a `*Section` field is `null` (rendering failed, e.g. a missing template), the
 section is STILL mandatory: build it from
 `./.specify/extensions/figma/templates/{spec,plan,tasks}-figma-section.template.md` plus the
 snapshot. Do not skip it.
+
+## 2 bis. `before_analyze` / `before_implement` — load the context, paste nothing
+
+These two phases generate no document, so `specSection` / `planSection` /
+`tasksSection` have nothing to be pasted into and `mustInject` does not apply to
+you. What the run gives you here is the **context**, and `/speckit.implement` is
+the phase where it finally binds — it is the only one that writes code.
+
+1. **Load the effective ruleset.** Read `.figma/figma-design-rules.md` (the
+   extension-owned base) and, when it exists, `.figma/figma-design-rules.custom.md`
+   (the project overlay). **On conflict the overlay wins.** These rules govern
+   what you are about to write: component placement (rule 2), Design System purity
+   (rule 1), token mapping and gaps (rule 6), tests and catalog entries (rule 7),
+   and any unit/conversion contract the project declared in its overlay.
+2. **Read the design values from what already exists** — the refreshed
+   `.figma/cache/context-snapshot.json`, and the Figma section already present in
+   `spec.md` / `tasks.md`. Those are the authoritative numbers.
+3. **Never re-derive a node id from a URL and call a Figma MCP tool with it.**
+   That improvisation is where "the provided node ID was not found in the file"
+   comes from: the URL form is `12-345`, the API form is `12:345`, and the
+   canonicalisation lives in the helpers you just ran. If you need richer MCP
+   context, use the ids exactly as the snapshot spells them.
+4. On `"reason": "no-figma-link"` (or any skip reason) there is no design context
+   for this feature: implement normally and say nothing about Figma in the code or
+   the chat reply.
+
+Do not paste a section, do not edit `spec.md` / `plan.md` / `tasks.md`, and do not
+report `mustInject` — none of that applies to a phase that generates no document.
 
 ## 3. Broad / ambiguous Figma links → confirm a frame, never skip silently
 

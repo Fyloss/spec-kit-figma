@@ -448,6 +448,17 @@ Before generating, refresh the Figma design context:
    not block.
 4. For any other skip reason, proceed without Figma context and add a short
    note mentioning the reason.
+5. **In `/speckit.implement` and `/speckit.analyze` there is no document section
+   to paste** — those commands generate none. What the status gives you there is
+   the CONTEXT: load `.figma/figma-design-rules.md` and, when present, the
+   `.figma/figma-design-rules.custom.md` overlay (the overlay wins on conflict),
+   then apply them to the code you write. Implementation is the moment those
+   rules bind — component placement, token mapping, unit conversion, tests and
+   catalog entries. Read the design values from the snapshot and the section
+   already present in `spec.md` / `tasks.md`; never re-derive a node id from a
+   URL and call a Figma MCP tool with it, which is how "the provided node ID was
+   not found in the file" happens. The snapshot the hook just refreshed is the
+   authoritative source.
 <!-- END SPECKIT-FIGMA AUTO-CONTEXT -->
 '@
 
@@ -474,7 +485,7 @@ function Add-Hook {
 if ($hooks -ne 'off') {
     $hookedAny = $false
     foreach ($dir in $agentCmdDirs) {
-        foreach ($stem in @('specify', 'plan', 'tasks')) {
+        foreach ($stem in @('specify', 'plan', 'tasks', 'analyze', 'implement')) {
             foreach ($f in @(
                     (Join-Path $target $dir "speckit.$stem.md"),
                     (Join-Path $target $dir "speckit.$stem.prompt.md"))) {
@@ -485,10 +496,10 @@ if ($hooks -ne 'off') {
         }
     }
     if ($hooks -eq 'inject' -and -not $hookedAny) {
-        Write-Output "NOTE: no /speckit.specify, /speckit.plan or /speckit.tasks command files found — run 'specify init' first, then re-run install.ps1 --prompt-hooks to enable prompt injection."
+        Write-Output "NOTE: no /speckit.specify, /speckit.plan, /speckit.tasks, /speckit.analyze or /speckit.implement command files found — run 'specify init' first, then re-run install.ps1 --prompt-hooks to enable prompt injection."
     }
     if ($hooks -eq 'clean') {
-        Write-Output 'INFO: speckit command prompts left untouched — automatic Figma context runs via the extension hooks (before_specify/before_plan/before_tasks -> /speckit.figma.ensure, after_specify/after_plan/after_tasks -> /speckit.figma.verify). Use --prompt-hooks if your agent does not support SpecKit extension hooks.'
+        Write-Output 'INFO: speckit command prompts left untouched — automatic Figma context runs via the extension hooks (before_specify/before_plan/before_tasks/before_analyze/before_implement -> /speckit.figma.ensure, after_specify/after_plan/after_tasks -> /speckit.figma.verify, after_analyze -> /speckit.figma.drift). Use --prompt-hooks if your agent does not support SpecKit extension hooks.'
     }
 }
 

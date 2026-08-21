@@ -246,7 +246,7 @@ OLD
 @test "--prompt-hooks notes when no speckit command files exist to hook" {
   run "$INSTALL" --target "$WORKSPACE" --prompt-hooks
   [ "$status" -eq 0 ]
-  [[ "$output" == *"no /speckit.specify, /speckit.plan or /speckit.tasks command files found"* ]]
+  [[ "$output" == *"command files found"* ]]
 }
 
 @test "the ensure-context helper is reachable at the path the hooks invoke" {
@@ -538,10 +538,74 @@ OLD
 @test "install does not warn about command drift when figma commands are present" {
   mkdir -p "${WORKSPACE}/.claude/commands"
   echo "# specify" > "${WORKSPACE}/.claude/commands/speckit.specify.md"
-  for stem in config ensure introspect verify update; do
+  for stem in config ensure introspect verify update drift; do
     echo "# $stem" > "${WORKSPACE}/.claude/commands/speckit.figma.${stem}.md"
   done
   run "$INSTALL" --target "$WORKSPACE"
   [ "$status" -eq 0 ]
   ! [[ "$output" == *"not registered"* ]]
+}
+
+# -----------------------------------------------------------------------------
+# analyze / implement coverage — the phases the extension never reached before.
+# -----------------------------------------------------------------------------
+
+@test "--prompt-hooks also hooks the analyze and implement prompts" {
+  # /speckit.implement is the only phase that writes code, and it was the only
+  # one with no design guardrail at all.
+  mkdir -p "${WORKSPACE}/.claude/commands"
+  echo "# analyze" > "${WORKSPACE}/.claude/commands/speckit.analyze.md"
+  echo "# implement" > "${WORKSPACE}/.claude/commands/speckit.implement.md"
+  run "$INSTALL" --target "$WORKSPACE" --prompt-hooks
+  [ "$status" -eq 0 ]
+  grep -q "SPECKIT-FIGMA AUTO-CONTEXT" "${WORKSPACE}/.claude/commands/speckit.analyze.md"
+  grep -q "SPECKIT-FIGMA AUTO-CONTEXT" "${WORKSPACE}/.claude/commands/speckit.implement.md"
+}
+
+@test "the auto-context block tells implement to load the rules, not paste a section" {
+  # implement generates no document, so the section-pasting instruction does not
+  # apply there — the block must say what DOES.
+  mkdir -p "${WORKSPACE}/.claude/commands"
+  echo "# implement" > "${WORKSPACE}/.claude/commands/speckit.implement.md"
+  run "$INSTALL" --target "$WORKSPACE" --prompt-hooks
+  [ "$status" -eq 0 ]
+  block="$(cat "${WORKSPACE}/.claude/commands/speckit.implement.md")"
+  [[ "$block" == *"figma-design-rules.md"* ]]
+  [[ "$block" == *"figma-design-rules.custom.md"* ]]
+  [[ "$block" == *"never re-derive a node id"* ]]
+  # ...and must NOT tell it to paste a section into a document it never writes.
+  [[ "$block" == *"there is no document section"* ]]
+}
+
+@test "a default install cleans the auto-context block from analyze and implement too" {
+  # The managed block must be removable everywhere it can be injected, or a
+  # downgrade to hook-based context leaves orphans behind.
+  mkdir -p "${WORKSPACE}/.claude/commands"
+  echo "# implement" > "${WORKSPACE}/.claude/commands/speckit.implement.md"
+  run "$INSTALL" --target "$WORKSPACE" --prompt-hooks
+  [ "$status" -eq 0 ]
+  grep -q "SPECKIT-FIGMA AUTO-CONTEXT" "${WORKSPACE}/.claude/commands/speckit.implement.md"
+  run "$INSTALL" --target "$WORKSPACE"
+  [ "$status" -eq 0 ]
+  ! grep -q "SPECKIT-FIGMA AUTO-CONTEXT" "${WORKSPACE}/.claude/commands/speckit.implement.md"
+}
+
+@test "extension.yml declares the analyze and implement hooks" {
+  # The hook points exist in SpecKit's own command templates; declaring them is
+  # what makes the extension run on those phases at all.
+  manifest="${REPO_ROOT}/extension.yml"
+  grep -q "^  before_analyze:" "$manifest"
+  grep -q "^  before_implement:" "$manifest"
+  grep -q "^  after_analyze:" "$manifest"
+}
+
+@test "the after_analyze hook is wired to the drift command, which is registered" {
+  manifest="${REPO_ROOT}/extension.yml"
+  grep -q "name: speckit.figma.drift" "$manifest"
+  grep -q "file: commands/speckit.figma.drift.md" "$manifest"
+  [ -f "${REPO_ROOT}/commands/speckit.figma.drift.md" ]
+  # after_analyze must point at drift, not at the section verifier: analyze
+  # generates no document, so there is no section to verify.
+  block="$(sed -n '/^  after_analyze:/,/^$/p' "$manifest")"
+  [[ "$block" == *"speckit.figma.drift"* ]]
 }

@@ -5,6 +5,57 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The extension now runs on `/speckit.analyze` and `/speckit.implement`.**
+  `extension.yml` declared hooks for `specify`, `plan` and `tasks` only, and the
+  `--prompt-hooks` fallback stopped at the same three (`install.sh`), so on the
+  two remaining phases the extension was **entirely absent**: no snapshot, no
+  link recovery, and `.figma/figma-design-rules.md` never loaded — during the one
+  phase that actually writes code. The hole predates 2.0.0; `v1.6.0` shipped the
+  identical hook set.
+
+  What that produced in the field: a developer picking up an existing PR re-ran
+  `analyze` and `implement`, had no cache at all (`.figma/cache/` is git-ignored,
+  so nothing travels with a branch, and the recovery of the link from the
+  committed `spec.md` lives inside `ensure`), and their agent improvised — a
+  direct Figma MCP call with a node id re-extracted from the URL, which is the
+  usual source of "the provided node ID was not found in the file". That path
+  bypasses node-id canonicalisation, the engine resolution and its REST fallback,
+  the design rules, and the deterministic section.
+
+  `before_analyze` and `before_implement` now invoke `/speckit.figma.ensure`.
+  Both phases generate no document, so nothing is pasted and `mustInject` does
+  not apply to them: what the hook provides there is the **context** — the
+  effective ruleset (base plus the project overlay) and a current snapshot. The
+  agent instructions say so explicitly, in the command and in the injected
+  managed block. SpecKit has exposed these hook points since at least v0.9.5, so
+  no minimum-version change is needed.
+
+### Added
+
+- **`/speckit.figma.drift` — design-drift reporting after `/speckit.analyze`.**
+  Analyze cross-checks `spec.md`, `plan.md` and `tasks.md` against each other,
+  and all three can agree perfectly while being faithful to a creative the
+  designer has since changed. On a PR open for two weeks that is what yields an
+  implementation faithful to an obsolete design. The new `after_analyze` hook
+  compares the Figma `lastModified` recorded when the document was generated
+  against the snapshot `before_analyze` just refreshed, and reports — it never
+  edits a document, because whether a moved creative invalidates work already
+  done is the developer's call. `--strict` (or `figma.verifyStrict`) makes a real
+  drift exit non-zero for CI; being *unable* to check still exits 0, so the gate
+  fires on evidence and never on its absence.
+- The rendered section marker now carries the two facts drift detection needs:
+  `<!-- speckit-figma:section phase=spec file=<key> lastModified=<ts> -->`.
+  Reading them back from the marker rather than from the rendered prose keeps the
+  check working the first time a heading is reworded or translated. Backward
+  compatible by construction — every existing reader greps the fixed
+  `speckit-figma:section phase=<phase>` prefix, which still matches. A snapshot
+  with no `lastModified` renders `lastModified=unknown`, which reads as "cannot
+  compare", never as a timestamp.
+
 ## [2.0.0] - 2026-08-11
 
 ### Changed

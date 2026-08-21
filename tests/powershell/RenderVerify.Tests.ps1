@@ -21,7 +21,13 @@ Describe 'figma-render-section.ps1' {
         $out = $r.Stdout.Trim()
         Test-Path $out | Should -BeTrue
         $content = Get-Content $out -Raw
-        $content | Should -Match ([regex]::Escape("<!-- speckit-figma:section phase=$_ -->"))
+        # The marker now carries the drift facts (file, lastModified) after the
+        # phase, so assert the stable PREFIX every reader greps — not the whole
+        # closed comment, which would have to change again on the next field.
+        $content | Should -Match ([regex]::Escape("<!-- speckit-figma:section phase=$_ "))
+        $content | Should -Match ([regex]::Escape("file=AbC123"))
+        $content | Should -Match 'lastModified=\S+ -->'
+
         $content | Should -Match 'AbC123'
         $content | Should -Match '2026-07-02T10:00:00Z'
         # Deterministic placeholders are gone; judgement placeholders may remain.
