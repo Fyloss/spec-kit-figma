@@ -159,6 +159,21 @@ if ($frameRows.Count -eq 0) {
 }
 
 $components = Get-JsonValue $snapshot @('components')
+# Deterministic design values. This is the half of "model-proof" the renderer was
+# missing: the structure was already filled from the snapshot, but the numbers —
+# padding, gaps, alignment, type — were left for the model to mine out of a raw
+# node dump it never reads in full. Rendering them here means the agent copies a
+# table instead of guessing. A failure is non-fatal: the section still renders.
+$valuesTables = ''
+try {
+    $valuesTables = (& "$PSScriptRoot/figma-extract-values.ps1" --snapshot $snapshotPath --format markdown) -join "`n"
+} catch {
+    $valuesTables = '_Design-value extraction failed for this snapshot; read `.figma/cache/context-snapshot.json` directly._'
+}
+if ([string]::IsNullOrWhiteSpace($valuesTables)) {
+    $valuesTables = '_Design-value extraction failed for this snapshot; read `.figma/cache/context-snapshot.json` directly._'
+}
+
 $componentCount = if ($null -eq $components) { 0 } else { @($components.PSObject.Properties).Count }
 $styles = Get-JsonValue $snapshot @('styles')
 $styleCount = if ($null -eq $styles) { 0 } else { @($styles.PSObject.Properties).Count }
@@ -211,6 +226,7 @@ $content = "<!-- speckit-figma:section phase=$phase file=$markerFile lastModifie
     "- **Generated**: $generatedAt  ·  **Figma lastModified**: $lastModified`n" +
     "- **Indexed**: $componentCount component(s), $styleCount style(s)`n`n" +
     "**Direct links provided in input**`n`n$linksTable`n`n" +
+    "$valuesTables`n`n" +
     "**Introspected pages**`n`n$pagesTable`n`n" +
     "**Top-level frames (candidate creatives)**`n`n$framesTable`n" +
     "$candidateTable`n"

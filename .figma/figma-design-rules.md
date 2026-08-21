@@ -105,6 +105,27 @@ wins.
   the project's own process (e.g. a CI pipeline, or review by the DS owner), as
   declared in the overlay or the project constitution.
 
+## 6b. Units — absolute px in, project contract out
+- Every length the extension extracts is an **absolute CSS px value at 1x**, and
+  it is always emitted WITH its unit (`70px`). A bare number is never a design
+  value: it is what allows a length to be silently re-read as something else.
+- **NEVER pass a raw Figma px value to a scale-indexed helper.** `theme.spacing(n)`
+  (MUI), `mt-<n>` (Tailwind) and every spacing scale take an INDEX, not a length.
+  A 70px margin written as `theme.spacing(70)` on a theme built with `spacing: 4`
+  renders 280px — the value is wrong by the scale factor, and nothing fails.
+- The **conversion contract is project-specific and is NOT declared here**: the
+  base cannot model MUI `useStyles` with a custom `pxToRem`, Tailwind, CSS
+  variables, styled-components and vanilla-extract at once, and a half-covering
+  rule is worse than none. Declare it in the overlay
+  (`.figma/figma-design-rules.custom.md`) — name the conversion helper, the root
+  font size, and the scale factor if there is one. See the shipped example.
+- With **no contract declared**, emit the extracted px value as-is and say so.
+  Do not infer a conversion from surrounding code — inferring is exactly how a
+  70px margin becomes 280px.
+- A value with no exact step on the project's scale keeps its explicit
+  conversion and is recorded as a token gap (rule 6). Never round it silently:
+  the designer chose that number.
+
 ## 7. UI changes require tests (and component docs)
 - Any task that creates or modifies a UI component MUST also add or update its
   automated tests. A UI change without tests is incomplete.

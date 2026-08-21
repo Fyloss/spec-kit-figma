@@ -149,6 +149,19 @@ FRAMES_TABLE="$(jq -r '
     else "| Page | Frame | Node id |\n|------|-------|---------|\n" + ($rows | join("\n"))
     end' "$SNAPSHOT")"
 
+# Deterministic design values. This is the half of "model-proof" the renderer was
+# missing: the structure was already filled from the snapshot, but the numbers —
+# padding, gaps, alignment, type — were left for the model to mine out of a raw
+# node dump it never reads in full. Rendering them here means the agent copies a
+# table instead of guessing, which is what makes the result independent of the
+# model. A failure is non-fatal: the section still renders, minus the digest.
+VALUES_TABLES=""
+if VALUES_TABLES="$("${SCRIPT_DIR}/figma-extract-values.sh" --snapshot "$SNAPSHOT" --format markdown 2>/dev/null)"; then
+  :
+else
+  VALUES_TABLES="_Design-value extraction failed for this snapshot; read \`.figma/cache/context-snapshot.json\` directly._"
+fi
+
 COMPONENT_COUNT="$(jq -r '(.components // {} | length)' "$SNAPSHOT")"
 STYLE_COUNT="$(jq -r '(.styles // {} | length)' "$SNAPSHOT")"
 
@@ -193,6 +206,7 @@ CANDIDATE_TABLE="$(echo "$CANDIDATE_FRAMES_JSON" | jq -r '
   printf -- '- **Generated**: %s  ·  **Figma lastModified**: %s\n' "$GENERATED_AT" "$LAST_MODIFIED"
   printf -- '- **Indexed**: %s component(s), %s style(s)\n\n' "$COMPONENT_COUNT" "$STYLE_COUNT"
   printf '**Direct links provided in input**\n\n%s\n\n' "$LINKS_TABLE"
+  printf '%s\n\n' "$VALUES_TABLES"
   printf '**Introspected pages**\n\n%s\n\n' "$PAGES_TABLE"
   printf '**Top-level frames (candidate creatives)**\n\n%s\n' "$FRAMES_TABLE"
   printf '%s\n' "$CANDIDATE_TABLE"
