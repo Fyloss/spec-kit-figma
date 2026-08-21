@@ -86,3 +86,28 @@ refute_glued_comment() {
     return 1
   fi
 }
+
+# Start the mock Figma server (tests/helpers/mock-figma-server.py) on a free port
+# and point FIGMA_API_BASE at it. Exports MOCK_PORT and MOCK_PID; the caller is
+# responsible for stop_mock_figma in teardown.
+#
+# FIGMA_API_BASE is the documented local escape hatch (figma_api_base rejects a
+# non-figma.com host coming from the CONFIG, precisely so a committed file can
+# never redirect the token, but honours the env var for proxies and test mocks).
+start_mock_figma() { # $1 = optional comma-separated node ids the mock refuses to render
+  MOCK_PORT="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
+  python3 "${REPO_ROOT}/tests/helpers/mock-figma-server.py" "$MOCK_PORT" "${1:-}" > "${WORKSPACE}/mock.log" 2>&1 &
+  MOCK_PID=$!
+  local i
+  for i in $(seq 1 50); do
+    grep -q ready "${WORKSPACE}/mock.log" 2>/dev/null && break
+    perl -e 'select(undef,undef,undef,0.1)'
+  done
+  export FIGMA_API_BASE="http://127.0.0.1:${MOCK_PORT}/v1"
+  export FIGMA_PAT="test-token"
+}
+
+stop_mock_figma() {
+  [ -n "${MOCK_PID:-}" ] && kill "$MOCK_PID" 2>/dev/null || true
+  unset FIGMA_API_BASE FIGMA_PAT
+}

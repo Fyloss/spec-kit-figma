@@ -54,6 +54,10 @@ provides:
       file: commands/speckit.figma.verify.md
       description: "After generation, verify the Figma design section was integrated into spec/plan/tasks when a mockup was detected, and self-correct if missing. Strict mode (--strict / figma.verifyStrict) makes it a CI gate."
 
+    - name: speckit.figma.export
+      file: commands/speckit.figma.export.md
+      description: "Export Figma nodes to image files: confirmation previews written beside the spec (so the developer validates the creative visually) or production assets — a logo as .svg, a mock as .png — written where the project keeps them and tracked in a manifest that refuses to overwrite a hand-edited file. Run on demand; not hooked, because it writes into the repository."
+
     - name: speckit.figma.drift
       file: commands/speckit.figma.drift.md
       description: "Report whether the Figma file changed after the feature's spec was generated, by comparing the lastModified recorded in the section marker with the current snapshot. Runs after /speckit.analyze; safe no-op when the feature has no design section."

@@ -46,6 +46,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`/speckit.figma.export` — Figma nodes to image files, in two modes.** One
+  endpoint, two needs whose lifecycles are opposite, so they are separate modes
+  rather than one flag that would put throwaway files under version control (or
+  leave deliverables in a git-ignored cache).
+
+  `preview` (default) renders the candidate frames to PNG under
+  `specs/<feature>/assets/`, so design rule 5 can be answered by *looking* at the
+  creative instead of reading a list of node ids. Those files are committed on
+  purpose: `.figma/cache/` is git-ignored, so a preview written there is
+  invisible to a reviewer on GitHub and `spec.md` renders a broken image — a few
+  tens of KB costs less than that.
+
+  `asset` pulls what the implementation ships — a logo as `.svg`, a mock as
+  `.png`. `--out` is **mandatory**: where a shipped asset belongs (Design System
+  vs app) is a placement decision like any other, and the script refuses to guess
+  it. A `.figma-assets.json` manifest beside the files records what was written
+  and its checksum, so a re-run reports `unchanged` instead of re-downloading and
+  **refuses to overwrite a file a human edited since** (`skipped-modified`);
+  `--force` is how a developer says they meant it.
+
+  Mechanics worth knowing: the endpoint renders **asynchronously** — it returns
+  temporary URLs that must then be downloaded, two steps — ids are requested in
+  batches (`--batch-size`, default 10) because a large request times out on a big
+  file, `scale` is dropped for vector formats instead of being sent and rejected,
+  and the rendered URL is a signed CDN link that is downloaded **without the
+  PAT**, since attaching it would leak the credential to a third-party host.
+  Export needs no scope beyond `file_content:read`. The command is deliberately
+  **not hooked**: it writes into the repository.
 - **Source components are resolved automatically — "right-click > show source".**
   A linked node is almost always an `INSTANCE`, and an instance is the *flattened
   rendering* of a main component: overrides applied, variant fixed. Reading it is

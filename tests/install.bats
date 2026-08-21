@@ -538,7 +538,7 @@ OLD
 @test "install does not warn about command drift when figma commands are present" {
   mkdir -p "${WORKSPACE}/.claude/commands"
   echo "# specify" > "${WORKSPACE}/.claude/commands/speckit.specify.md"
-  for stem in config ensure introspect verify update drift; do
+  for stem in config ensure introspect verify update drift export; do
     echo "# $stem" > "${WORKSPACE}/.claude/commands/speckit.figma.${stem}.md"
   done
   run "$INSTALL" --target "$WORKSPACE"

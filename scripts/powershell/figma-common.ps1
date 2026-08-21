@@ -495,6 +495,56 @@ function Resolve-FigmaContextSource {
 }
 
 # -----------------------------------------------------------------------------
+# Physical paths — canonicalising a symlinked ANCESTOR
+# -----------------------------------------------------------------------------
+# Neither Resolve-Path nor Push-Location resolves a symlinked ancestor: on macOS a
+# path under /var stays /var while Get-FigmaRepoRoot returns the /private/var the
+# OS resolves it to, so the two never share a prefix and every path a helper
+# reports comes out absolute where its bash twin emits a relative one.
+# ResolveLinkTarget only reports the LEAF, so the chain has to be walked.
+
+# Fully resolved physical path, following symlinks on every path segment.
+function Get-FigmaPhysicalPath {
+    param([string]$Path)
+    $full = [System.IO.Path]::GetFullPath($Path)
+    # Stop AT the root and never probe it. On Windows,
+    # [DirectoryInfo]'C:\'.ResolveLinkTarget($true) throws "Could not find a part
+    # of the path 'C:\'" — the recursion below reaches the root on every absolute
+    # path, so an unguarded call takes down any script that resolves one.
+    $root = [System.IO.Path]::GetPathRoot($full)
+    if ([string]::IsNullOrEmpty($full) -or $full -eq $root) { return $full }
+    if (Test-Path -LiteralPath $full) {
+        $info = if (Test-Path -LiteralPath $full -PathType Container) {
+            [System.IO.DirectoryInfo]::new($full)
+        } else {
+            [System.IO.FileInfo]::new($full)
+        }
+        # Defensive beyond the root guard: ResolveLinkTarget also throws on a
+        # broken link chain and on paths the process cannot open. A path that
+        # cannot be resolved is simply not a link — never a reason to abort.
+        $resolved = $null
+        try { $resolved = $info.ResolveLinkTarget($true) } catch { $resolved = $null }
+        if ($resolved) { return $resolved.FullName }
+    }
+    $parent = Split-Path -Parent $full
+    if (-not $parent -or $parent -eq $full) { return $full }
+    return Join-Path (Get-FigmaPhysicalPath $parent) (Split-Path -Leaf $full)
+}
+
+# $Path relative to $Root, with '/' separators so the output matches the bash
+# helpers byte for byte. A path outside $Root keeps its absolute form rather than
+# becoming a ../.. chain nothing downstream could resolve — same behaviour as the
+# bash prefix strip.
+function Get-FigmaRelativePath {
+    param([string]$Path, [string]$Root)
+    $rootFull = Get-FigmaPhysicalPath $Root
+    $pathFull = Get-FigmaPhysicalPath $Path
+    $rel = [System.IO.Path]::GetRelativePath($rootFull, $pathFull)
+    if ($rel.StartsWith('..')) { return $pathFull }
+    return $rel.Replace([System.IO.Path]::DirectorySeparatorChar, '/')
+}
+
+# -----------------------------------------------------------------------------
 # Autonomous introspection policy (per target)
 # -----------------------------------------------------------------------------
 # Since 2.0.0 a Figma link in the feature input is what makes a run a design run.

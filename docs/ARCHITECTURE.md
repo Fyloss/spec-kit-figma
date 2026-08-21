@@ -256,6 +256,36 @@ safe rather than a return to the pre-2.0.0 behaviour it replaced:
   the candidate frames are enumerated for confirmation. The safety net is
   structural rather than a second code path that could drift.
 
+### Image export — two lifecycles, one endpoint
+
+`figma-export-images` serves two needs that share `GET /v1/images/:key` and
+nothing else, which is why they are modes rather than one flag:
+
+| Mode | Output | Lives | Lifecycle |
+|------|--------|-------|-----------|
+| `preview` | PNG @2x | `specs/<feature>/assets/` | committed *documentation* of the spec |
+| `asset` | SVG / PNG | wherever `--out` says | committed *deliverable*, manifest-tracked |
+
+The preview is committed deliberately. `.figma/cache/` is git-ignored, so a
+preview written there is invisible to a reviewer on GitHub and the spec renders a
+broken image — a few tens of KB costs less than that. The asset has no default
+location at all: where a shipped asset belongs is a placement decision (design
+rule 2), and the script refuses to pick one.
+
+Three mechanics the callers depend on:
+
+- **The endpoint is asynchronous.** It returns a map of node id to a temporary
+  URL; each must then be downloaded. Two steps, not one — and ids go out in
+  batches, because a large request times out server-side on a big file.
+- **The rendered URL is a signed CDN link, not an API endpoint.** It is
+  downloaded *without* the PAT: attaching it would leak the credential to a
+  third-party host. The test suite asserts this against a mock that records any
+  token it receives.
+- **The manifest makes a re-run safe.** It stores the checksum of what the export
+  wrote, so a file that no longer matches has been edited by a human, and is
+  reported (`skipped-modified`) rather than destroyed. `--force` is the developer
+  saying otherwise.
+
 ### The right node — source components and the `oversized` scope
 
 Two things had to be true before extracted values are worth anything: the digest

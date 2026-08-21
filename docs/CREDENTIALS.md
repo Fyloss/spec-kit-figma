@@ -110,6 +110,7 @@ scopes depend on the introspection level declared in `figma.projects.config.json
 | Config level | Endpoints used | Required read-only scopes |
 |---|---|---|
 | `figmaFileId` (single file) | `GET /files/:key`, `GET /files/:key/nodes` | `file_content:read`, `file_metadata:read` |
+| Image export (`/speckit.figma.export`) | `GET /images/:key` | `file_content:read` — no extra scope. The endpoint returns signed CDN URLs, and the download that follows carries **no token**. |
 | `figmaProjectId` (whole project) | `+ GET /projects/:project_id/files` | `+ projects:read` |
 | `figmaTeamId` / `figmaTeamIds` (whole team / org) | `+ GET /teams/:team_id/projects` | `+ projects:read` |
 
