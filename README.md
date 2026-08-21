@@ -140,6 +140,24 @@ snapshot, reports it in the chat, and never edits a document. `--strict` (or
 `figma.verifyStrict`) makes a real drift fail the build; being unable to check
 never does.
 
+### The right node: source components, and page-sized links
+
+**A linked node is almost always an instance**, and an instance is the flattened
+rendering of a main component — overrides applied, variant fixed. Implementing
+from it describes one appearance of a component rather than the component.
+Introspection now resolves the definitions behind the linked instances
+automatically (the "right-click → show source" step), lists them in the section,
+and tags every extracted value `instance` or `source` so an override stays
+visible instead of being merged into one number.
+
+**A node id pins a node, not necessarily a creative.** A link copied from a
+full-page desktop frame pins a `FRAME` like any other — it looks exact while
+covering the whole page. Such a link is now reported as `linkScope: "oversized"`
+and gets the same enumerate-and-confirm treatment as a page-level link, with the
+node's own children as candidates: you linked the right page, you just say which
+block. Thresholds: `FIGMA_OVERSIZED_HEIGHT` (3000px),
+`FIGMA_OVERSIZED_DESCENDANTS` (150).
+
 ### Design values are extracted, not guessed
 
 The rendered section carries the **real numbers** from the mockup — layout

@@ -160,6 +160,7 @@ try {
     # ---------------------------------------------------------------------------
     $fileJson = $null
     $nodesJson = $null
+    $sourcesJson = $null
     if ($fileKey) {
         Write-FigmaStderr "INFO: introspecting file $fileKey at depth $depth..."
         $fileJson = (Invoke-FigmaApi "/files/${fileKey}?depth=$depth") | ConvertFrom-Json
@@ -175,6 +176,43 @@ try {
             # Percent-encode it so the id arrives whole.
             $ids = ($nodes -join ',').Replace(';', '%3B')
             $nodesJson = (Invoke-FigmaApi "/files/$fileKey/nodes?ids=$ids") | ConvertFrom-Json
+
+            # -----------------------------------------------------------------
+            # Source components. A linked node is almost always an INSTANCE, and
+            # an instance is the FLATTENED rendering of a main component: its
+            # overrides are applied, its variant is fixed, and the definition an
+            # implementation should be written against lives elsewhere. Reading
+            # the instance is how a spec ends up describing one appearance of a
+            # component rather than the component.
+            #
+            # This is "right-click > show source", automated. Components living
+            # in another library file are not fetched: that would need the
+            # library's file key, which this run does not have.
+            $componentIds = [System.Collections.Generic.HashSet[string]]::new()
+            function Find-InstanceComponents {
+                param($Node)
+                if ($null -eq $Node) { return }
+                if ($Node.type -eq 'INSTANCE' -and $Node.componentId) {
+                    [void]$componentIds.Add([string]$Node.componentId)
+                }
+                foreach ($child in @($Node.children)) { Find-InstanceComponents $child }
+            }
+            foreach ($prop in @($nodesJson.nodes.PSObject.Properties)) {
+                Find-InstanceComponents $prop.Value.document
+            }
+            if ($componentIds.Count -gt 0) {
+                $srcIds = (@($componentIds) | Select-Object -First 50) -join ','
+                $srcIds = $srcIds.Replace(';', '%3B')
+                Write-FigmaStderr "INFO: resolving $($componentIds.Count) source component(s) behind the linked instance(s)..."
+                # Non-fatal on purpose: a missing source degrades the context, it
+                # does not invalidate it — the linked nodes are already in hand.
+                try {
+                    $sourcesJson = (Invoke-FigmaApi "/files/$fileKey/nodes?ids=$srcIds") | ConvertFrom-Json
+                } catch {
+                    Write-FigmaStderr 'WARN: could not resolve the source components; the snapshot keeps the instances only.'
+                    $sourcesJson = $null
+                }
+            }
         }
     } else {
         Write-FigmaStderr 'WARN: no file resolved from the team/project enumeration; snapshot will contain the project index only.'
@@ -214,6 +252,7 @@ try {
         componentSets = Get-JsonValue $fileJson @('componentSets')
         styles        = Get-JsonValue $fileJson @('styles')
         nodes         = $nodesJson
+        sources       = $sourcesJson
     }
     ConvertTo-FigmaJson $snapshot | Set-Content -LiteralPath $cache -Encoding utf8
 } catch {

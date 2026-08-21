@@ -114,21 +114,34 @@ DIGEST="$(jq -c \
       componentId: (.componentId // null)
     } | nonempty;
 
-  def walk_node($depth):
+  def walk_node($depth; $origin):
     . as $n
-    | [ { id: $n.id, name: $n.name, type: $n.type, depth: $depth, facts: ($n | facts) } ]
-      + ( ($n.children // []) | map(walk_node($depth + 1)) | add // [] );
+    | [ { id: $n.id, name: $n.name, type: $n.type, depth: $depth,
+          origin: $origin, facts: ($n | facts) } ]
+      + ( ($n.children // []) | map(walk_node($depth + 1; $origin)) | add // [] );
 
-  ( (.nodes.nodes // {}) | to_entries
-    | map(select(($want | length) == 0 or (.key as $k | $want | index($k))))
-    | map(.value.document // empty)
-    | map(walk_node(0)) | add // [] ) as $all
+  # Two origins, kept apart on purpose. A linked node is usually an INSTANCE —
+  # the flattened rendering of a main component, with its overrides applied and
+  # its variant fixed. The DEFINITION is what an implementation should be written
+  # against, so introspection resolves it into `.sources` and its rows are tagged
+  # "source". Merging the two would hide which numbers describe the component and
+  # which describe one particular appearance of it.
+  ( ( (.nodes.nodes // {}) | to_entries
+      | map(select(($want | length) == 0 or (.key as $k | $want | index($k))))
+      | map(.value.document // empty)
+      | map(walk_node(0; "instance")) | add // [] )
+    + ( (.sources.nodes // {}) | to_entries
+      | map(.value.document // empty)
+      | map(walk_node(0; "source")) | add // [] ) ) as $all
   | ( $all | map(select((.facts | length) > 0)) ) as $rows
   | {
       snapshotFile: (.fileId // null),
       lastModified: (.lastModified // null),
       totalNodes: ($all | length),
       rowCount: ($rows | length),
+      sourceComponents: [ (.sources.nodes // {}) | to_entries[]
+                          | { id: .key, name: (.value.document.name // null),
+                              type: (.value.document.type // null) } ],
       truncated: (($rows | length) > $maxRows),
       nodes: ($rows[:$maxRows])
     }' "$SNAPSHOT")"
@@ -145,17 +158,25 @@ printf '%s' "$DIGEST" | jq -r '
   def cell: if . == null then "—" else (. | esc) end;
   def indent($d): ("· " * (if $d > 6 then 6 else $d end));
 
-  (.nodes | map(select(.facts.layoutMode or .facts.paddingTop or .facts.paddingLeft
+  (.sourceComponents // []) as $sources
+  | (.nodes | map(select(.facts.layoutMode or .facts.paddingTop or .facts.paddingLeft
                        or .facts.itemSpacing or .facts.width or .facts.cornerRadius))) as $layout
   | (.nodes | map(select(.facts.fontSize or .facts.textAlignHorizontal))) as $text
   | (
-      "**Layout values (auto-filled, absolute CSS px at 1x)**\n\n"
+      ( if ($sources | length) == 0 then ""
+        else
+          "**Source components behind the linked instances**\n\n"
+          + "| Component | Node id |\n|-----------|---------|\n"
+          + ( [ $sources[] | "| \(.name | cell) | `\(.id)` |" ] | join("\n") )
+          + "\n\n> Implement against the **source component**, not the instance: an instance is that component with its overrides applied and its variant fixed. Rows tagged `source` below come from the definition.\n\n"
+        end )
+      + "**Layout values (auto-filled, absolute CSS px at 1x)**\n\n"
       + ( if ($layout | length) == 0 then "_No layout value extracted — the snapshot holds no deep-fetched node._"
           else
-            "| Node | Type | Direction | Padding T/R/B/L | Gap | Align (main/cross) | Radius | Size |\n"
-            + "|------|------|-----------|-----------------|-----|--------------------|--------|------|\n"
+            "| Node | Origin | Type | Direction | Padding T/R/B/L | Gap | Align (main/cross) | Radius | Size |\n"
+            + "|------|--------|------|-----------|-----------------|-----|--------------------|--------|------|\n"
             + ( [ $layout[] |
-                  "| \(indent(.depth))\(.name | esc) `\(.id)` | \(.type | cell) | \(.facts.layoutMode | cell) "
+                  "| \(indent(.depth))\(.name | esc) `\(.id)` | \(.origin | cell) | \(.type | cell) | \(.facts.layoutMode | cell) "
                   + "| \(.facts.paddingTop | cell) / \(.facts.paddingRight | cell) / \(.facts.paddingBottom | cell) / \(.facts.paddingLeft | cell) "
                   + "| \(.facts.itemSpacing | cell) | \(.facts.primaryAxisAlignItems | cell) / \(.facts.counterAxisAlignItems | cell) "
                   + "| \(.facts.cornerRadius | cell) | \(.facts.width | cell) × \(.facts.height | cell) |"

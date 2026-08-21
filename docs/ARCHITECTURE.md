@@ -256,6 +256,33 @@ safe rather than a return to the pre-2.0.0 behaviour it replaced:
   the candidate frames are enumerated for confirmation. The safety net is
   structural rather than a second code path that could drift.
 
+### The right node — source components and the `oversized` scope
+
+Two things had to be true before extracted values are worth anything: the digest
+must describe the **component**, and the pinned node must actually **be** one.
+
+**Instance vs source.** A linked node is almost always an `INSTANCE` — the
+flattened rendering of a main component, overrides applied and variant fixed.
+Introspection collects the `componentId` of every instance in the fetched
+subtrees and deep-fetches those definitions into the snapshot's `sources` slot.
+The extractor walks both maps and tags each row `instance` or `source`, kept
+apart on purpose: merging them would hide which numbers describe the component
+and which describe one appearance of it, and a difference between the two is an
+override to expose as a prop, not a value to hard-code. Library components from
+another file are out of reach — that needs the library's file key — and the whole
+resolution is non-fatal, since a missing source degrades context without
+invalidating it.
+
+**`oversized`.** `linkScope` was binary: `broad` for a file/page link, `frame`
+for anything carrying a node id. A link copied from a full-page desktop frame
+pins a `FRAME` like any other, so it read as a *confirmed creative* and the
+rule-5 checkpoint never fired — the agent then reasoned over a whole page as if
+it were the component. A pinned node past `FIGMA_OVERSIZED_HEIGHT` (3000px) or
+`FIGMA_OVERSIZED_DESCENDANTS` (150) is now `oversized`, treated like `broad`
+except that the candidates are the node's own children: the developer linked the
+right page and only has to name the block. Both thresholds are env-overridable
+because "page-sized" is a property of the design system in use, not a constant.
+
 ### Deterministic values — the model-proof half that was missing
 
 `figma-render-section` filled the section's *structure* from the snapshot and

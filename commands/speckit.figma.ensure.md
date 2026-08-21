@@ -175,7 +175,7 @@ When it does introspect, `trigger` is `auto`, `links` is empty and `linkScope` i
 `broad` — nothing pins the creative, so §3's confirmation checkpoint applies in
 full before any task is generated.
 
-## 3. Broad / ambiguous Figma links → confirm a frame, never skip silently
+## 3. Unpinned or page-sized links → confirm a frame, never skip silently
 
 When `"linkScope": "broad"`, the input pointed at a whole file or page (multiple
 frames, no specific frame selected). Do **NOT** write "the creative was not
@@ -195,6 +195,31 @@ explicitly indicated" and move on. Instead:
 Only if the developer does not answer do you continue without a pinned creative —
 and then you record a visible warning in the document, not a silent omission.
 When `"linkScope": "frame"`, the creative is already pinned: proceed directly.
+
+**`linkScope` has four values, and only one of them means "go ahead":**
+
+| `linkScope` | Meaning | What you do |
+|---|---|---|
+| `frame` | a node id pins a component-sized creative | proceed |
+| `broad` | a file/page link covering many frames | enumerate `candidateFrames` and ask |
+| **`oversized`** | a node id **is** pinned, but the node is page-sized | enumerate `candidateFrames` — the node's own children — and ask which block the feature targets |
+| `none` | no Figma link at all | nothing to confirm |
+
+`oversized` is the case that used to slip through. A link copied from a
+full-page desktop frame pins a `FRAME` like any other, so it looked exact while
+covering 12 000 px of page; the agent then reasoned over a subtree far too wide
+and produced padding, alignment and type that matched nothing. Treat it exactly
+like `broad`: the developer linked the right page, they just have to say which
+block of it. Thresholds are `FIGMA_OVERSIZED_HEIGHT` (3000px) and
+`FIGMA_OVERSIZED_DESCENDANTS` (150).
+
+**Implement against the source component, not the instance.** When the section
+lists "Source components behind the linked instances", those are the definitions
+behind the nodes that were linked — an instance is that component with its
+overrides applied and its variant fixed. Rows tagged `source` in the value tables
+describe the component; rows tagged `instance` describe one appearance of it.
+Where they disagree, the source wins and the difference is an override to expose
+as a prop, never a value to hard-code.
 
 ## 4. Other skip reasons
 

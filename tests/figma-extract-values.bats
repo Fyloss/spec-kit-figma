@@ -126,3 +126,46 @@ teardown() {
   grep -q "Layout values" "$output"
   grep -q "70px" "$output"
 }
+
+# -----------------------------------------------------------------------------
+# Source components — implement against the definition, not the instance.
+# -----------------------------------------------------------------------------
+
+@test "the source component behind an instance is extracted and tagged" {
+  cat > "$SNAP" <<'JSON'
+{"fileId":"AbC123","pages":[],
+ "nodes":{"nodes":{"12:345":{"document":{"id":"12:345","name":"Card instance","type":"INSTANCE",
+  "componentId":"90:1","paddingLeft":70,"absoluteBoundingBox":{"width":360,"height":240}}}}},
+ "sources":{"nodes":{"90:1":{"document":{"id":"90:1","name":"DsCard","type":"COMPONENT",
+  "layoutMode":"VERTICAL","paddingTop":24,"paddingLeft":16,"itemSpacing":12,
+  "absoluteBoundingBox":{"width":360,"height":240}}}}}}
+JSON
+  run "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -r '.sourceComponents[0].name')" == "DsCard" ]]
+  [[ "$(echo "$output" | jq -r '.nodes[] | select(.id == "12:345") | .origin')" == "instance" ]]
+  [[ "$(echo "$output" | jq -r '.nodes[] | select(.id == "90:1") | .origin')" == "source" ]]
+  # The definition's padding differs from the instance's override; both survive,
+  # so the difference is visible as an override rather than silently merged.
+  [[ "$(echo "$output" | jq -r '.nodes[] | select(.id == "90:1") | .facts.paddingLeft')" == "16px" ]]
+  [[ "$(echo "$output" | jq -r '.nodes[] | select(.id == "12:345") | .facts.paddingLeft')" == "70px" ]]
+}
+
+@test "markdown names the source components and tells the agent which to implement" {
+  cat > "$SNAP" <<'JSON'
+{"fileId":"AbC123","pages":[],
+ "nodes":{"nodes":{"12:345":{"document":{"id":"12:345","name":"Card instance","type":"INSTANCE",
+  "componentId":"90:1","paddingLeft":70}}}},
+ "sources":{"nodes":{"90:1":{"document":{"id":"90:1","name":"DsCard","type":"COMPONENT","paddingLeft":16}}}}}
+JSON
+  run "$SCRIPT" --format markdown
+  [[ "$output" == *"Source components behind the linked instances"* ]]
+  [[ "$output" == *"DsCard"* ]]
+  [[ "$output" == *"Implement against the **source component**"* ]]
+  [[ "$output" == *"| Origin |"* ]]
+}
+
+@test "a snapshot with no sources renders no source table" {
+  run "$SCRIPT" --format markdown
+  [[ "$output" != *"Source components behind"* ]]
+}
