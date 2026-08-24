@@ -42,9 +42,10 @@ submodules) layouts.
 ├── commands/                           # agent-agnostic command templates
 │   ├── speckit.figma.config.md
 │   ├── speckit.figma.update.md         # re-sync assets/hooks + re-register commands (idempotent)
-│   ├── speckit.figma.ensure.md         # auto-context (before_specify/before_plan/before_tasks hooks)
+│   ├── speckit.figma.ensure.md         # auto-context (all five before_* hooks)
 │   ├── speckit.figma.introspect.md
-│   └── speckit.figma.verify.md         # post-gen section check (after_* hooks; CI gate via --strict)
+│   ├── speckit.figma.verify.md         # post-gen section check (after_* hooks; CI gate via --strict)
+│   └── speckit.figma.drift.md          # post-analyze design-drift report (after_analyze hook)
 ├── config/
 │   ├── figma.projects.config.schema.json
 │   ├── figma.projects.config.singlerepo.example.json
@@ -83,12 +84,13 @@ specify extension add --dev /path/to/spec-kit-figma
 Once the extension is listed in the Spec Kit community catalog, it is also
 discoverable via `specify extension search figma`.
 This registers the `/speckit.figma.config`, `/speckit.figma.update`,
-`/speckit.figma.ensure`, `/speckit.figma.introspect` and
-`/speckit.figma.verify` commands with your agent. Then run
+`/speckit.figma.ensure`, `/speckit.figma.introspect`, `/speckit.figma.verify`
+and `/speckit.figma.drift` commands with your agent. Then run
 `/speckit.figma.config` once.
 
 **Figma context is refreshed automatically:** the manifest's
-`before_specify` / `before_plan` / `before_tasks` hooks invoke
+`before_specify` / `before_plan` / `before_tasks` / `before_analyze` /
+`before_implement` hooks invoke
 `/speckit.figma.ensure`, which runs
 `./.specify/extensions/figma/scripts/bash/figma-ensure-context.sh` before generation, piping in the
 user's raw feature input (`--input -`). When Figma applies, the script renders a
@@ -106,6 +108,27 @@ unconfigured, the target is excluded, or the snapshot is fresh (and covers the
 linked nodes) — and it never blocks spec/tasks generation. Running
 `/speckit.figma.introspect` manually remains available for deep dives
 (specific nodes, custom depth).
+
+**`analyze` and `implement` are covered too, differently.** They generate no
+document, so there is no section to paste; what `ensure` gives them is the
+**context** — the effective ruleset (`.figma/figma-design-rules.md` plus your
+`.figma/figma-design-rules.custom.md` overlay) and a current snapshot.
+`/speckit.implement` is the phase that actually writes the code, so it is the
+phase where those rules bind: component placement, token mapping, unit
+conversion, tests and catalog entries. It is also what restores the snapshot on a
+fresh clone — `.figma/cache/` is git-ignored, so a teammate who picks up an
+existing PR has none — which is what keeps the agent from improvising a raw Figma
+MCP call with a node id it re-extracted from a URL.
+
+After `/speckit.analyze`, the `after_analyze` hook invokes
+`/speckit.figma.drift`. Analyze checks the documents against each other; drift
+checks them against Figma. All three can agree perfectly and still describe a
+creative the designer has since changed — on a PR that has been open two weeks,
+that is what produces an implementation faithful to an obsolete design. The check
+compares the Figma `lastModified` recorded in the section marker with the current
+snapshot, reports it in the chat, and never edits a document. `--strict` (or
+`figma.verifyStrict`) makes a real drift fail the build; being unable to check
+never does.
 
 **A Figma link is what makes a run a design run.** Paste one in the feature
 description at `/speckit.specify` and the design section is generated and made

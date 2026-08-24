@@ -166,3 +166,36 @@ JSON
   grep -qF 'Checkout \| v2' "$out"
   grep -qF 'Flows \| A' "$out"
 }
+
+# -----------------------------------------------------------------------------
+# The section marker carries the drift facts (file + Figma lastModified).
+# -----------------------------------------------------------------------------
+
+@test "the section marker records the file and the Figma lastModified" {
+  # figma-check-drift.sh reads these back instead of parsing rendered prose,
+  # which would break the first time a heading is reworded or translated.
+  run "$SCRIPT" --phase spec --snapshot "$SNAP"
+  [ "$status" -eq 0 ]
+  marker="$(head -n1 "$output")"
+  [[ "$marker" == *"speckit-figma:section phase=spec"* ]]
+  [[ "$marker" == *"file=AbC123"* ]]
+  [[ "$marker" == *"lastModified=2026-06-20T08:00:00Z"* ]]
+}
+
+@test "the enriched marker keeps the prefix every existing reader greps for" {
+  # figma-verify-section.sh and figma-ensure-context.sh both grep the fixed
+  # prefix, so appending fields must stay backward compatible by construction.
+  run "$SCRIPT" --phase tasks --snapshot "$SNAP"
+  [ "$status" -eq 0 ]
+  grep -qF 'speckit-figma:section phase=tasks' "$output"
+}
+
+@test "a snapshot without lastModified still renders a well-formed marker" {
+  echo '{"fileId":"AbC123","pages":[]}' > "$SNAP"
+  run "$SCRIPT" --phase spec --snapshot "$SNAP"
+  [ "$status" -eq 0 ]
+  marker="$(head -n1 "$output")"
+  [[ "$marker" == *"lastModified=unknown"* ]]
+  # "unknown" must read as "cannot compare", never as a timestamp.
+  [[ "$marker" == *"-->"* ]]
+}

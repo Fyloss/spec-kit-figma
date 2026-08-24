@@ -50,6 +50,10 @@ provides:
       file: commands/speckit.figma.verify.md
       description: "After generation, verify the Figma design section was integrated into spec/plan/tasks when a mockup was detected, and self-correct if missing. Strict mode (--strict / figma.verifyStrict) makes it a CI gate."
 
+    - name: speckit.figma.drift
+      file: commands/speckit.figma.drift.md
+      description: "Report whether the Figma file changed after the feature's spec was generated, by comparing the lastModified recorded in the section marker with the current snapshot. Runs after /speckit.analyze; safe no-op when the feature has no design section."
+
 hooks:
   before_specify:
     command: speckit.figma.ensure
@@ -66,6 +70,16 @@ hooks:
     optional: false
     description: "Automatically refresh and inject Figma design context (incl. direct links in the feature input) before task generation; safe no-op when Figma does not apply"
 
+  before_analyze:
+    command: speckit.figma.ensure
+    optional: false
+    description: "Refresh the Figma design context before the consistency analysis, so analyze reasons over the same creative the documents were generated from; safe no-op when Figma does not apply"
+
+  before_implement:
+    command: speckit.figma.ensure
+    optional: false
+    description: "Refresh the Figma design context before implementation. This is the phase that WRITES the code, so it is the phase where the design rules and the extracted values actually bind — without this hook they are loaded during spec/plan/tasks and absent when the code is produced. Also restores the snapshot on a fresh clone (.figma/cache/ is git-ignored), which is what keeps the agent from improvising a raw Figma MCP call with a node id re-extracted from a URL. Safe no-op when Figma does not apply."
+
   after_specify:
     command: speckit.figma.verify
     optional: false
@@ -80,6 +94,11 @@ hooks:
     command: speckit.figma.verify
     optional: false
     description: "After tasks generation, verify the Figma tasks section was integrated (when a mockup was detected) and self-correct if missing. Mandatory (optional: false) so the verification always runs and the agent cannot skip the gate."
+
+  after_analyze:
+    command: speckit.figma.drift
+    optional: false
+    description: "After the consistency analysis, report design drift: the documents can agree perfectly with each other and all three be faithful to a creative the designer has since changed. Compares the Figma lastModified recorded in the spec's section marker with the current snapshot; safe no-op when the feature carries no design section."
 
 tags:
   - figma

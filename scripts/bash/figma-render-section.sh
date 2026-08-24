@@ -175,7 +175,15 @@ CANDIDATE_TABLE="$(echo "$CANDIDATE_FRAMES_JSON" | jq -r '
   # Stable, phase-specific machine marker so figma-verify-section.sh can confirm
   # integration without coupling to the (translatable) heading text, and can tell
   # a wrong-phase section apart. Keep this line when pasting the block.
-  printf '<!-- speckit-figma:section phase=%s -->\n' "$PHASE"
+  #
+  # It also CARRIES the two facts a later phase needs to detect design drift: the
+  # Figma file and its lastModified at the moment this document was generated.
+  # Parsing them back out of the prose below would mean parsing rendered markdown,
+  # which breaks the first time a heading is reworded or translated. Appending
+  # them here is backward compatible by construction: every existing reader greps
+  # the fixed prefix "speckit-figma:section phase=<phase>", which still matches.
+  printf '<!-- speckit-figma:section phase=%s file=%s lastModified=%s -->\n' \
+    "$PHASE" "${FILE_ID:-unknown}" "${LAST_MODIFIED:-unknown}"
   substitute "$TEMPLATE"
   printf '\n\n<!-- ===== AUTO-FILLED FROM .figma/cache/context-snapshot.json — do not delete; complete the judgement fields above ===== -->\n'
   printf '\n### Snapshot facts (auto-filled, deterministic)\n\n'

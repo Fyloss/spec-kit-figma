@@ -120,8 +120,29 @@ why the test suite can exercise every skip reason without a Figma token.
 
 ## 3. Hook wiring — where the extension runs
 
-`extension.yml` binds two commands to six hooks. All six are `optional: false`,
-so the agent cannot decline them.
+`extension.yml` binds three commands to nine hooks. All nine are
+`optional: false`, so the agent cannot decline them.
+
+| Phase | Before | After | What the phase produces |
+|-------|--------|-------|-------------------------|
+| `specify` | `figma.ensure` | `figma.verify` | `spec.md` |
+| `plan` | `figma.ensure` | `figma.verify` | `plan.md` |
+| `tasks` | `figma.ensure` | `figma.verify` | `tasks.md` |
+| `analyze` | `figma.ensure` | `figma.drift` | *(no document)* |
+| `implement` | `figma.ensure` | — | *(code)* |
+
+The split matters. The first three phases produce a **document**, so `ensure`
+renders a section and `verify` confirms it was pasted. `analyze` and `implement`
+produce none: there `ensure` exists to load the **context** — the effective
+ruleset (`.figma/figma-design-rules.md` plus the project overlay) and a current
+snapshot.
+
+`implement` is the phase that actually writes the code, so it is the phase where
+the rules bind — placement, token mapping, unit conversion, tests. Without its
+hook they were loaded during spec/plan/tasks, when nothing is written, and absent
+when the code was produced. It is also what restores the snapshot on a fresh
+clone (`.figma/cache/` is git-ignored), which is what keeps the agent from
+improvising a raw Figma MCP call with a node id re-extracted from a URL.
 
 ```mermaid
 sequenceDiagram
@@ -146,6 +167,15 @@ sequenceDiagram
 The same pair runs for `plan` and `tasks`. Only the first phase carries the link
 in its input; the later two inherit it, which is what
 [section 5](#5-link-resolution--three-sources-two-guards) is about.
+
+`after_analyze` runs a different check. Analyze cross-checks `spec.md`,
+`plan.md` and `tasks.md` against each other; the three can agree perfectly and
+all be faithful to a creative the designer has since changed.
+`figma-check-drift` compares the Figma `lastModified` recorded in the section
+marker — `<!-- speckit-figma:section phase=spec file=<key> lastModified=<ts> -->`
+— against the snapshot `before_analyze` just refreshed. The facts live in the
+marker rather than in the prose so the check does not break the first time a
+heading is reworded or translated.
 
 ## 4. The ensure-context decision flow
 
