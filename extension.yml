@@ -11,7 +11,11 @@ extension:
   homepage: "https://github.com/Fyloss/spec-kit-figma"
 
 requires:
-  speckit_version: ">=0.1.0"
+  # Raised from ">=0.1.0" for /speckit.converge, whose command template — and
+  # therefore its before_converge / after_converge hook points — first ships in
+  # SpecKit v0.11.2. Every other hook this extension registers has existed far
+  # longer; converge is the only reason for the floor.
+  speckit_version: ">=0.11.2"
   tools:
     - name: git
       required: true
@@ -75,6 +79,11 @@ hooks:
     optional: false
     description: "Refresh the Figma design context before the consistency analysis, so analyze reasons over the same creative the documents were generated from; safe no-op when Figma does not apply"
 
+  before_converge:
+    command: speckit.figma.ensure
+    optional: false
+    description: "Refresh the Figma design context before convergence. /speckit.converge assesses the codebase against spec/plan/tasks and APPENDS the remaining unbuilt work to tasks.md — it is a task-generating phase, like /speckit.tasks. Converging without design context means the unbuilt UI work is re-derived from prose alone, so the appended tasks carry no Figma value at all and /speckit.implement then builds from those. Safe no-op when Figma does not apply."
+
   before_implement:
     command: speckit.figma.ensure
     optional: false
@@ -94,6 +103,11 @@ hooks:
     command: speckit.figma.verify
     optional: false
     description: "After tasks generation, verify the Figma tasks section was integrated (when a mockup was detected) and self-correct if missing. Mandatory (optional: false) so the verification always runs and the agent cannot skip the gate."
+
+  after_converge:
+    command: speckit.figma.verify
+    optional: false
+    description: "After convergence, verify the Figma tasks section survived. /speckit.converge REWRITES tasks.md to append the remaining work, and a rewrite is exactly where a section — and the marker every later phase keys on — gets dropped. Same check as after_tasks, on the same document."
 
   after_analyze:
     command: speckit.figma.drift

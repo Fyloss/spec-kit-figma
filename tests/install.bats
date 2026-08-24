@@ -609,3 +609,44 @@ OLD
   block="$(sed -n '/^  after_analyze:/,/^$/p' "$manifest")"
   [[ "$block" == *"speckit.figma.drift"* ]]
 }
+
+# -----------------------------------------------------------------------------
+# /speckit.converge — the task-generating phase added in SpecKit v0.11.2.
+# -----------------------------------------------------------------------------
+
+@test "--prompt-hooks also hooks the converge prompt" {
+  mkdir -p "${WORKSPACE}/.claude/commands"
+  echo "# converge" > "${WORKSPACE}/.claude/commands/speckit.converge.md"
+  run "$INSTALL" --target "$WORKSPACE" --prompt-hooks
+  [ "$status" -eq 0 ]
+  grep -q "SPECKIT-FIGMA AUTO-CONTEXT" "${WORKSPACE}/.claude/commands/speckit.converge.md"
+}
+
+@test "the auto-context block warns converge not to duplicate the tasks section" {
+  # converge REWRITES tasks.md; a second pasted section (or a dropped marker) is
+  # the failure mode that rewrite invites.
+  mkdir -p "${WORKSPACE}/.claude/commands"
+  echo "# converge" > "${WORKSPACE}/.claude/commands/speckit.converge.md"
+  run "$INSTALL" --target "$WORKSPACE" --prompt-hooks
+  [ "$status" -eq 0 ]
+  block="$(cat "${WORKSPACE}/.claude/commands/speckit.converge.md")"
+  [[ "$block" == *"speckit-figma:section phase=tasks"* ]]
+  [[ "$block" == *"never paste a second copy"* ]]
+}
+
+@test "extension.yml declares the converge hooks and raises the SpecKit floor" {
+  # /speckit.converge first ships in SpecKit v0.11.2; the floor exists for it and
+  # for nothing else, so it must not drift upward without a reason.
+  manifest="${REPO_ROOT}/extension.yml"
+  grep -q "^  before_converge:" "$manifest"
+  grep -q "^  after_converge:" "$manifest"
+  grep -qE '^  speckit_version: ">=0\.11\.2"' "$manifest"
+}
+
+@test "after_converge verifies the tasks section, since converge rewrites tasks.md" {
+  manifest="${REPO_ROOT}/extension.yml"
+  block="$(sed -n '/^  after_converge:/,/^$/p' "$manifest")"
+  [[ "$block" == *"speckit.figma.verify"* ]]
+  # And the verify command doc must tell the agent which phase to pass.
+  grep -q "after_converge" "${REPO_ROOT}/commands/speckit.figma.verify.md"
+}

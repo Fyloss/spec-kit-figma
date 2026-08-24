@@ -34,8 +34,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   managed block. SpecKit has exposed these hook points since at least v0.9.5, so
   no minimum-version change is needed.
 
+### Changed
+
+- **BREAKING (prerequisite) — the extension now requires SpecKit `>=0.11.2`**, up
+  from `>=0.1.0`. `/speckit.converge` is the only reason: its command template,
+  and therefore the `before_converge` / `after_converge` hook points, first ship
+  in that release. Every other hook this extension registers has existed since at
+  least v0.9.5. An install on an older SpecKit that worked before is now refused,
+  so this is a real prerequisite tightening, not a silent minor — upgrade SpecKit
+  (`uv tool upgrade specify-cli`) before updating the extension.
+
 ### Added
 
+- **`/speckit.converge` is hooked as a task-generating phase.** Converge assesses
+  the codebase against spec/plan/tasks and **appends the remaining unbuilt work
+  to `tasks.md`**, which puts it in the same class as `/speckit.tasks` — already
+  hooked. Converging without design context means the unbuilt UI work is
+  re-derived from prose alone: the appended tasks carry no Figma value at all,
+  and `/speckit.implement` then builds from those. It is also the phase most
+  likely to run on a PR resumed later by someone else, which is exactly the
+  scenario the analyze/implement fix above addresses.
+
+  `before_converge` invokes `/speckit.figma.ensure`, and `after_converge` runs
+  the same `--phase tasks` verification as `after_tasks`: converge *rewrites* a
+  document that already carries the section, and a rewrite is where a section —
+  and the marker every later phase keys on — gets dropped. The agent
+  instructions add one converge-specific rule: keep the existing tasks section
+  and its marker, add the newly derived design tasks into it, never paste a
+  second copy.
 - **`/speckit.figma.drift` — design-drift reporting after `/speckit.analyze`.**
   Analyze cross-checks `spec.md`, `plan.md` and `tasks.md` against each other,
   and all three can agree perfectly while being faithful to a creative the
