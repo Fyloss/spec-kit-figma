@@ -46,6 +46,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Deterministic design values in the rendered section.** The renderer's stated
+  goal is a section produced "REGARDLESS of the agent model" — but that was only
+  ever true of its *structure*. The values were not: the snapshot is a raw dump of
+  the Figma node tree (megabytes for a full-page frame) and the spacing/typography
+  tables were left for the model to mine out of it. Weaker models do not mine
+  megabytes of JSON; they guess, which is why a faithful-looking spec produced an
+  implementation whose padding, alignment and type matched nothing in the mockup.
+
+  A new `figma-extract-values` helper walks the deep-fetched nodes and emits the
+  facts as a compact digest — `layoutMode`, the four paddings, `itemSpacing`, both
+  axis alignments, corner radius, box size, and per text node the family, weight,
+  size, line height, letter spacing and alignment, plus the `styles` ids that
+  bridge to the Design System. `figma-render-section` now pastes those as two
+  tables inside the section, so the agent **copies numbers instead of inventing
+  them**. Nodes carrying no design value contribute no row, and a padding Figma
+  never sent is absent rather than fabricated as `0px` — a fabricated zero reads
+  as a deliberate design decision the mockup never made.
+- **Units are always explicit, and the conversion contract is the project's.**
+  Every length is emitted as `70px`, never as a bare `70`. A bare number is what
+  lets a length be re-read as something else downstream: handed to a scale-indexed
+  helper — Tailwind's `mt-70`, or MUI's `theme.spacing(70)` on a theme built with
+  `spacing: 4` — a 70px margin silently becomes **280px**, wrong by the scale
+  factor, with nothing failing.
+
+  The extension deliberately stops at "this is 70 absolute CSS px at 1x". It does
+  **not** convert, and there is no `units` block in the config: no schema could
+  cover MUI `useStyles` with a custom `pxToRem`, Tailwind, CSS variables,
+  styled-components and vanilla-extract at once, and a half-covering one is worse
+  than none. New base rule 6b states the invariant and the prohibition, and defers
+  the conversion contract to the project overlay
+  (`.figma/figma-design-rules.custom.md`) — the same pattern rule 4 already uses
+  for the responsive policy. `config/figma-design-rules.custom.example.md` ships a
+  ready-to-uncomment example that names the trap with the actual number.
 - **`autoIntrospect` — opt-in autonomous introspection, per target.** 2.0.0 made a
   Figma link the sole trigger, which removed the agent's ability to fetch design
   context when it judges the feature to need it. A target can now re-open the

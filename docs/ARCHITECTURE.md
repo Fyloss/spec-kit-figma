@@ -256,6 +256,38 @@ safe rather than a return to the pre-2.0.0 behaviour it replaced:
   the candidate frames are enumerated for confirmation. The safety net is
   structural rather than a second code path that could drift.
 
+### Deterministic values — the model-proof half that was missing
+
+`figma-render-section` filled the section's *structure* from the snapshot and
+left its *values* to the model: the token, spacing and typography tables were
+placeholders over a raw node dump that runs to megabytes for a full-page frame.
+A model that will not read megabytes of JSON guesses instead, which is how a
+faithful-looking spec yields an implementation matching nothing in the mockup.
+
+`figma-extract-values` closes it. It walks the deep-fetched nodes and emits the
+facts — layout mode, four paddings, item spacing, both axis alignments, corner
+radius, box size; per text node the family, weight, size, line height, letter
+spacing and alignment; and the `styles` ids that bridge to the Design System —
+as a digest, rendered into the section as two tables the agent copies.
+
+Three deliberate choices:
+
+- **Units are always explicit.** `70px`, never `70`. A bare number is what lets a
+  length be re-read as something else: passed to a scale-indexed helper —
+  Tailwind's `mt-70`, MUI's `theme.spacing(70)` on a theme built with
+  `spacing: 4` — a 70px margin renders 280px, wrong by the scale factor, and
+  nothing fails. The extension states the absolute px value and stops there;
+  the conversion contract belongs to the project (base rule 6b defers it to the
+  `.figma/figma-design-rules.custom.md` overlay, exactly as rule 4 defers the
+  responsive policy).
+- **Absent is not zero.** Figma omits paddings that are zero on some node types.
+  A fabricated `0px` reads as a deliberate design decision the mockup never made,
+  so a value Figma did not send is simply not emitted.
+- **Nodes with no design value contribute no row.** Structural containers would
+  otherwise bury the handful of rows that matter under hundreds of empty ones,
+  and `--max-rows` truncates with an explicit note rather than letting the table
+  grow back into something nobody reads.
+
 Two details in that graph carry real weight:
 
 **Freshness is not just age.** A snapshot counts as fresh only when it exists, is

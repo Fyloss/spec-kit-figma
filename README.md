@@ -140,6 +140,30 @@ snapshot, reports it in the chat, and never edits a document. `--strict` (or
 `figma.verifyStrict`) makes a real drift fail the build; being unable to check
 never does.
 
+### Design values are extracted, not guessed
+
+The rendered section carries the **real numbers** from the mockup — layout
+direction, the four paddings, gaps, both axis alignments, corner radius, box
+size, and per text node the family, weight, size, line height, letter spacing and
+alignment, plus the style ids that bridge to your Design System. They are
+computed from the snapshot by `figma-extract-values`, so the agent copies a table
+instead of mining a multi-megabyte node dump it will never read in full. That is
+what makes the result independent of the model you run.
+
+**Every length is emitted with its unit — `70px`, never a bare `70`.** The
+extension stops there, deliberately: it states an absolute CSS px value at 1x and
+does *not* convert. A bare number is what lets a length be silently re-read as
+something else — passed to a scale-indexed helper such as Tailwind's `mt-70` or
+MUI's `theme.spacing(70)` on a theme built with `spacing: 4`, a 70px margin
+becomes **280px**, and nothing fails.
+
+**How your project converts px is your contract, declared once in the overlay**
+`.figma/figma-design-rules.custom.md` — name your conversion helper, your root
+font size, and your scale factor. No config schema could cover MUI `useStyles`
+with a custom `pxToRem`, Tailwind, CSS variables, styled-components and
+vanilla-extract at once, and a half-covering one is worse than none.
+`config/figma-design-rules.custom.example.md` ships a ready-to-uncomment example.
+
 ### Optional: autonomous introspection, per target
 
 By default the extension does nothing without a Figma link — see the paragraph

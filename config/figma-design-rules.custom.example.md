@@ -38,6 +38,20 @@ the comment markers on the ones you want, and add sections of your own.
 -->
 
 <!--
+## Declare rule 6b — Unit & scale contract  ← the one most projects need
+- Figma values arrive as **absolute CSS px at 1x** (`70px`, never a bare `70`).
+  Convert them with `pxToRem()` from `src/theme/units.ts` — a 70px margin becomes
+  `pxToRem(70)`.
+- **NEVER pass a raw Figma px value to a scale-indexed helper.** This theme is
+  built with `createTheme({ spacing: 4 })`, so `theme.spacing(70)` is **280px**,
+  not 70px: `theme.spacing(n)` takes a scale INDEX, never a px value. The same
+  trap exists in Tailwind (`mt-70` is 17.5rem = 280px) and in any spacing scale.
+- A value with no exact step on the scale keeps the explicit conversion
+  (`pxToRem(70)`) and is recorded as a token gap (rule 6). Never round it to the
+  nearest step in silence — the designer chose 70.
+-->
+
+<!--
 ## Add a project-specific rule — Component naming
 - Design System components MUST be named in PascalCase and prefixed with `Ds`
   (e.g. `DsButton`, `DsCard`). Reject any generated component that does not.
