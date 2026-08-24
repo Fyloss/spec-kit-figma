@@ -120,3 +120,38 @@ Describe 'figma-extract-values.ps1' {
         $content | Should -Match '70px'
     }
 }
+
+Describe 'figma-extract-values.ps1 (source components)' {
+    BeforeEach {
+        Reset-FigmaEnvironment
+        $script:ws = New-TempWorkspace
+        $script:snap = Join-Path $ws '.figma/cache/context-snapshot.json'
+        New-Item -ItemType Directory -Force -Path (Split-Path $snap) | Out-Null
+        $json = @'
+{"fileId":"AbC123","pages":[],
+ "nodes":{"nodes":{"12:345":{"document":{"id":"12:345","name":"Card instance","type":"INSTANCE",
+  "componentId":"90:1","paddingLeft":70,"absoluteBoundingBox":{"width":360,"height":240}}}}},
+ "sources":{"nodes":{"90:1":{"document":{"id":"90:1","name":"DsCard","type":"COMPONENT",
+  "layoutMode":"VERTICAL","paddingTop":24,"paddingLeft":16,"itemSpacing":12,
+  "absoluteBoundingBox":{"width":360,"height":240}}}}}}
+'@
+        Set-Content -LiteralPath $snap -Value $json -Encoding utf8
+    }
+
+    It 'extracts and tags the source component behind an instance' {
+        $d = (Invoke-FigmaScript 'figma-extract-values.ps1' @() -Workspace $ws).Stdout | ConvertFrom-Json
+        $d.sourceComponents[0].name | Should -Be 'DsCard'
+        ($d.nodes | Where-Object { $_.id -eq '12:345' }).origin | Should -Be 'instance'
+        ($d.nodes | Where-Object { $_.id -eq '90:1' }).origin | Should -Be 'source'
+        # Both survive, so an override stays visible rather than silently merged.
+        ($d.nodes | Where-Object { $_.id -eq '90:1' }).facts.paddingLeft | Should -Be '16px'
+        ($d.nodes | Where-Object { $_.id -eq '12:345' }).facts.paddingLeft | Should -Be '70px'
+    }
+
+    It 'names the source components in markdown and says which to implement' {
+        $md = (Invoke-FigmaScript 'figma-extract-values.ps1' @('--format', 'markdown') -Workspace $ws).Stdout
+        $md | Should -Match 'Source components behind the linked instances'
+        $md | Should -Match 'DsCard'
+        $md | Should -Match '\| Origin \|'
+    }
+}

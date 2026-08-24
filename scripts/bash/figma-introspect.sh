@@ -147,8 +147,10 @@ echo "INFO: design-context engine = ${CONTEXT_SOURCE}" >&2
 # -----------------------------------------------------------------------------
 FILE_FILE="$WORK/file.json"
 NODES_FILE="$WORK/nodes.json"
+SOURCES_FILE="$WORK/sources.json"
 printf 'null' > "$FILE_FILE"
 printf 'null' > "$NODES_FILE"
+printf 'null' > "$SOURCES_FILE"
 if [[ -n "$FILE_KEY" ]]; then
   echo "INFO: introspecting file ${FILE_KEY} at depth ${DEPTH}..." >&2
   figma_api "/files/${FILE_KEY}?depth=${DEPTH}" > "$FILE_FILE"
@@ -164,6 +166,36 @@ if [[ -n "$FILE_KEY" ]]; then
     # instead of ever reaching 'fresh'. Percent-encode it so the id arrives whole.
     IDS="${IDS//;/%3B}"
     figma_api "/files/${FILE_KEY}/nodes?ids=${IDS}" > "$NODES_FILE"
+
+    # -------------------------------------------------------------------------
+    # Source components. A linked node is almost always an INSTANCE, and an
+    # instance is the FLATTENED rendering of a main component: its overrides are
+    # applied, its variant is fixed, and the definition an implementation should
+    # be written against lives elsewhere in the file (or in a library). Reading
+    # the instance is how a spec ends up describing one particular appearance of
+    # a component rather than the component.
+    #
+    # This is the "right-click > show source" step, automated: collect the
+    # componentId of every INSTANCE in the fetched subtrees and deep-fetch those
+    # definitions too, into a separate `sources` slot so the agent can tell a
+    # definition from a rendering. Components living in another library file are
+    # recorded with their key but not fetched: that would need the library's file
+    # key, which this run does not have.
+    COMPONENT_IDS="$(jq -r '
+      def collect: [ .. | objects | select(.type? == "INSTANCE") | .componentId? | select(. != null) ];
+      [ (.nodes // {}) | .[] | .document | collect ] | flatten | unique | .[]
+    ' "$NODES_FILE" 2>/dev/null | head -n 50 || true)"
+    if [[ -n "$COMPONENT_IDS" ]]; then
+      SRC_IDS="$(printf '%s' "$COMPONENT_IDS" | tr '\n' ',' | sed 's/,$//')"
+      SRC_IDS="${SRC_IDS//;/%3B}"
+      echo "INFO: resolving $(printf '%s\n' "$COMPONENT_IDS" | grep -c .) source component(s) behind the linked instance(s)..." >&2
+      # Non-fatal on purpose: a missing source degrades the context, it does not
+      # invalidate it, and the linked nodes are already in hand.
+      if ! figma_api "/files/${FILE_KEY}/nodes?ids=${SRC_IDS}" > "$SOURCES_FILE" 2>/dev/null; then
+        echo "WARN: could not resolve the source components; the snapshot keeps the instances only." >&2
+        printf 'null' > "$SOURCES_FILE"
+      fi
+    fi
   fi
 else
   echo "WARN: no file resolved from the team/project enumeration; snapshot will contain the project index only." >&2
@@ -176,6 +208,7 @@ jq -n \
   --arg context_source "$CONTEXT_SOURCE" \
   --slurpfile file_json "$FILE_FILE" \
   --slurpfile nodes_json "$NODES_FILE" \
+  --slurpfile sources_json "$SOURCES_FILE" \
   --slurpfile teams_json "$TEAMS_FILE" \
   '$file_json[0] as $f
    | {
@@ -190,7 +223,8 @@ jq -n \
      components: ($f.components // null),
      componentSets: ($f.componentSets // null),
      styles: ($f.styles // null),
-     nodes: $nodes_json[0]
+     nodes: $nodes_json[0],
+     sources: $sources_json[0]
    }' > "$CACHE"
 
 echo "INFO: snapshot written to ${CACHE}" >&2

@@ -57,7 +57,7 @@
 #     "mustInject": true|false,        # section is mandatory in spec/plan/tasks
 #     "trigger": "link|auto|none",     # what made this a design run
 #     "confirmFrames": true|false,     # keep the rule-5 checkpoint on an auto run
-#     "linkScope": "none|frame|broad", # "broad" => confirm a frame before tasks
+#     "linkScope": "none|frame|oversized|broad", # not "frame" => confirm first
 #     "candidateFrames": [...],        # frames to confirm when linkScope=broad
 #     "specSection": "...", "planSection": "...", "tasksSection": "..." }
 # When mustInject=true the agent MUST paste the rendered <phase>Section file
@@ -138,8 +138,14 @@ TRIGGER="none"
 AUTO_MODE="off"
 AUTO_MAX_FRAMES="60"
 CONFIRM_FRAMES="true"
-LINK_SCOPE="none"          # none | frame | broad
-CANDIDATE_FRAMES_JSON="[]" # top-level frames to confirm when LINK_SCOPE=broad
+LINK_SCOPE="none"          # none | frame | oversized | broad
+CANDIDATE_FRAMES_JSON="[]" # frames to confirm when LINK_SCOPE is broad/oversized
+OVERSIZED_NODE=""          # the page-sized node that triggered LINK_SCOPE=oversized
+# Thresholds past which a PINNED node stops being a creative and becomes a page.
+# Env-overridable because "page-sized" is a property of the design system in use,
+# not a universal constant — a dense dashboard frame is legitimately tall.
+FIGMA_OVERSIZED_HEIGHT="${FIGMA_OVERSIZED_HEIGHT:-3000}"
+FIGMA_OVERSIZED_DESCENDANTS="${FIGMA_OVERSIZED_DESCENDANTS:-150}"
 SPEC_SECTION=""
 PLAN_SECTION=""
 TASKS_SECTION=""
@@ -219,10 +225,38 @@ compute_link_scope() {
             "$SNAPSHOT" >/dev/null 2>&1; then
         LINK_SCOPE="broad"; break
       fi
+      # A node id pins A node — not necessarily a CREATIVE. A link copied from a
+      # full-page desktop frame is a FRAME like any other, so the check above
+      # calls it "frame" and the confirmation checkpoint never fires: the agent
+      # believes it holds the exact target while it actually holds the whole
+      # page, and reasons over a subtree too wide to implement faithfully. That
+      # is the single most expensive failure this extension has produced.
+      #
+      # "oversized" is that third case: pinned, but page-sized. It is handled
+      # exactly like "broad" — enumerate and confirm — except the candidates are
+      # the node's OWN children, which is the list the developer actually needs.
+      if jq -e --arg n "$n" \
+            --argjson maxH "$FIGMA_OVERSIZED_HEIGHT" \
+            --argjson maxD "$FIGMA_OVERSIZED_DESCENDANTS" '
+            (.nodes.nodes[$n].document // empty) as $d
+            | ($d != null)
+              and ( (($d.absoluteBoundingBox.height // 0) > $maxH)
+                    or ( [ $d | .. | objects | select(.id? != null) ] | length > $maxD ) )' \
+            "$SNAPSHOT" >/dev/null 2>&1; then
+        LINK_SCOPE="oversized"
+        OVERSIZED_NODE="$n"
+        break
+      fi
     done
   fi
   if [[ "$LINK_SCOPE" == "broad" ]]; then
     CANDIDATE_FRAMES_JSON="$(jq -c '[ .pages[]? as $p | ($p.frames[]? | {id, name, page: $p.name}) ]' "$SNAPSHOT" 2>/dev/null || echo '[]')"
+  elif [[ "$LINK_SCOPE" == "oversized" ]]; then
+    # The children of the oversized node, not the file's top-level frames: the
+    # developer linked the right page, they just have to say which block of it.
+    CANDIDATE_FRAMES_JSON="$(jq -c --arg n "$OVERSIZED_NODE" '
+      (.nodes.nodes[$n].document // {}) as $d
+      | [ $d.children[]? | {id, name, page: ($d.name // "—")} ]' "$SNAPSHOT" 2>/dev/null || echo '[]')"
   fi
 }
 

@@ -129,3 +129,30 @@ Describe 'figma-ensure-context.ps1 (autoIntrospect)' {
         $r.Stderr | Should -Match 'figmaFileId'
     }
 }
+
+Describe 'figma-ensure-context.ps1 (oversized link scope)' {
+    BeforeEach {
+        Reset-FigmaEnvironment
+        $script:ws = New-TempWorkspace
+        $env:SPECIFY_FEATURE = 'ovs-test'
+        Copy-Item (Join-Path (Get-FixturesDir) 'singlerepo-valid.json') (Join-Path $ws 'figma.projects.config.json')
+        Install-SectionTemplates $ws
+        $script:snap = Join-Path $ws '.figma/cache/context-snapshot.json'
+        New-Item -ItemType Directory -Force -Path (Split-Path $snap) | Out-Null
+    }
+
+    AfterEach { Remove-Item Env:\SPECIFY_FEATURE -ErrorAction SilentlyContinue }
+
+    It 'treats a page-sized pinned frame as oversized, not a confirmed creative' {
+        Set-Content -LiteralPath $snap -Value '{"fileId":"LinkFILE999","pages":[{"id":"0:1","name":"Desktop","frames":[{"id":"12:345","name":"Landing","type":"FRAME"}]}],"nodes":{"nodes":{"12:345":{"document":{"id":"12:345","name":"Landing page","type":"FRAME","absoluteBoundingBox":{"width":1440,"height":12000},"children":[{"id":"12:400","name":"Hero"},{"id":"12:500","name":"Pricing"}]}}}}}'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', 'https://www.figma.com/design/LinkFILE999/X?node-id=12-345') -Workspace $ws
+        $r.Json.linkScope | Should -Be 'oversized'
+        @($r.Json.candidateFrames | ForEach-Object { $_.name }) | Should -Be @('Hero', 'Pricing')
+    }
+
+    It 'keeps a component-sized pinned frame as a confirmed creative' {
+        Set-Content -LiteralPath $snap -Value '{"fileId":"LinkFILE999","pages":[{"id":"0:1","name":"D","frames":[{"id":"12:345","name":"Card","type":"FRAME"}]}],"nodes":{"nodes":{"12:345":{"document":{"id":"12:345","name":"Card","type":"FRAME","absoluteBoundingBox":{"width":360,"height":240},"children":[{"id":"12:400","name":"Title"}]}}}}}'
+        $r = Invoke-FigmaScript 'figma-ensure-context.ps1' @('--input', 'https://www.figma.com/design/LinkFILE999/X?node-id=12-345') -Workspace $ws
+        $r.Json.linkScope | Should -Be 'frame'
+    }
+}

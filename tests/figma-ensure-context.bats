@@ -921,3 +921,63 @@ stage_orphan_links() { # $1 = feature key
   [[ "$(status_json | jq -r '.reason')" == "auto-unavailable" ]]
   [[ "$output" == *"figmaFileId"* ]]
 }
+
+# -----------------------------------------------------------------------------
+# oversized link scope — a pinned node id is not automatically a creative.
+# -----------------------------------------------------------------------------
+
+@test "a page-sized pinned frame is oversized, not a confirmed creative" {
+  # The R1 failure: a link copied from a full-page desktop frame pins a FRAME
+  # like any other, so it looked exact while covering the whole page.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  cat > "${WORKSPACE}/.figma/cache/context-snapshot.json" <<'JSON'
+{"fileId":"LinkFILE999","pages":[{"id":"0:1","name":"Desktop","frames":[{"id":"12:345","name":"Landing","type":"FRAME"}]}],
+ "nodes":{"nodes":{"12:345":{"document":{"id":"12:345","name":"Landing page","type":"FRAME",
+  "absoluteBoundingBox":{"width":1440,"height":12000},
+  "children":[{"id":"12:400","name":"Hero"},{"id":"12:500","name":"Pricing"}]}}}}}
+JSON
+  run "$SCRIPT" --input "$LINK"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.linkScope')" == "oversized" ]]
+  # The candidates are the node's OWN children: the developer linked the right
+  # page, they only have to say which block of it.
+  [[ "$(status_json | jq -r '[.candidateFrames[].name] | join(",")')" == "Hero,Pricing" ]]
+}
+
+@test "a component-sized pinned frame stays a confirmed creative" {
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  cat > "${WORKSPACE}/.figma/cache/context-snapshot.json" <<'JSON'
+{"fileId":"LinkFILE999","pages":[{"id":"0:1","name":"D","frames":[{"id":"12:345","name":"Card","type":"FRAME"}]}],
+ "nodes":{"nodes":{"12:345":{"document":{"id":"12:345","name":"Card","type":"FRAME",
+  "absoluteBoundingBox":{"width":360,"height":240},"children":[{"id":"12:400","name":"Title"}]}}}}}
+JSON
+  run "$SCRIPT" --input "$LINK"
+  [[ "$(status_json | jq -r '.linkScope')" == "frame" ]]
+}
+
+@test "a node with too many descendants is oversized even when it is short" {
+  # Height is not the only way to be page-sized; a dense frame is just as wide a
+  # context to reason over.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  children="$(jq -nc '[range(0;60) | {id: ("9:\(.)"), name: "n\(.)", children: [{id: "8:\(.)", name: "d\(.)"}, {id: "7:\(.)", name: "e\(.)"}]}]')"
+  jq -nc --argjson c "$children" '{fileId:"LinkFILE999",pages:[],
+    nodes:{nodes:{"12:345":{document:{id:"12:345",name:"Dense",type:"FRAME",
+    absoluteBoundingBox:{width:1440,height:900},children:$c}}}}}' \
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
+  run "$SCRIPT" --input "$LINK"
+  [[ "$(status_json | jq -r '.linkScope')" == "oversized" ]]
+}
+
+@test "the oversized thresholds are overridable per project" {
+  # "Page-sized" is a property of the design system in use, not a constant.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  cat > "${WORKSPACE}/.figma/cache/context-snapshot.json" <<'JSON'
+{"fileId":"LinkFILE999","pages":[],
+ "nodes":{"nodes":{"12:345":{"document":{"id":"12:345","name":"Tall","type":"FRAME",
+  "absoluteBoundingBox":{"width":1440,"height":5000},"children":[{"id":"12:400","name":"A"}]}}}}}
+JSON
+  run "$SCRIPT" --input "$LINK"
+  [[ "$(status_json | jq -r '.linkScope')" == "oversized" ]]
+  FIGMA_OVERSIZED_HEIGHT=9000 run "$SCRIPT" --input "$LINK"
+  [[ "$(status_json | jq -r '.linkScope')" == "frame" ]]
+}

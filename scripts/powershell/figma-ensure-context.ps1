@@ -49,7 +49,7 @@
 #     "target": "...",
 #     "snapshot": "...", "links": [...], "introspectArgs": [...],
 #     "mustInject": true|false,        # section is mandatory in spec/plan/tasks
-#     "linkScope": "none|frame|broad", # "broad" => confirm a frame before tasks
+#     "linkScope": "none|frame|oversized|broad", # not "frame" => confirm first
 #     "candidateFrames": [...],        # frames to confirm when linkScope=broad
 #     "specSection": "...", "planSection": "...", "tasksSection": "..." }
 # When mustInject=true the agent MUST paste the rendered <phase>Section file
@@ -133,8 +133,14 @@ $trigger = 'none'
 $autoMode = 'off'
 $autoMaxFrames = 60
 $confirmFrames = $true
-$linkScope = 'none'          # none | frame | broad
-$candidateFrames = @()       # top-level frames to confirm when linkScope=broad
+$linkScope = 'none'          # none | frame | oversized | broad
+$candidateFrames = @()       # frames to confirm when linkScope is broad/oversized
+$oversizedNode = ''          # the page-sized node that triggered linkScope=oversized
+# Thresholds past which a PINNED node stops being a creative and becomes a page.
+# Env-overridable because "page-sized" is a property of the design system in use,
+# not a universal constant — a dense dashboard frame is legitimately tall.
+$oversizedHeight = if ($env:FIGMA_OVERSIZED_HEIGHT) { [double]$env:FIGMA_OVERSIZED_HEIGHT } else { 3000 }
+$oversizedDescendants = if ($env:FIGMA_OVERSIZED_DESCENDANTS) { [int]$env:FIGMA_OVERSIZED_DESCENDANTS } else { 150 }
 $specSection = ''
 $planSection = ''
 $tasksSection = ''
@@ -214,6 +220,34 @@ function Compute-LinkScope {
                 $script:linkScope = 'broad'
                 break
             }
+            # A node id pins A node — not necessarily a CREATIVE. A link copied
+            # from a full-page desktop frame is a FRAME like any other, so the
+            # check above calls it "frame" and the confirmation checkpoint never
+            # fires: the agent believes it holds the exact target while it holds
+            # the whole page, and reasons over a subtree too wide to implement
+            # faithfully. That is the single most expensive failure this
+            # extension has produced.
+            #
+            # "oversized" is that third case: pinned, but page-sized. Handled
+            # exactly like "broad" — enumerate and confirm — except the
+            # candidates are the node's OWN children.
+            $doc = Get-JsonValue $snap @('nodes', 'nodes', $n, 'document')
+            if ($null -ne $doc) {
+                $height = [double](Get-JsonValue $doc @('absoluteBoundingBox', 'height') 0)
+                $count = 0
+                $stack = [System.Collections.Generic.Stack[object]]::new()
+                $stack.Push($doc)
+                while ($stack.Count -gt 0 -and $count -le $oversizedDescendants) {
+                    $cur = $stack.Pop()
+                    $count++
+                    foreach ($child in @(Get-JsonValue $cur @('children') @())) { $stack.Push($child) }
+                }
+                if ($height -gt $oversizedHeight -or $count -gt $oversizedDescendants) {
+                    $script:linkScope = 'oversized'
+                    $script:oversizedNode = $n
+                    break
+                }
+            }
         }
     }
     if ($script:linkScope -eq 'broad') {
@@ -225,6 +259,20 @@ function Compute-LinkScope {
                     name = Get-JsonValue $f @('name')
                     page = Get-JsonValue $p @('name')
                 }
+            }
+        }
+        $script:candidateFrames = $frames
+    } elseif ($script:linkScope -eq 'oversized') {
+        # The children of the oversized node, not the file's top-level frames:
+        # the developer linked the right page, they just have to say which block.
+        $doc = Get-JsonValue $snap @('nodes', 'nodes', $script:oversizedNode, 'document')
+        $parentName = [string](Get-JsonValue $doc @('name') '—')
+        $frames = @()
+        foreach ($c in @(Get-JsonValue $doc @('children') @())) {
+            $frames += [ordered]@{
+                id   = Get-JsonValue $c @('id')
+                name = Get-JsonValue $c @('name')
+                page = $parentName
             }
         }
         $script:candidateFrames = $frames

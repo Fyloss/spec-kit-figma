@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 # =============================================================================
 # figma-extract-values.ps1 — deterministic design values from a snapshot
 # =============================================================================
@@ -97,23 +97,40 @@ function Get-NodeFacts {
 
 $all = [System.Collections.Generic.List[object]]::new()
 function Add-Walk {
-    param($Node, [int]$Depth)
+    param($Node, [int]$Depth, [string]$Origin)
     $all.Add([ordered]@{
         id = $Node.id; name = $Node.name; type = $Node.type
-        depth = $Depth; facts = (Get-NodeFacts $Node)
+        depth = $Depth; origin = $Origin; facts = (Get-NodeFacts $Node)
     })
     foreach ($child in @($Node.children)) {
-        if ($null -ne $child) { Add-Walk $child ($Depth + 1) }
+        if ($null -ne $child) { Add-Walk $child ($Depth + 1) $Origin }
     }
 }
 
 $snap = Read-FigmaJsonFile $snapshot
+# Two origins, kept apart on purpose. A linked node is usually an INSTANCE — the
+# flattened rendering of a main component, with its overrides applied and its
+# variant fixed. The DEFINITION is what an implementation should be written
+# against, so introspection resolves it into `.sources` and its rows are tagged
+# "source". Merging the two would hide which numbers describe the component and
+# which describe one particular appearance of it.
 $nodeMap = $snap.nodes.nodes
 if ($nodeMap) {
     foreach ($prop in @($nodeMap.PSObject.Properties)) {
         if ($wantNodes.Count -gt 0 -and $prop.Name -notin $wantNodes) { continue }
         $doc = $prop.Value.document
-        if ($doc) { Add-Walk $doc 0 }
+        if ($doc) { Add-Walk $doc 0 'instance' }
+    }
+}
+$sourceComponents = @()
+$sourceMap = $snap.sources.nodes
+if ($sourceMap) {
+    foreach ($prop in @($sourceMap.PSObject.Properties)) {
+        $doc = $prop.Value.document
+        $sourceComponents += [ordered]@{
+            id = $prop.Name; name = $doc.name; type = $doc.type
+        }
+        if ($doc) { Add-Walk $doc 0 'source' }
     }
 }
 
@@ -123,6 +140,7 @@ $digest = [ordered]@{
     lastModified = $snap.lastModified
     totalNodes   = $all.Count
     rowCount     = $rows.Count
+    sourceComponents = @($sourceComponents)
     truncated    = ($rows.Count -gt $maxRows)
     nodes        = @($rows | Select-Object -First $maxRows)
 }
@@ -145,14 +163,21 @@ $layout = @($digest.nodes | Where-Object {
 $text = @($digest.nodes | Where-Object { $_.facts.fontSize -or $_.facts.textAlignHorizontal })
 
 $sb = [System.Text.StringBuilder]::new()
+if (@($digest.sourceComponents).Count -gt 0) {
+    [void]$sb.Append("**Source components behind the linked instances**`n`n")
+    [void]$sb.Append("| Component | Node id |`n|-----------|---------|`n")
+    $lines = foreach ($c in $digest.sourceComponents) { "| $(Format-Cell $c.name) | ``$($c.id)`` |" }
+    [void]$sb.Append(($lines -join "`n"))
+    [void]$sb.Append("`n`n> Implement against the **source component**, not the instance: an instance is that component with its overrides applied and its variant fixed. Rows tagged ``source`` below come from the definition.`n`n")
+}
 [void]$sb.Append("**Layout values (auto-filled, absolute CSS px at 1x)**`n`n")
 if ($layout.Count -eq 0) {
     [void]$sb.Append("_No layout value extracted — the snapshot holds no deep-fetched node._")
 } else {
-    [void]$sb.Append("| Node | Type | Direction | Padding T/R/B/L | Gap | Align (main/cross) | Radius | Size |`n")
-    [void]$sb.Append("|------|------|-----------|-----------------|-----|--------------------|--------|------|`n")
+    [void]$sb.Append("| Node | Origin | Type | Direction | Padding T/R/B/L | Gap | Align (main/cross) | Radius | Size |`n")
+    [void]$sb.Append("|------|--------|------|-----------|-----------------|-----|--------------------|--------|------|`n")
     $lines = foreach ($n in $layout) {
-        "| $(Get-Indent $n.depth)$(Format-Cell $n.name) ``$($n.id)`` | $(Format-Cell $n.type) | $(Format-Cell $n.facts.layoutMode) " +
+        "| $(Get-Indent $n.depth)$(Format-Cell $n.name) ``$($n.id)`` | $(Format-Cell $n.origin) | $(Format-Cell $n.type) | $(Format-Cell $n.facts.layoutMode) " +
         "| $(Format-Cell $n.facts.paddingTop) / $(Format-Cell $n.facts.paddingRight) / $(Format-Cell $n.facts.paddingBottom) / $(Format-Cell $n.facts.paddingLeft) " +
         "| $(Format-Cell $n.facts.itemSpacing) | $(Format-Cell $n.facts.primaryAxisAlignItems) / $(Format-Cell $n.facts.counterAxisAlignItems) " +
         "| $(Format-Cell $n.facts.cornerRadius) | $(Format-Cell $n.facts.width) × $(Format-Cell $n.facts.height) |"

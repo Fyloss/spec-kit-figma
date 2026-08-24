@@ -82,6 +82,21 @@ wins.
   never a silent skip: list the candidate top-level frames and ask which the
   feature targets. Writing "the creative was not explicitly indicated" and moving
   on is forbidden while candidate frames exist and the developer has not answered.
+- **A pinned node id is not automatically a confirmed creative.** A link copied
+  from a full-page desktop frame pins a FRAME like any other, so it looks exact
+  while covering an entire page. When the ensure status reports
+  `linkScope: "oversized"`, the node is page-sized (over the height/descendant
+  thresholds) and the confirmation checkpoint applies in full — with the node's
+  OWN children as the candidate list, since the developer already linked the
+  right page and only has to say which block of it. Never reason over an
+  oversized node as if it were the component.
+- **Implement against the source component, never the instance.** A linked node
+  is usually an INSTANCE: the flattened rendering of a main component, with its
+  overrides applied and its variant fixed. Introspection resolves the definitions
+  into the snapshot's `sources` slot, and the rendered section lists them. Rows
+  tagged `source` describe the component; rows tagged `instance` describe one
+  appearance of it. When both exist and disagree, the source wins, and any
+  difference is an override to be exposed as a prop — not a value to hard-code.
 - **Autonomous runs are broad by definition.** When the design context came from
   the target's `autoIntrospect` policy rather than from a link (`trigger: "auto"`
   in the ensure status), NOTHING pins the creative — the scope is the whole mapped

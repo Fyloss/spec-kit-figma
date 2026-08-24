@@ -46,6 +46,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Source components are resolved automatically — "right-click > show source".**
+  A linked node is almost always an `INSTANCE`, and an instance is the *flattened
+  rendering* of a main component: overrides applied, variant fixed. Reading it is
+  how a spec ends up describing one particular appearance of a component rather
+  than the component, which is what forced a developer to redo a feature in a
+  second session, manually pasting the main component's node id into the spec.
+
+  Introspection now collects the `componentId` of every `INSTANCE` in the fetched
+  subtrees and deep-fetches those definitions into a new `sources` slot on the
+  snapshot. The rendered section lists them and tags every extracted value row
+  `instance` or `source`, so a difference between the two stays visible as an
+  override to expose as a prop instead of being silently merged into one number.
+  Components living in another library file are out of reach (that would need the
+  library's file key) and the resolution is non-fatal: a missing source degrades
+  the context, it does not invalidate it.
+- **New `oversized` link scope — a pinned node id is not automatically a
+  creative.** `linkScope` was binary: `broad` (a file/page link) or `frame`
+  (anything with a node id). A link copied from a full-page desktop frame pins a
+  `FRAME` like any other, so it was classified `frame` — a *confirmed creative* —
+  and the confirmation checkpoint never fired. The agent then reasoned over
+  12 000 px of page as if it were the component, which is the single most
+  expensive failure this extension has produced.
+
+  A pinned node past `FIGMA_OVERSIZED_HEIGHT` (3000px) or
+  `FIGMA_OVERSIZED_DESCENDANTS` (150) is now `oversized` and handled exactly like
+  `broad` — enumerate and confirm — except the candidates are the node's **own
+  children**: the developer linked the right page, they only have to say which
+  block of it. Both thresholds are env-overridable, because "page-sized" is a
+  property of the design system in use, not a universal constant.
 - **Deterministic design values in the rendered section.** The renderer's stated
   goal is a section produced "REGARDLESS of the agent model" — but that was only
   ever true of its *structure*. The values were not: the snapshot is a raw dump of
