@@ -199,6 +199,45 @@
         "routingRules": {
           "type": "array",
           "items": { "$ref": "#/definitions/routingRule" }
+        },
+        "autoIntrospect": { "$ref": "#/definitions/autoIntrospect" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["autoIntrospect"],
+            "properties": {
+              "autoIntrospect": {
+                "required": ["mode"],
+                "properties": { "mode": { "enum": ["on-request", "always"] } }
+              }
+            }
+          },
+          "then": { "required": ["figmaFileId"] }
+        }
+      ]
+    },
+    "autoIntrospect": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Whether this target may obtain design context WITHOUT a Figma link in the feature input. Since 2.0.0 the link is the trigger, which is the safe default: a mapping says where a creative would live, not whether a feature has one. Enabling autonomous introspection re-opens the config-derived path for targets whose Figma file is small enough to reason about as a whole. It requires figmaFileId: team/project enumeration stays manual, via /speckit.figma.introspect.",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["off", "on-request", "always"],
+          "default": "off",
+          "description": "'off' (default) keeps the 2.0.0 contract: no link, no design context. 'on-request' (recommended) lets the AGENT open the door — the extension introspects the mapped file only when the agent judges the feature to be a design one and passes --assume-design; the config merely authorizes it, so an agent can never authorize itself. 'always' restores the pre-2.0.0 behaviour: any run on a mapped, enabled target introspects. Prefer 'always' only on small Figma files owned by a front-end-only repository."
+        },
+        "maxFrames": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 60,
+          "description": "Hard budget for the autonomous path: when the introspected file holds more top-level frames than this, the run stops with reason 'too-large-for-auto' and asks for a pinned node id instead of reasoning over the whole file. A big file yields a snapshot too diluted to implement faithfully, which is the failure this budget prevents — it does not apply to link-driven runs, where the node id already pins the creative."
+        },
+        "confirmFrames": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep the creative-confirmation checkpoint (design rule 5) on autonomous runs: the candidate frames are enumerated and the developer confirms the target before tasks are generated. Autonomous runs have no node id to pin the creative, so this defaults to true; set false only when the file holds a single unambiguous creative."
         }
       }
     },

@@ -794,3 +794,130 @@ stage_orphan_links() { # $1 = feature key
   [ -f "$links" ]
   [[ "$(status_json | jq -r '.links[0].fileId')" == "LinkFILE999" ]]
 }
+
+# -----------------------------------------------------------------------------
+# Autonomous introspection (autoIntrospect) — the opt-in that lets a target
+# obtain design context with no Figma link in the input.
+# -----------------------------------------------------------------------------
+
+@test "autoIntrospect defaults to off: a link-less run still ends at no-figma-link" {
+  # The 2.0.0 contract is the default and must stay it. A config that says
+  # nothing about autoIntrospect grants nothing.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --input "add a Redis cache on the billing endpoint"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
+  [[ "$(status_json | jq -r '.trigger')" == "none" ]]
+  [[ "$(status_json | jq -r '.mustInject')" == "false" ]]
+}
+
+@test "on-request without --assume-design declines instead of introspecting" {
+  cp "${FIXTURES_DIR}/autointrospect-on-request-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --input "build the checkout summary panel"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "auto-declined" ]]
+  [[ "$(status_json | jq -r '.trigger')" == "none" ]]
+  [[ "$(status_json | jq -r '.mustInject')" == "false" ]]
+}
+
+@test "on-request with --assume-design introspects the mapped file" {
+  cp "${FIXTURES_DIR}/autointrospect-on-request-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --dry-run --assume-design --input "build the checkout summary panel"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "dry-run" ]]
+  [[ "$(status_json | jq -r '.trigger')" == "auto" ]]
+  [[ "$(status_json | jq -r '.introspectArgs | index("--file")')" != "null" ]]
+  [[ "$(status_json | jq -r '.introspectArgs | index("single123FILE")')" != "null" ]]
+  # No node id exists to pin: the autonomous scope is the whole file.
+  [[ "$(status_json | jq -r '.introspectArgs | index("--node")')" == "null" ]]
+}
+
+@test "--assume-design grants nothing when the target keeps mode off" {
+  # An agent must never be able to authorise itself: the authorisation lives in
+  # the committed config, which is reviewable in a PR.
+  cp "${FIXTURES_DIR}/singlerepo-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --dry-run --assume-design --input "build the checkout summary panel"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "no-figma-link" ]]
+  [[ "$output" == *"autoIntrospect.mode='off'"* ]]
+}
+
+@test "mode always introspects a link-less run without any flag" {
+  cp "${FIXTURES_DIR}/autointrospect-always-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --dry-run --input "build the checkout summary panel"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "dry-run" ]]
+  [[ "$(status_json | jq -r '.trigger')" == "auto" ]]
+}
+
+@test "a pasted link still wins over an always-on autoIntrospect target" {
+  cp "${FIXTURES_DIR}/autointrospect-always-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --dry-run --input "$LINK"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.trigger')" == "link" ]]
+  # The linked file overrides the mapped one, exactly as before.
+  [[ "$(status_json | jq -r '.introspectArgs | index("LinkFILE999")')" != "null" ]]
+  [[ "$(status_json | jq -r '.introspectArgs | index("single123FILE")')" == "null" ]]
+}
+
+@test "an autonomous run invents no link and remembers none" {
+  # The rendered section must report "context derived from page mapping", never a
+  # link the developer did not paste — and the per-feature memory, which later
+  # phases inherit, must not be seeded with a fabricated one either.
+  cp "${FIXTURES_DIR}/autointrospect-always-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  echo '{"fileId":"single123FILE","pages":[{"id":"0:1","name":"Checkout","frames":[{"id":"12:345","name":"Summary","type":"FRAME"}]}]}' \
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
+  run "$SCRIPT" --input "build the checkout summary panel"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
+  [[ "$(status_json | jq -r '.links | length')" == "0" ]]
+  [ ! -f "${WORKSPACE}/.figma/cache/links/${SPECIFY_FEATURE}.json" ]
+}
+
+@test "an autonomous run is broad, so the creative checkpoint fires by construction" {
+  # No node id pins the creative, so design rule 5 (confirm the frame) must apply
+  # without a code path of its own.
+  cp "${FIXTURES_DIR}/autointrospect-always-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  echo '{"fileId":"single123FILE","pages":[{"id":"0:1","name":"Checkout","frames":[{"id":"12:345","name":"Summary","type":"FRAME"}]}]}' \
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
+  run "$SCRIPT" --input "build the checkout summary panel"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.linkScope')" == "broad" ]]
+  [[ "$(status_json | jq -r '.candidateFrames | length')" == "1" ]]
+  [[ "$(status_json | jq -r '.confirmFrames')" == "true" ]]
+  [[ "$(status_json | jq -r '.mustInject')" == "true" ]]
+}
+
+@test "a file over maxFrames refuses the autonomous path and asks for a node id" {
+  # maxFrames = 3 in the fixture; the snapshot holds 4 top-level frames.
+  cp "${FIXTURES_DIR}/autointrospect-always-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  echo '{"fileId":"single123FILE","pages":[{"id":"0:1","name":"Checkout","frames":[{"id":"1:1","name":"A"},{"id":"1:2","name":"B"},{"id":"1:3","name":"C"},{"id":"1:4","name":"D"}]}]}' \
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
+  run "$SCRIPT" --input "build the checkout summary panel"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "too-large-for-auto" ]]
+  [[ "$(status_json | jq -r '.mustInject')" == "false" ]]
+  [[ "$(status_json | jq -r '.specSection')" == "null" ]]
+  [[ "$output" == *"maxFrames"* ]]
+}
+
+@test "the frame budget never applies to a link-driven run" {
+  # The node id already pins the creative, so a wide file is not a problem there.
+  cp "${FIXTURES_DIR}/autointrospect-always-valid.json" "${WORKSPACE}/figma.projects.config.json"
+  echo '{"fileId":"LinkFILE999","pages":[{"id":"0:1","name":"Checkout","frames":[{"id":"1:1","name":"A"},{"id":"1:2","name":"B"},{"id":"1:3","name":"C"},{"id":"1:4","name":"D"}]}],"nodes":{"nodes":{"12:345":{"document":{"type":"FRAME"}}}}}' \
+    > "${WORKSPACE}/.figma/cache/context-snapshot.json"
+  run "$SCRIPT" --input "$LINK"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "fresh" ]]
+  [[ "$(status_json | jq -r '.trigger')" == "link" ]]
+}
+
+@test "autoIntrospect without figmaFileId reports auto-unavailable, not a crawl" {
+  # A project/team id would walk every file of an organisation — that is
+  # /speckit.figma.introspect's job, never an automatic pre-generation hook's.
+  cp "${FIXTURES_DIR}/autointrospect-no-file.json" "${WORKSPACE}/figma.projects.config.json"
+  run "$SCRIPT" --dry-run --input "build the checkout summary panel"
+  [ "$status" -eq 0 ]
+  [[ "$(status_json | jq -r '.reason')" == "auto-unavailable" ]]
+  [[ "$output" == *"figmaFileId"* ]]
+}

@@ -210,17 +210,21 @@ flowchart TD
     Tgt -->|yes| Det{"detect-target enabled?"}
     Det -->|no| RTgt["target-excluded<br>target-not-mapped<br>target-disabled"]
     Det -->|yes| Link{"Figma link resolved?<br>(see section 5)"}
-    Link -->|no| RNoLink["no-figma-link"]
-    Link -->|yes| Fresh{"snapshot fresh<br>AND covers the linked nodes?"}
-    Fresh -->|yes| RFresh["fresh<br>mustInject true"]
+    Link -->|"yes · trigger=link"| Fresh{"snapshot fresh<br>AND covers the linked nodes?"}
+    Link -->|no| Auto{"target autoIntrospect.mode"}
+    Auto -->|"off (default)"| RNoLink["no-figma-link"]
+    Auto -->|"on-request,<br>no --assume-design"| RDecl["auto-declined"]
+    Auto -->|"on-request + --assume-design<br>or always"| File{"target has figmaFileId?"}
+    File -->|no| RUnavail["auto-unavailable"]
+    File -->|"yes · trigger=auto"| Fresh
+    Fresh -->|yes| Budget{"trigger=auto AND<br>frames &gt; maxFrames?"}
     Fresh -->|no| Dry{"--dry-run?"}
     Dry -->|yes| RDry["dry-run"]
     Dry -->|no| Intro{"introspect succeeds?"}
-    Intro -->|yes| ROk["introspected<br>ran true · mustInject true"]
+    Intro -->|yes| Budget
     Intro -->|no| RFail["introspect-failed<br>code NETWORK · AUTH · NOT_FOUND"]
-
-    RFresh --> Rend["render spec/plan/tasks sections"]
-    ROk --> Rend
+    Budget -->|yes| RTooBig["too-large-for-auto"]
+    Budget -->|no| Rend["render spec/plan/tasks sections"]
 
     RNoCfg -.->|clear| Wipe["delete THIS feature's stale<br>.figma/cache/sections/&lt;feature&gt;/"]
     RPlace -.->|clear| Wipe
@@ -228,8 +232,29 @@ flowchart TD
     RAmb -.->|clear| Wipe
     RTgt -.->|clear| Wipe
     RNoLink -.->|clear| Wipe
+    RDecl -.->|clear| Wipe
+    RUnavail -.->|clear| Wipe
+    RTooBig -.->|clear| Wipe
     RFail -.->|"deliberately NOT cleared"| Keep["keep a prior phase's render"]
 ```
+
+The `autoIntrospect` branch is an **opt-in** that a target declares in the
+committed config; `off` is the default, so the graph above collapses to the
+2.0.0 one for every workspace that says nothing. Three things make the opt-in
+safe rather than a return to the pre-2.0.0 behaviour it replaced:
+
+- **The config authorises, the agent triggers.** `--assume-design` is honoured
+  only under `mode: "on-request"`; on `off` it is ignored with a warning. An
+  agent cannot grant itself design context, and the grant is reviewable in a PR.
+- **The frame budget is measured, not advisory.** It is evaluated *after* the
+  snapshot exists — `/files/<key>?depth=2` is the call that produces the frame
+  index — at all three points that reach one (fresh slot, restored per-file copy,
+  fresh introspection), which is why they funnel through a single terminal
+  helper. Link-driven runs are exempt: their node id already pins the creative.
+- **Rule 5 is reused, not rebuilt.** An autonomous run contributes no `--node`,
+  so `LINK_NODES` is empty, so the scope computation classifies it `broad` and
+  the candidate frames are enumerated for confirmation. The safety net is
+  structural rather than a second code path that could drift.
 
 Two details in that graph carry real weight:
 
