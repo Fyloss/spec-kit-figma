@@ -270,3 +270,54 @@ Describe 'Resolve-FigmaContextSourceDecision' {
         Resolve-FigmaContextSourceDecision 'bogus' $false $true '' | Should -Be 'rest'
     }
 }
+
+Describe 'Get-FigmaPhysicalPath / Get-FigmaRelativePath' {
+    It 'resolves the filesystem root without throwing' {
+        # Regression: the recursion reaches the root on EVERY absolute path, and
+        # [DirectoryInfo]'C:\'.ResolveLinkTarget($true) throws "Could not find a
+        # part of the path 'C:\'" on Windows. Unguarded, that took down every
+        # script resolving a path — figma-export-images died with exit 1 and no
+        # report at all, on Windows only.
+        $root = [System.IO.Path]::GetPathRoot((Get-Location).Path)
+        { Get-FigmaPhysicalPath $root } | Should -Not -Throw
+        Get-FigmaPhysicalPath $root | Should -Be $root
+    }
+
+    It 'resolves a deep path by walking to the root, without throwing' {
+        $deep = Join-Path ([System.IO.Path]::GetTempPath()) "figma-phys-$([System.IO.Path]::GetRandomFileName())"
+        New-Item -ItemType Directory -Force -Path (Join-Path $deep 'a/b/c') | Out-Null
+        try {
+            { Get-FigmaPhysicalPath (Join-Path $deep 'a/b/c') } | Should -Not -Throw
+        } finally {
+            Remove-Item -LiteralPath $deep -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'resolves a path that does not exist yet' {
+        # Report paths are computed for files the export is about to write.
+        $missing = Join-Path ([System.IO.Path]::GetTempPath()) 'figma-does-not-exist/nested/file.png'
+        { Get-FigmaPhysicalPath $missing } | Should -Not -Throw
+    }
+
+    It 'reports a child relative to its root, with forward slashes' {
+        $base = Join-Path ([System.IO.Path]::GetTempPath()) "figma-rel-$([System.IO.Path]::GetRandomFileName())"
+        New-Item -ItemType Directory -Force -Path (Join-Path $base 'src/assets') | Out-Null
+        try {
+            Get-FigmaRelativePath (Join-Path $base 'src/assets') $base | Should -Be 'src/assets'
+        } finally {
+            Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'keeps an absolute path when the target lies outside the root' {
+        # A ../.. chain is not something a report consumer could resolve.
+        $base = Join-Path ([System.IO.Path]::GetTempPath()) "figma-rel-$([System.IO.Path]::GetRandomFileName())"
+        New-Item -ItemType Directory -Force -Path $base | Out-Null
+        try {
+            $outside = [System.IO.Path]::GetPathRoot($base)
+            Get-FigmaRelativePath $outside $base | Should -Be $outside
+        } finally {
+            Remove-Item -LiteralPath $base -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}

@@ -140,6 +140,36 @@ snapshot, reports it in the chat, and never edits a document. `--strict` (or
 `figma.verifyStrict`) makes a real drift fail the build; being unable to check
 never does.
 
+### Exporting images from Figma
+
+`/speckit.figma.export` renders nodes to files. Two modes, opposite lifecycles:
+
+**`preview`** — a picture of each candidate frame, so you confirm the creative by
+looking at it instead of reading node ids. PNG @2x into
+`specs/<feature>/assets/`, **committed**: `.figma/cache/` is git-ignored, so a
+preview written there is invisible to a PR reviewer and `spec.md` shows a broken
+image.
+
+```bash
+./.specify/extensions/figma/scripts/bash/figma-export-images.sh \
+  --file <fileKey> --node 12:345 --node 12:400
+```
+
+**`asset`** — a real asset the implementation ships: a logo as `.svg`, a gallery
+mock as `.png`. `--out` is mandatory, because where a shipped asset belongs (the
+Design System, or one app) is a placement decision like any other. A
+`.figma-assets.json` manifest beside the files makes a re-run report `unchanged`
+instead of re-downloading, and **refuses to overwrite a file you have edited
+since** — `--force` is how you say you meant it.
+
+```bash
+./.specify/extensions/figma/scripts/bash/figma-export-images.sh \
+  --mode asset --file <fileKey> --node 90:1 --format svg --out src/design-system/assets
+```
+
+This command is deliberately **not hooked**: it writes into your repository, so
+it runs when you ask for it.
+
 ### The right node: source components, and page-sized links
 
 **A linked node is almost always an instance**, and an instance is the flattened

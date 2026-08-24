@@ -97,6 +97,10 @@ wins.
   tagged `source` describe the component; rows tagged `instance` describe one
   appearance of it. When both exist and disagree, the source wins, and any
   difference is an override to be exposed as a prop — not a value to hard-code.
+- **Confirm with a picture when you can.** `/speckit.figma.export` renders the
+  candidate frames to images under `specs/<feature>/assets/`. Showing the frames
+  is a better question than listing node ids, and the files are committed so the
+  reviewer of the PR sees the same thing the developer confirmed.
 - **Autonomous runs are broad by definition.** When the design context came from
   the target's `autoIntrospect` policy rather than from a link (`trigger: "auto"`
   in the ensure status), NOTHING pins the creative — the scope is the whole mapped
@@ -147,6 +151,19 @@ wins.
 - When the project maintains a component catalog/workbench (e.g. Storybook), the
   task MUST also create or update the corresponding entry. A project can make a
   specific catalog mandatory in the overlay.
+
+## 7b. Exported assets
+- An asset pulled from Figma (`/speckit.figma.export --mode asset`) is a
+  **deliverable**, so its placement follows rule 2 exactly like a component's:
+  reuse first, then the Design System if it is shared and presentational, then
+  the app. When placement is ambiguous, ask — never let the export pick a path.
+- Exports are tracked in a `.figma-assets.json` manifest beside the files. An
+  asset a human has edited since its last export is NEVER overwritten silently;
+  the run reports it and moves on. Forcing the overwrite is a developer decision,
+  never an agent's.
+- Confirmation previews are different: they are documentation of the spec, live
+  under `specs/<feature>/assets/`, and are committed so a PR reviewer sees the
+  creative that was confirmed.
 
 ## 8. Credentials & secrets
 - The Figma access token is NEVER stored in `figma.projects.config.json` or any

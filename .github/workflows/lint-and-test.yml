@@ -74,6 +74,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # The Pester suite runs a small Python mock of the Figma /images endpoint
+      # (tests/helpers/mock-figma-server.py). Relying on whatever the runner
+      # image happens to ship is what broke here: windows-latest has no
+      # python3.exe, and %LOCALAPPDATA%\Microsoft\WindowsApps carries a
+      # python3.exe App Execution Alias that resolves, starts and exits
+      # immediately without binding a port. Pin a real interpreter instead.
+      - name: Set up Python (for the Figma API mock used by the export tests)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install Pester 5
         shell: pwsh
         run: |

@@ -202,6 +202,79 @@ function Set-FakeStoredSnapshot {
     return $path
 }
 
+# Start the mock Figma server (tests/helpers/mock-figma-server.py) on a free port
+# and point FIGMA_API_BASE at it. Returns @{ Port; Process }.
+#
+# FIGMA_API_BASE is the documented local escape hatch: Get-FigmaApiBase rejects a
+# non-figma.com host coming from the CONFIG — so a committed file can never
+# redirect the token — but honours the env var for proxies and test mocks.
+function Start-MockFigma {
+    param([string]$Unrenderable = '')
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+    $listener.Start()
+    $port = $listener.LocalEndpoint.Port
+    $listener.Stop()
+    $script = Join-Path (Get-RepoRoot) 'tests/helpers/mock-figma-server.py'
+    # The interpreter is NOT called 'python3' everywhere, and merely FINDING a
+    # command by that name is not enough on Windows: %LOCALAPPDATA%\Microsoft\
+    # WindowsApps ships a python3.exe App Execution Alias that is a Store stub —
+    # Get-Command finds it, Start-Process starts it, and it exits immediately
+    # without ever binding a port. Probe each candidate by actually running it
+    # and requiring a Python 3 banner, so a stub is rejected rather than
+    # selected.
+    $python = $null
+    foreach ($cand in @('python3', 'python', 'py')) {
+        $cmd = Get-Command $cand -CommandType Application -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if (-not $cmd) { continue }
+        $banner = & $cmd.Source '--version' 2>&1
+        if ($LASTEXITCODE -eq 0 -and "$banner" -match 'Python 3') {
+            $python = $cmd.Source
+            break
+        }
+    }
+    if (-not $python) {
+        throw 'Start-MockFigma: no working Python 3 interpreter found (tried python3, python, py). The Figma export tests need one to run the mock server.'
+    }
+    # Keep the mock's own output: when it dies on start, its stderr is the only
+    # thing that says why, and the CI log shows the thrown message only.
+    $outFile = [System.IO.Path]::GetTempFileName()
+    $errFile = [System.IO.Path]::GetTempFileName()
+    $proc = Start-Process -FilePath $python -ArgumentList @($script, "$port", $Unrenderable) `
+        -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+    $ready = $false
+    for ($i = 0; $i -lt 100; $i++) {
+        if ($proc.HasExited) {
+            $diag = (Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue),
+                    (Get-Content -LiteralPath $outFile -Raw -ErrorAction SilentlyContinue) -join ' | '
+            throw "Start-MockFigma: the mock server exited immediately (exit $($proc.ExitCode)). Interpreter: $python. Output: $diag"
+        }
+        try {
+            $c = [System.Net.Sockets.TcpClient]::new('127.0.0.1', $port)
+            $c.Close(); $ready = $true; break
+        } catch { Start-Sleep -Milliseconds 100 }
+    }
+    if (-not $ready) {
+        try { $proc.Kill() } catch { }
+        $diag = (Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue),
+                (Get-Content -LiteralPath $outFile -Raw -ErrorAction SilentlyContinue) -join ' | '
+        throw "Start-MockFigma: the mock server did not accept connections on port $port within 10s. Interpreter: $python. Output: $diag"
+    }
+    $env:FIGMA_API_BASE = "http://127.0.0.1:$port/v1"
+    $env:FIGMA_PAT = 'test-token'
+    return @{ Port = $port; Process = $proc }
+}
+
+function Stop-MockFigma {
+    param($Mock)
+    if ($Mock -and $Mock.Process -and -not $Mock.Process.HasExited) {
+        try { $Mock.Process.Kill() } catch { }
+    }
+    Remove-Item Env:\FIGMA_API_BASE -ErrorAction SilentlyContinue
+    Remove-Item Env:\FIGMA_PAT -ErrorAction SilentlyContinue
+}
+
+Export-ModuleMember -Function Start-MockFigma, Stop-MockFigma
 Export-ModuleMember -Function Get-RepoRoot, Get-ScriptsDir, Get-FixturesDir,
     Reset-FigmaEnvironment, New-TempWorkspace, Initialize-GitWorkspace, Invoke-FigmaScript,
     Write-FakeSnapshot, Install-ExtensionTree, Install-SectionTemplates, Get-SectionPath,
