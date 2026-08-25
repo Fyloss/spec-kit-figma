@@ -187,3 +187,28 @@ Describe 'figma-extract-values.ps1 (cross-file source components)' {
         $md | Should -Match 'resolved from another Figma file'
     }
 }
+
+Describe 'figma-extract-values.ps1 (unresolved source components)' {
+    BeforeEach {
+        Reset-FigmaEnvironment
+        $script:ws = New-TempWorkspace
+        $script:snap = Join-Path $ws '.figma/cache/context-snapshot.json'
+        New-Item -ItemType Directory -Force -Path (Split-Path $snap) | Out-Null
+        # "90:1" stayed null: neither the same-file nor the cross-file lookup
+        # found it. It must not surface as a source component with a blank name.
+        $json = @'
+{"fileId":"AbC123","pages":[],
+ "nodes":{"nodes":{"12:345":{"document":{"id":"12:345","name":"Card instance","type":"INSTANCE",
+  "componentId":"90:1","paddingLeft":70}}}},
+ "sources":{"nodes":{"90:1":null}}}
+'@
+        Set-Content -LiteralPath $snap -Value $json -Encoding utf8
+    }
+
+    It 'drops an unresolved componentId instead of showing a phantom row' {
+        $d = (Invoke-FigmaScript 'figma-extract-values.ps1' @() -Workspace $ws).Stdout | ConvertFrom-Json
+        @($d.sourceComponents).Count | Should -Be 0
+        $md = (Invoke-FigmaScript 'figma-extract-values.ps1' @('--format', 'markdown') -Workspace $ws).Stdout
+        $md | Should -Not -Match 'Source components behind'
+    }
+}

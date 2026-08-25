@@ -128,12 +128,16 @@ $externalFiles = $snap.sources.externalFiles
 if ($sourceMap) {
     foreach ($prop in @($sourceMap.PSObject.Properties)) {
         $doc = $prop.Value.document
+        # A null value is a componentId that stayed unresolved (same-file AND
+        # cross-file lookups both missed it): skip it rather than emitting a
+        # phantom row with no name, which would read as a resolved component.
+        if (-not $doc) { continue }
         $fileKey = $null
         if ($externalFiles) { $fileKey = Get-JsonValue $externalFiles @($prop.Name) }
         $sourceComponents += [ordered]@{
             id = $prop.Name; name = $doc.name; type = $doc.type; fileKey = $fileKey
         }
-        if ($doc) { Add-Walk $doc 0 'source' }
+        Add-Walk $doc 0 'source'
     }
 }
 

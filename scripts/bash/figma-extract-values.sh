@@ -141,6 +141,11 @@ DIGEST="$(jq -c \
       rowCount: ($rows | length),
       sourceComponents: [ (.sources.externalFiles // {}) as $external
                         | (.sources.nodes // {}) | to_entries[]
+                        # A null value is a componentId that stayed unresolved
+                        # (same-file AND cross-file lookups both missed it):
+                        # skip it here rather than emitting a phantom row with
+                        # no name, which would read as a resolved component.
+                        | select(.value.document != null)
                           | { id: .key, name: (.value.document.name // null),
                               type: (.value.document.type // null),
                               fileKey: ($external[.key] // null) } ],

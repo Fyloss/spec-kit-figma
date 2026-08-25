@@ -21,7 +21,7 @@ Automated tests for the bash scripts of the SpecKit Figma extension, written wit
 - `figma-extract-values.bats` — deterministic design values (explicit units, absent-is-not-zero, source-component tagging, truncation).
 - `figma-export-images.bats` — image export (preview vs asset mode, the manifest and its refusal to overwrite a hand-edited file, batching, and the assertion that the PAT never reaches the CDN URL).
 - `figma-check-orphans.bats` — features orphaned by the 2.0.0 trigger change (section marker without a recoverable link).
-- `powershell/` — the Pester suite, mirroring the bats one file for file
+- `powershell/` — the Pester suite, mirroring the bats suite file-for-file
   (`Common`, `ValidateConfig`, `DetectTarget`, `ParseLinks`, `EnsureContext`,
   `RenderVerify`, `Install`, plus `AutoIntrospect`, `CheckDrift`, `ExtractValues`,
   `ExportImages`, `CheckOrphans`). Both ports must agree on flags, JSON and exit

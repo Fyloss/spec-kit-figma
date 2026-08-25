@@ -16,7 +16,11 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 PORT = int(sys.argv[1])
-with open(sys.argv[2]) as f:
+# utf-8-sig: PowerShell's `Set-Content -Encoding utf8` (used by
+# Start-MockFigmaRouter) writes a UTF-8 BOM, which plain utf-8 would choke on
+# with "Unexpected UTF-8 BOM" — utf-8-sig strips it when present and is a
+# no-op otherwise, so this reads routes.json from either platform.
+with open(sys.argv[2], encoding='utf-8-sig') as f:
     ROUTES = json.load(f)
 
 
@@ -51,4 +55,4 @@ print('ready', flush=True)
 try:
     threading.Event().wait()
 except KeyboardInterrupt:
-    pass
+    pass  # expected on shutdown (the test harness kills this process directly)
