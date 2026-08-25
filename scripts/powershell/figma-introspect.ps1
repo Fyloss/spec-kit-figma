@@ -185,9 +185,7 @@ try {
             # the instance is how a spec ends up describing one appearance of a
             # component rather than the component.
             #
-            # This is "right-click > show source", automated. Components living
-            # in another library file are not fetched: that would need the
-            # library's file key, which this run does not have.
+            # This is "right-click > show source", automated.
             $componentIds = [System.Collections.Generic.HashSet[string]]::new()
             function Find-InstanceComponents {
                 param($Node)
@@ -211,6 +209,85 @@ try {
                 } catch {
                     Write-FigmaStderr 'WARN: could not resolve the source components; the snapshot keeps the instances only.'
                     $sourcesJson = $null
+                }
+
+                # ---------------------------------------------------------
+                # Cross-file resolution. A componentId still missing from the
+                # response above is almost always a component published from
+                # ANOTHER file — a Design System library, another project,
+                # another team. Node ids are file-scoped, so the same-file
+                # lookup above can never find it. Figma's own component
+                # registry can, regardless of where that file actually is:
+                # every component this file references carries a published
+                # `key` (already in $fileJson.components), and
+                # GET /v1/components/{key} answers with the file that owns it
+                # — no config has to name that file up front, and the same
+                # lookup works whether the source is the Design System or
+                # anything else.
+                $foundIds = [System.Collections.Generic.HashSet[string]]::new()
+                if ($sourcesJson -and $sourcesJson.nodes) {
+                    foreach ($prop in @($sourcesJson.nodes.PSObject.Properties)) {
+                        if ($null -ne $prop.Value) { [void]$foundIds.Add($prop.Name) }
+                    }
+                }
+                $missingIds = @($componentIds) | Where-Object { -not $foundIds.Contains($_) }
+                if ($missingIds.Count -gt 0) {
+                    Write-FigmaStderr "INFO: $($missingIds.Count) source component(s) not in this file; checking the Figma component registry for their owning file..."
+                    $externalNodes = [ordered]@{}
+                    $externalFiles = [ordered]@{}
+                    foreach ($cid in $missingIds) {
+                        $key = [string](Get-JsonValue $fileJson @('components', $cid, 'key') '')
+                        if (-not $key) {
+                            Write-FigmaStderr "WARN: no published key for component ${cid}; cannot locate its owning file."
+                            continue
+                        }
+                        $meta = $null
+                        try { $meta = (Invoke-FigmaApi "/components/$key") | ConvertFrom-Json } catch {
+                            Write-FigmaStderr "WARN: could not resolve the owning file of component ${cid} (key ${key})."
+                            continue
+                        }
+                        $extFileKey = [string](Get-JsonValue $meta @('meta', 'file_key') '')
+                        $extNodeId = [string](Get-JsonValue $meta @('meta', 'node_id') '')
+                        if (-not $extFileKey -or -not $extNodeId) {
+                            Write-FigmaStderr "WARN: component ${cid} (key ${key}) has no resolvable owning file."
+                            continue
+                        }
+                        $extNodeIdEnc = $extNodeId.Replace(';', '%3B')
+                        $extDoc = $null
+                        try {
+                            $extResp = (Invoke-FigmaApi "/files/$extFileKey/nodes?ids=$extNodeIdEnc") | ConvertFrom-Json
+                            $extDoc = Get-JsonValue $extResp @('nodes', $extNodeId)
+                        } catch {
+                            $extDoc = $null
+                        }
+                        if ($null -eq $extDoc) {
+                            Write-FigmaStderr "WARN: could not fetch component ${cid} from its owning file ${extFileKey}."
+                            continue
+                        }
+                        $externalNodes[$cid] = $extDoc
+                        $externalFiles[$cid] = $extFileKey
+                    }
+                    if ($externalNodes.Count -gt 0) {
+                        # Merge into $sourcesJson.nodes, keyed by the ORIGINAL
+                        # componentId — so figma-extract-values.ps1 keeps
+                        # matching instance.componentId ->
+                        # sources.nodes[componentId] unchanged — and record
+                        # which file each came from in a sibling
+                        # `externalFiles` map.
+                        $mergedNodes = [ordered]@{}
+                        if ($sourcesJson -and $sourcesJson.nodes) {
+                            foreach ($prop in @($sourcesJson.nodes.PSObject.Properties)) { $mergedNodes[$prop.Name] = $prop.Value }
+                        }
+                        foreach ($k in $externalNodes.Keys) { $mergedNodes[$k] = $externalNodes[$k] }
+                        $mergedExternalFiles = [ordered]@{}
+                        if ($sourcesJson -and $sourcesJson.externalFiles) {
+                            foreach ($prop in @($sourcesJson.externalFiles.PSObject.Properties)) { $mergedExternalFiles[$prop.Name] = $prop.Value }
+                        }
+                        foreach ($k in $externalFiles.Keys) { $mergedExternalFiles[$k] = $externalFiles[$k] }
+                        if ($null -eq $sourcesJson) { $sourcesJson = [PSCustomObject]@{} }
+                        $sourcesJson | Add-Member -NotePropertyName nodes -NotePropertyValue $mergedNodes -Force
+                        $sourcesJson | Add-Member -NotePropertyName externalFiles -NotePropertyValue $mergedExternalFiles -Force
+                    }
                 }
             }
         }

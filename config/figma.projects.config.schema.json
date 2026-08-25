@@ -175,7 +175,15 @@
           "properties": {
             "ref": { "type": "string", "description": "Key of the Design System target (multi-repo) it refers to." },
             "submodulePath": { "type": "string" },
-            "figmaFileId": { "type": "string" },
+            "figmaFileId": { "type": "string", "description": "Figma file key of the Design System, when it lives in a single file. Optional when a project or team id is provided instead, for a DS spread across several files." },
+            "figmaProjectId": { "type": "string", "description": "Optional Figma project id of the Design System, when it spans several files within one project. Used by /speckit.figma.introspect to enumerate the DS inventory for reuse/placement decisions; source-component resolution (an instance's definition) does not need this — it resolves by published component key regardless of which file owns it." },
+            "figmaTeamId": { "type": "string", "description": "Optional Figma team id of the Design System, when it spans several projects. Same enumeration use as figmaProjectId, at the team level." },
+            "figmaTeamIds": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1,
+              "description": "Optional list of Figma team ids when the Design System spans several teams of the same organization."
+            },
             "tokenSource": { "type": "string", "description": "Path/glob to the DS token definitions (e.g. design tokens JSON, theme files)." }
           }
         },

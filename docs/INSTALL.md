@@ -5,6 +5,11 @@ Gemini, Cursor, …) on a **single-repo** (default), **mono-repo** or **multi-re
 (git submodules) layout.
 
 ## Prerequisites
+- **SpecKit `>= 0.11.2`.** `/speckit.converge` — and therefore the
+  `before_converge` / `after_converge` hook points this extension registers —
+  first ships in that release. Every other hook has existed far longer, so this
+  floor exists for converge and nothing else. On an older SpecKit the install is
+  refused; upgrade with `uv tool upgrade specify-cli`.
 - A SpecKit workspace (`.specify/` present) **and the `specify` CLI**: the
   extension's code reaches a workspace exclusively through
   `specify extension add`, which installs the tree at
@@ -64,8 +69,9 @@ specify extension add figma --from https://github.com/Fyloss/spec-kit-figma/arch
 specify extension add --dev /path/to/spec-kit-figma
 ```
 This registers all of the extension's commands — `/speckit.figma.config`,
-`/speckit.figma.update`, `/speckit.figma.ensure`, `/speckit.figma.introspect` and
-`/speckit.figma.verify` — with your agent, and installs the extension tree at
+`/speckit.figma.update`, `/speckit.figma.ensure`, `/speckit.figma.introspect`,
+`/speckit.figma.verify`, `/speckit.figma.drift` and `/speckit.figma.export` —
+with your agent, and installs the extension tree at
 `.specify/extensions/figma/`. Verify with `specify extension list`.
 
 That tree is where the code **lives and runs from**: `scripts/bash/`,
@@ -284,8 +290,8 @@ rejected with an explicit error instead of a silent empty result.
 > **Nothing to do here in the normal case.** `specify extension add` (step 1)
 > registered all of the extension's commands for every agent format it knows:
 > `/speckit.figma.config`, `/speckit.figma.update`, `/speckit.figma.ensure`,
-> `/speckit.figma.introspect`, `/speckit.figma.verify`. Check with
-> `specify extension list`.
+> `/speckit.figma.introspect`, `/speckit.figma.verify`, `/speckit.figma.drift`,
+> `/speckit.figma.export`. Check with `specify extension list`.
 
 This section is the fallback for an agent whose format SpecKit does not handle.
 The command files are **agent-agnostic** and live in the installed tree at
@@ -293,12 +299,17 @@ The command files are **agent-agnostic** and live in the installed tree at
 - `speckit.figma.config.md`
 - `speckit.figma.update.md` (refresh the tree + re-register commands on a version
   bump; preserves the config — see "Updating an existing install")
-- `speckit.figma.ensure.md` (auto-context; wired to the
-  `before_specify`/`before_plan`/`before_tasks` hooks)
+- `speckit.figma.ensure.md` (auto-context; wired to all six `before_*` hooks —
+  `specify`, `plan`, `tasks`, `converge`, `analyze`, `implement`)
 - `speckit.figma.introspect.md`
 - `speckit.figma.verify.md` (post-generation check; wired to the
-  `after_specify`/`after_plan`/`after_tasks` hooks — `--strict` /
+  `after_specify`/`after_plan`/`after_tasks`/`after_converge` hooks — `--strict` /
   `figma.verifyStrict` turns it into a CI gate)
+- `speckit.figma.drift.md` (post-analysis design-drift report; wired to the
+  `after_analyze` hook. Reports, never edits a document)
+- `speckit.figma.export.md` (Figma nodes to image files: confirmation previews
+  beside the spec, or shipped assets. **Not hooked** — it writes into the
+  repository, so it runs only when you ask for it)
 
 Copy them to your agent's command location, e.g.:
 
@@ -357,20 +368,39 @@ directory are never touched, nor is the feature of the run doing the sweep.
 Override the 7-day window with `FIGMA_CACHE_RETENTION_DAYS`, or turn the sweep
 off entirely with `FIGMA_CACHE_GC=off`.
 
-After generation, the `after_specify`/`after_plan`/`after_tasks` hooks run
-`/speckit.figma.verify` (`figma-verify-section.sh`), which confirms the Figma
-section was actually integrated when a mockup was detected — and self-corrects
-if it is missing. Enable a hard CI gate with `--strict` (or `figma.verifyStrict`
-in the config) to make a missing section fail the run instead of only warning.
+After generation, the `after_specify`/`after_plan`/`after_tasks`/`after_converge`
+hooks run `/speckit.figma.verify` (`figma-verify-section.sh`), which confirms the
+Figma section was actually integrated when a mockup was detected — and
+self-corrects if it is missing. Enable a hard CI gate with `--strict` (or
+`figma.verifyStrict` in the config) to make a missing section fail the run
+instead of only warning. `after_converge` re-runs the `--phase tasks` check
+because converge *rewrites* `tasks.md`, and a rewrite is where a section — and
+the marker every later phase keys on — gets dropped.
 
-All six hooks are declared `optional: false` in `extension.yml`, so a compliant
-SpecKit host **auto-executes** them on every `specify` / `plan` / `tasks` run —
-the agent is never offered an opt-in prompt it could decline. They stay safe
+`after_analyze` runs a different command, `/speckit.figma.drift`
+(`figma-check-drift.sh`): analyze checks the three documents against each other,
+drift checks them against Figma. All three can agree perfectly while describing a
+creative the designer has since changed.
+
+**Two phases produce no document at all.** On `analyze` and `implement` there is
+no section to paste; what `before_analyze` / `before_implement` provide there is
+the *context* —
+the effective ruleset (`.figma/figma-design-rules.md` plus your overlay) and a
+current snapshot. `implement` is the phase that actually writes the code, so it
+is the phase where those rules bind, and it is what restores the snapshot on a
+fresh clone (`.figma/cache/` is git-ignored, so a teammate resuming a PR has
+none).
+
+All eleven hooks are declared `optional: false` in `extension.yml`, so a
+compliant SpecKit host **auto-executes** them on every `specify` / `plan` /
+`tasks` / `converge` / `analyze` / `implement` run — the agent is never offered
+an opt-in prompt it could decline. They stay safe
 no-ops when Figma does not apply (no config, excluded target, no mockup), so
 making them mandatory never blocks non-Figma projects.
 
-Your `/speckit.specify`, `/speckit.plan` and `/speckit.tasks` prompt files are
-**not modified** by default. If your agent does not support SpecKit extension hooks, run
+Your `/speckit.specify`, `/speckit.plan`, `/speckit.tasks`, `/speckit.converge`,
+`/speckit.analyze` and `/speckit.implement` prompt files are **not modified** by
+default. If your agent does not support SpecKit extension hooks, run
 `./.specify/extensions/figma/install.sh --prompt-hooks` to append a managed auto-context block to those
 prompts instead (refreshed in place on re-runs). A default `install.sh` run
 removes any block injected by a previous extension version; `--no-hooks`

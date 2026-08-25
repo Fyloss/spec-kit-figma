@@ -213,6 +213,39 @@ like `broad`: the developer linked the right page, they just have to say which
 block of it. Thresholds are `FIGMA_OVERSIZED_HEIGHT` (3000px) and
 `FIGMA_OVERSIZED_DESCENDANTS` (150).
 
+### 3b. Named component inside a `broad`/`oversized` link — search before you ask
+
+The checkpoint above assumes the developer will pick a **frame** from
+`candidateFrames`. A different, equally common case: the input already names or
+describes a specific **component** inside that huge page — e.g. "integrate
+component A", or "the button whose label says Add to cart" — rather than asking
+"what's on this page?". Presenting the raw children list here is a step backward:
+you already have enough to find the exact node.
+
+**The data is already in hand.** Whenever a node id is pinned — `broad`'s file/page
+node, or `oversized`'s page-sized node — `ensure` deep-fetches its ENTIRE subtree
+with no depth cap (that fetch is what makes `oversized` classifiable in the first
+place). Every descendant's `name` and every `TEXT` node's `characters` (a label's
+actual content) are already sitting in the snapshot's `.nodes.nodes[<id>].document`.
+Nothing needs to be re-fetched to search it.
+
+So when the input names or describes a component:
+
+1. **Search the already-fetched subtree first**, matching the description against
+   a node's `name` or a descendant `TEXT` node's `characters` — before falling back
+   to the generic `candidateFrames` list.
+2. **Present the match**, not the whole list: its name, node id, and Figma deep
+   link. If more than one node plausibly matches, present a short ranked list
+   instead of the single best guess. This is still the creative-confirmation
+   checkpoint — proceed once the developer confirms.
+3. **Once confirmed, treat it like any other pinned link**: re-run
+   `introspect --file <id> --node <matchedNodeId>` — small and targeted, so an
+   unrestricted-depth fetch is cheap here, unlike the original page-sized node —
+   then resolve its **source component** (next paragraph) wherever it actually
+   lives, not the instance sitting in the huge page.
+4. **No match found** (typo, ambiguous name, the component is not actually under
+   that link)? Fall back to the `candidateFrames` list and ask — never guess.
+
 **Implement against the source component, not the instance.** When the section
 lists "Source components behind the linked instances", those are the definitions
 behind the nodes that were linked — an instance is that component with its

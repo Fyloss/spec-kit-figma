@@ -202,52 +202,47 @@ function Set-FakeStoredSnapshot {
     return $path
 }
 
-# Start the mock Figma server (tests/helpers/mock-figma-server.py) on a free port
-# and point FIGMA_API_BASE at it. Returns @{ Port; Process }.
-#
-# FIGMA_API_BASE is the documented local escape hatch: Get-FigmaApiBase rejects a
-# non-figma.com host coming from the CONFIG — so a committed file can never
-# redirect the token — but honours the env var for proxies and test mocks.
-function Start-MockFigma {
-    param([string]$Unrenderable = '')
-    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
-    $listener.Start()
-    $port = $listener.LocalEndpoint.Port
-    $listener.Stop()
-    $script = Join-Path (Get-RepoRoot) 'tests/helpers/mock-figma-server.py'
-    # The interpreter is NOT called 'python3' everywhere, and merely FINDING a
-    # command by that name is not enough on Windows: %LOCALAPPDATA%\Microsoft\
-    # WindowsApps ships a python3.exe App Execution Alias that is a Store stub —
-    # Get-Command finds it, Start-Process starts it, and it exits immediately
-    # without ever binding a port. Probe each candidate by actually running it
-    # and requiring a Python 3 banner, so a stub is rejected rather than
-    # selected.
-    $python = $null
+# The interpreter is NOT called 'python3' everywhere, and merely FINDING a
+# command by that name is not enough on Windows: %LOCALAPPDATA%\Microsoft\
+# WindowsApps ships a python3.exe App Execution Alias that is a Store stub —
+# Get-Command finds it, Start-Process starts it, and it exits immediately
+# without ever binding a port. Probe each candidate by actually running it and
+# requiring a Python 3 banner, so a stub is rejected rather than selected.
+# Shared by every mock server this suite starts. Throws when none works.
+function Get-FigmaTestPython {
     foreach ($cand in @('python3', 'python', 'py')) {
         $cmd = Get-Command $cand -CommandType Application -ErrorAction SilentlyContinue |
             Select-Object -First 1
         if (-not $cmd) { continue }
         $banner = & $cmd.Source '--version' 2>&1
         if ($LASTEXITCODE -eq 0 -and "$banner" -match 'Python 3') {
-            $python = $cmd.Source
-            break
+            return $cmd.Source
         }
     }
-    if (-not $python) {
-        throw 'Start-MockFigma: no working Python 3 interpreter found (tried python3, python, py). The Figma export tests need one to run the mock server.'
-    }
+    throw 'Get-FigmaTestPython: no working Python 3 interpreter found (tried python3, python, py). The Figma mock-server tests need one.'
+}
+
+# Start a Python HTTP mock server and wait until it accepts connections.
+# $ScriptArgs are passed after the port. Returns @{ Port; Process }.
+function Start-FigmaMockProcess {
+    param([Parameter(Mandatory)][string]$Script, [string[]]$ScriptArgs = @())
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+    $listener.Start()
+    $port = $listener.LocalEndpoint.Port
+    $listener.Stop()
+    $python = Get-FigmaTestPython
     # Keep the mock's own output: when it dies on start, its stderr is the only
     # thing that says why, and the CI log shows the thrown message only.
     $outFile = [System.IO.Path]::GetTempFileName()
     $errFile = [System.IO.Path]::GetTempFileName()
-    $proc = Start-Process -FilePath $python -ArgumentList @($script, "$port", $Unrenderable) `
+    $proc = Start-Process -FilePath $python -ArgumentList (@($Script, "$port") + $ScriptArgs) `
         -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
     $ready = $false
     for ($i = 0; $i -lt 100; $i++) {
         if ($proc.HasExited) {
             $diag = (Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue),
                     (Get-Content -LiteralPath $outFile -Raw -ErrorAction SilentlyContinue) -join ' | '
-            throw "Start-MockFigma: the mock server exited immediately (exit $($proc.ExitCode)). Interpreter: $python. Output: $diag"
+            throw "Start-FigmaMockProcess: the mock server exited immediately (exit $($proc.ExitCode)). Interpreter: $python. Output: $diag"
         }
         try {
             $c = [System.Net.Sockets.TcpClient]::new('127.0.0.1', $port)
@@ -258,11 +253,24 @@ function Start-MockFigma {
         try { $proc.Kill() } catch { }
         $diag = (Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue),
                 (Get-Content -LiteralPath $outFile -Raw -ErrorAction SilentlyContinue) -join ' | '
-        throw "Start-MockFigma: the mock server did not accept connections on port $port within 10s. Interpreter: $python. Output: $diag"
+        throw "Start-FigmaMockProcess: the mock server did not accept connections on port $port within 10s. Interpreter: $python. Output: $diag"
     }
-    $env:FIGMA_API_BASE = "http://127.0.0.1:$port/v1"
-    $env:FIGMA_PAT = 'test-token'
     return @{ Port = $port; Process = $proc }
+}
+
+# Start the mock Figma server (tests/helpers/mock-figma-server.py) on a free port
+# and point FIGMA_API_BASE at it. Returns @{ Port; Process }.
+#
+# FIGMA_API_BASE is the documented local escape hatch: Get-FigmaApiBase rejects a
+# non-figma.com host coming from the CONFIG — so a committed file can never
+# redirect the token — but honours the env var for proxies and test mocks.
+function Start-MockFigma {
+    param([string]$Unrenderable = '')
+    $script = Join-Path (Get-RepoRoot) 'tests/helpers/mock-figma-server.py'
+    $mock = Start-FigmaMockProcess -Script $script -ScriptArgs @($Unrenderable)
+    $env:FIGMA_API_BASE = "http://127.0.0.1:$($mock.Port)/v1"
+    $env:FIGMA_PAT = 'test-token'
+    return $mock
 }
 
 function Stop-MockFigma {
@@ -274,7 +282,47 @@ function Stop-MockFigma {
     Remove-Item Env:\FIGMA_PAT -ErrorAction SilentlyContinue
 }
 
-Export-ModuleMember -Function Start-MockFigma, Stop-MockFigma
+# Start the generic routing mock (tests/helpers/mock-figma-router.py) on a free
+# port and point FIGMA_API_BASE at it. $Routes is an array of
+# @{ match = '<substring of the request>'; body = <hashtable/array> } (checked
+# in order, first match wins). Returns @{ Port; Process }.
+function Start-MockFigmaRouter {
+    param([Parameter(Mandatory)][array]$Routes)
+    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) "figma-router-$([System.IO.Path]::GetRandomFileName())"
+    $null = New-Item -ItemType Directory -Force -Path $tmpDir
+    $resolved = @()
+    $i = 0
+    foreach ($route in $Routes) {
+        $bodyFile = Join-Path $tmpDir "route-$i.json"
+        ConvertTo-Json -InputObject $route.body -Depth 100 | Set-Content -LiteralPath $bodyFile -Encoding utf8
+        $entry = [ordered]@{ match = $route.match; file = $bodyFile }
+        if ($route.ContainsKey('status')) { $entry.status = $route.status }
+        $resolved += $entry
+        $i++
+    }
+    $routesFile = Join-Path $tmpDir 'routes.json'
+    ConvertTo-Json -InputObject $resolved -Depth 100 | Set-Content -LiteralPath $routesFile -Encoding utf8
+    $script = Join-Path (Get-RepoRoot) 'tests/helpers/mock-figma-router.py'
+    $mock = Start-FigmaMockProcess -Script $script -ScriptArgs @($routesFile)
+    $mock.TmpDir = $tmpDir
+    $env:FIGMA_API_BASE = "http://127.0.0.1:$($mock.Port)/v1"
+    $env:FIGMA_PAT = 'test-token'
+    return $mock
+}
+
+function Stop-MockFigmaRouter {
+    param($Mock)
+    if ($Mock -and $Mock.Process -and -not $Mock.Process.HasExited) {
+        try { $Mock.Process.Kill() } catch { }
+    }
+    if ($Mock -and $Mock.TmpDir -and (Test-Path -LiteralPath $Mock.TmpDir)) {
+        Remove-Item -LiteralPath $Mock.TmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Remove-Item Env:\FIGMA_API_BASE -ErrorAction SilentlyContinue
+    Remove-Item Env:\FIGMA_PAT -ErrorAction SilentlyContinue
+}
+
+Export-ModuleMember -Function Start-MockFigma, Stop-MockFigma, Start-MockFigmaRouter, Stop-MockFigmaRouter
 Export-ModuleMember -Function Get-RepoRoot, Get-ScriptsDir, Get-FixturesDir,
     Reset-FigmaEnvironment, New-TempWorkspace, Initialize-GitWorkspace, Invoke-FigmaScript,
     Write-FakeSnapshot, Install-ExtensionTree, Install-SectionTemplates, Get-SectionPath,

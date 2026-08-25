@@ -169,3 +169,52 @@ JSON
   run "$SCRIPT" --format markdown
   [[ "$output" != *"Source components behind"* ]]
 }
+
+@test "a same-file source component is flagged 'same file', not external" {
+  cat > "$SNAP" <<'JSON'
+{"fileId":"AbC123","pages":[],
+ "nodes":{"nodes":{"12:345":{"document":{"id":"12:345","name":"Card instance","type":"INSTANCE",
+  "componentId":"90:1","paddingLeft":70}}}},
+ "sources":{"nodes":{"90:1":{"document":{"id":"90:1","name":"DsCard","type":"COMPONENT","paddingLeft":16}}}}}
+JSON
+  run "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -r '.sourceComponents[0].fileKey // "null"')" == "null" ]]
+
+  run "$SCRIPT" --format markdown
+  [[ "$output" == *"| DsCard | \`90:1\` | same file |"* ]]
+}
+
+@test "a cross-file source component is flagged external, with its owning file key" {
+  cat > "$SNAP" <<'JSON'
+{"fileId":"AbC123","pages":[],
+ "nodes":{"nodes":{"12:345":{"document":{"id":"12:345","name":"Card instance","type":"INSTANCE",
+  "componentId":"90:1","paddingLeft":70}}}},
+ "sources":{"nodes":{"90:1":{"document":{"id":"90:1","name":"DsCard","type":"COMPONENT","paddingLeft":16}}},
+  "externalFiles":{"90:1":"DSFILEKEY"}}}
+JSON
+  run "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -r '.sourceComponents[0].fileKey')" == "DSFILEKEY" ]]
+
+  run "$SCRIPT" --format markdown
+  [[ "$output" == *"| DsCard | \`90:1\` | \`DSFILEKEY\` (external) |"* ]]
+  [[ "$output" == *"resolved from another Figma file"* ]]
+}
+
+@test "an unresolved componentId (null source) is dropped, not shown as a phantom row" {
+  # "90:1" stayed null: neither the same-file nor the cross-file lookup found
+  # it. It must not surface as a source component with a blank name.
+  cat > "$SNAP" <<'JSON'
+{"fileId":"AbC123","pages":[],
+ "nodes":{"nodes":{"12:345":{"document":{"id":"12:345","name":"Card instance","type":"INSTANCE",
+  "componentId":"90:1","paddingLeft":70}}}},
+ "sources":{"nodes":{"90:1":null}}}
+JSON
+  run "$SCRIPT"
+  [ "$status" -eq 0 ]
+  [[ "$(echo "$output" | jq -c '.sourceComponents')" == "[]" ]]
+
+  run "$SCRIPT" --format markdown
+  [[ "$output" != *"Source components behind"* ]]
+}

@@ -84,6 +84,31 @@ so refactors that move folders do not break the mapping. Keep `figmaFileId` per
 logical area if your mono-repo uses multiple Figma files; otherwise a single
 `figmaFileId` with a rich `pageToPackageMapping` is sufficient.
 
+## Autonomous introspection is per target, not per workspace
+
+`autoIntrospect` decides what happens when a feature carries **no Figma link**,
+and it is declared on the target — which is the whole point in a mono- or
+multi-repo. The two halves of the same workspace rarely deserve the same policy:
+
+```jsonc
+"design-system": { "autoIntrospect": { "mode": "always", "maxFrames": 40 } },
+"storefront":    { "autoIntrospect": { "mode": "off" } }
+```
+
+A small, self-contained design-system file can be read whole; a large product
+file cannot, and should keep requiring a pinned node id. `off` is the default, so
+a target that says nothing keeps the link-only contract.
+
+In **mono-repo** mode the setting sits on `repo` and therefore applies to every
+app and lib it contains — `figma-detect-target` resolves any package of the
+mono-repo to that same `repo` node. One Figma file, one policy. Only
+**multi-repo** gives a policy per submodule.
+
+`autoIntrospect` requires `figmaFileId` on the target: a project or team id would
+have the hook crawl an entire organisation, which is `/speckit.figma.introspect`'s
+job, run by hand. See the table below for those levels, and the README for the
+three modes and the `maxFrames` budget.
+
 ## Figma design source levels (file / project / team)
 Independently of the repo topology, each target points at its Figma design via one
 of three levels — pick the one that matches how the design org is structured:

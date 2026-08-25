@@ -174,6 +174,12 @@ default to "authentication required":
   send the developer the Figma deep links and ask them to confirm you targeted the
   right creative. Proceed once confirmed; if the developer corrects you, re-introspect
   the corrected node.
+- **The developer named a component inside a page you already deep-fetched?**
+  Don't just enumerate top-level frames and ask "which one" — search the fetched
+  subtree (node `name`s, and `TEXT` node `characters` for a described label) for a
+  match first, and present that match for confirmation instead of the raw list. See
+  `/speckit.figma.ensure` section 3b for the full rule; it applies here identically
+  when a manual deep dive targets a `broad`/`oversized` file or page.
 - **Responsive policy is project-specific** (design-rules base rule 4). Implement the
   breakpoints the design provides; do not invent a layout for a breakpoint the mockups
   do not show. Follow any responsive policy declared in the overlay

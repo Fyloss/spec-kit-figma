@@ -83,7 +83,10 @@ flowchart TD
     subgraph Entry["Entry points — invoked by hooks or by the developer"]
         Ensure["figma-ensure-context<br>orchestrator"]
         Verify["figma-verify-section<br>post-generation gate"]
+        Drift["figma-check-drift<br>has the mockup moved?"]
         Resolve["figma-resolve-source<br>engine report"]
+        Orphans["figma-check-orphans<br>features the 2.0.0 trigger left mute"]
+        Export["figma-export-images<br>node to file — on demand only"]
     end
 
     subgraph Decide["Decision helpers — pure, no network"]
@@ -92,8 +95,9 @@ flowchart TD
         Parse["figma-parse-links<br>URL to fileId + nodeId"]
     end
 
-    subgraph Produce["Producers — write to .figma/cache/"]
-        Introspect["figma-introspect<br>the only network reader"]
+    subgraph Produce["Producers"]
+        Introspect["figma-introspect<br>network reader · writes .figma/cache/"]
+        Extract["figma-extract-values<br>snapshot to design facts"]
         Render["figma-render-section<br>snapshot to markdown"]
     end
 
@@ -104,9 +108,15 @@ flowchart TD
     Ensure --> Parse
     Ensure --> Introspect
     Ensure --> Render
+    Render --> Extract
     Introspect --> Common
+    Extract --> Common
     Render --> Common
     Verify --> Common
+    Drift --> Common
+    Orphans --> Parse
+    Orphans --> Common
+    Export --> Common
     Resolve --> Common
     Validate --> Common
     Detect --> Common
@@ -298,10 +308,21 @@ subtrees and deep-fetches those definitions into the snapshot's `sources` slot.
 The extractor walks both maps and tags each row `instance` or `source`, kept
 apart on purpose: merging them would hide which numbers describe the component
 and which describe one appearance of it, and a difference between the two is an
-override to expose as a prop, not a value to hard-code. Library components from
-another file are out of reach — that needs the library's file key — and the whole
-resolution is non-fatal, since a missing source degrades context without
-invalidating it.
+override to expose as a prop, not a value to hard-code. The whole resolution is
+non-fatal, since a missing source degrades context without invalidating it.
+
+**Library components resolve by key, not by config.** A `componentId` absent
+from the same-file lookup is almost always published from another file — a
+Design System library, another project, another team. Node ids are file-scoped,
+so that lookup can never find it there. Instead, introspection reads the
+component's published `key` (already in the file's `components` map) and calls
+`GET /v1/components/{key}`, which answers with the file that actually owns it —
+no config has to name that file up front, and the same lookup works whether the
+source is the project's own Design System or anything else the PAT can read. A
+component resolved this way is recorded in a sibling `sources.externalFiles`
+map (keyed by the same `componentId`) so the rendered section can say which
+file it came from; a component the PAT cannot read stays instance-only, with a
+`WARN` naming which one, rather than a silent gap.
 
 **`oversized`.** `linkScope` was binary: `broad` for a file/page link, `frame`
 for anything carrying a node id. A link copied from a full-page desktop frame

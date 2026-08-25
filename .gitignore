@@ -4,3 +4,5 @@
 .figma/cache/
 .serena/
 .tokensave/
+__pycache__/
+*.pyc

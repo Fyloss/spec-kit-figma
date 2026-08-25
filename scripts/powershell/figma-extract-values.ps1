@@ -124,13 +124,20 @@ if ($nodeMap) {
 }
 $sourceComponents = @()
 $sourceMap = $snap.sources.nodes
+$externalFiles = $snap.sources.externalFiles
 if ($sourceMap) {
     foreach ($prop in @($sourceMap.PSObject.Properties)) {
         $doc = $prop.Value.document
+        # A null value is a componentId that stayed unresolved (same-file AND
+        # cross-file lookups both missed it): skip it rather than emitting a
+        # phantom row with no name, which would read as a resolved component.
+        if (-not $doc) { continue }
+        $fileKey = $null
+        if ($externalFiles) { $fileKey = Get-JsonValue $externalFiles @($prop.Name) }
         $sourceComponents += [ordered]@{
-            id = $prop.Name; name = $doc.name; type = $doc.type
+            id = $prop.Name; name = $doc.name; type = $doc.type; fileKey = $fileKey
         }
-        if ($doc) { Add-Walk $doc 0 'source' }
+        Add-Walk $doc 0 'source'
     }
 }
 
@@ -165,10 +172,13 @@ $text = @($digest.nodes | Where-Object { $_.facts.fontSize -or $_.facts.textAlig
 $sb = [System.Text.StringBuilder]::new()
 if (@($digest.sourceComponents).Count -gt 0) {
     [void]$sb.Append("**Source components behind the linked instances**`n`n")
-    [void]$sb.Append("| Component | Node id |`n|-----------|---------|`n")
-    $lines = foreach ($c in $digest.sourceComponents) { "| $(Format-Cell $c.name) | ``$($c.id)`` |" }
+    [void]$sb.Append("| Component | Node id | File |`n|-----------|---------|------|`n")
+    $lines = foreach ($c in $digest.sourceComponents) {
+        $fileCell = if ($c.fileKey) { "``$($c.fileKey)`` (external)" } else { 'same file' }
+        "| $(Format-Cell $c.name) | ``$($c.id)`` | $fileCell |"
+    }
     [void]$sb.Append(($lines -join "`n"))
-    [void]$sb.Append("`n`n> Implement against the **source component**, not the instance: an instance is that component with its overrides applied and its variant fixed. Rows tagged ``source`` below come from the definition.`n`n")
+    [void]$sb.Append("`n`n> Implement against the **source component**, not the instance: an instance is that component with its overrides applied and its variant fixed. Rows tagged ``source`` below come from the definition. A component flagged **external** was resolved from another Figma file (e.g. a Design System library) via its published component key, not from the linked file.`n`n")
 }
 [void]$sb.Append("**Layout values (auto-filled, absolute CSS px at 1x)**`n`n")
 if ($layout.Count -eq 0) {

@@ -5,6 +5,40 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [3.1.0] - 2026-08-25
+
+### Added
+
+- **Cross-file source-component resolution.** `figma-introspect` used to resolve
+  an `INSTANCE`'s source component only against the file of the pinned link — a
+  component published from another file (a Design System library, another
+  project, another team) silently degraded to instance-only data. It now falls
+  back to Figma's own component registry (`GET /v1/components/{key}`), which
+  answers with the file that actually owns a published component regardless of
+  where that is — no config has to name it up front, and the same lookup covers
+  the Design System and any other library uniformly. Resolved components are
+  recorded in a new `sources.externalFiles` map; the rendered "Source components"
+  table now shows a `File` column (`same file` or `` `<fileKey>` (external)``).
+  `designSystem` also gains optional `figmaProjectId` / `figmaTeamId` /
+  `figmaTeamIds` fields, for enumerating a Design System spread across several
+  files when browsing its reuse inventory.
+- **Content-aware component locator inside a `broad`/`oversized` link.** When the
+  developer names or describes a specific component inside a page-sized link
+  instead of asking "what's on this page?", the agent now searches the
+  already-fetched subtree (node names, `TEXT` node content) for a match and
+  presents that single match for confirmation, instead of the raw list of
+  top-level children. Documentation-only change (`/speckit.figma.ensure` section
+  3b, `/speckit.figma.introspect` section 3) — no new script.
+
+### Fixed
+
+- A component whose source could not be resolved at all (neither in the linked
+  file nor in another one) no longer shows up as a blank, misleading row in the
+  "Source components" table — it is dropped instead of looking like a resolved
+  component with no name.
+
 ## [3.0.0] - 2026-08-24
 
 ### Changed

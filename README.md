@@ -42,10 +42,11 @@ submodules) layouts.
 ├── commands/                           # agent-agnostic command templates
 │   ├── speckit.figma.config.md
 │   ├── speckit.figma.update.md         # re-sync assets/hooks + re-register commands (idempotent)
-│   ├── speckit.figma.ensure.md         # auto-context (all five before_* hooks)
+│   ├── speckit.figma.ensure.md         # auto-context (all six before_* hooks)
 │   ├── speckit.figma.introspect.md
 │   ├── speckit.figma.verify.md         # post-gen section check (after_* hooks; CI gate via --strict)
-│   └── speckit.figma.drift.md          # post-analyze design-drift report (after_analyze hook)
+│   ├── speckit.figma.drift.md          # post-analyze design-drift report (after_analyze hook)
+│   └── speckit.figma.export.md         # node -> image: confirmation previews, shipped assets (on demand)
 ├── config/
 │   ├── figma.projects.config.schema.json
 │   ├── figma.projects.config.singlerepo.example.json
@@ -179,6 +180,15 @@ Introspection now resolves the definitions behind the linked instances
 automatically (the "right-click → show source" step), lists them in the section,
 and tags every extracted value `instance` or `source` so an override stays
 visible instead of being merged into one number.
+
+**The source can live in another file — a Design System library, another
+project, another team — and it still resolves.** A `componentId` not found in
+the linked file's own nodes is looked up by its published key against Figma's
+component registry, which answers with the file that actually owns it. No
+config has to name that file up front: the same lookup works whether the source
+is your Design System or any other library the token can read. The "Source
+components" table gains a `File` column (`same file` / `` `<fileKey>`
+(external)``) so you can tell at a glance.
 
 **A node id pins a node, not necessarily a creative.** A link copied from a
 full-page desktop frame pins a `FRAME` like any other — it looks exact while
