@@ -117,3 +117,110 @@ FAKE
   [ "$status" -eq 1 ]
   [[ "$output" == *"is not a Figma node id"* ]]
 }
+
+# A fake curl that routes to a different canned body per request URL, so a test
+# can exercise the several distinct Figma endpoints one --node run touches: the
+# whole-file fetch, the linked-node fetch, the same-file source lookup, the
+# component registry, and — for cross-file resolution — the owning file's own
+# node fetch. Order matters: more specific patterns are checked first.
+install_url_routed_curl() {
+  mkdir -p "${WORKSPACE}/bin"
+  export FAKE_CURL_LOG="${WORKSPACE}/curl-args.log"
+  cat > "${WORKSPACE}/bin/curl" <<'FAKE'
+#!/usr/bin/env bash
+[[ -n "${FAKE_CURL_LOG:-}" ]] && printf '%s\n' "$*" >> "$FAKE_CURL_LOG"
+out=""; url=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -w|-H|--max-time) shift 2 ;;
+    *) url="$1"; shift ;;
+  esac
+done
+body=""
+case "$url" in
+  */components/*) body="$FAKE_CURL_COMPONENT_BODY" ;;
+  */files/DSFILEKEY/*) body="$FAKE_CURL_DS_NODES_BODY" ;;
+  *ids=1:1*) body="$FAKE_CURL_NODES_BODY" ;;
+  *ids=9:9*) body="$FAKE_CURL_SOURCES_BODY" ;;
+  */files/abc123?depth=*) body="$FAKE_CURL_FILE_BODY" ;;
+  *) body="$FAKE_CURL_BODY" ;;
+esac
+[[ -n "$out" && -n "$body" ]] && cat "$body" > "$out"
+printf '200'
+FAKE
+  chmod +x "${WORKSPACE}/bin/curl"
+  export PATH="${WORKSPACE}/bin:${PATH}"
+}
+
+@test "resolves a source component published from another file (Design System or any library)" {
+  install_url_routed_curl
+  export FIGMA_PAT="figd_dummy"
+
+  # Main file: the instance's componentId ("9:9") is a published component this
+  # file references, but does not itself define — the library/Design System case.
+  jq -n '{name:"f", lastModified:"2026-01-01T00:00:00Z", version:"1",
+    document:{children:[]},
+    components:{"9:9":{key:"PUBLISHEDKEY","name":"Button (library)"}},
+    styles:{}}' > "${WORKSPACE}/file.json"
+  export FAKE_CURL_FILE_BODY="${WORKSPACE}/file.json"
+
+  # The linked node: a FRAME containing an INSTANCE of that library component.
+  jq -n '{nodes:{"1:1":{document:{id:"1:1",type:"FRAME",
+    children:[{id:"1:2",type:"INSTANCE",componentId:"9:9"}]}}}}' > "${WORKSPACE}/node.json"
+  export FAKE_CURL_NODES_BODY="${WORKSPACE}/node.json"
+
+  # Same-file source lookup: "9:9" is not a real node in this file.
+  jq -n '{nodes:{"9:9":null}}' > "${WORKSPACE}/sources-empty.json"
+  export FAKE_CURL_SOURCES_BODY="${WORKSPACE}/sources-empty.json"
+
+  # The Figma component registry: this published key is owned by another file.
+  jq -n '{meta:{key:"PUBLISHEDKEY",file_key:"DSFILEKEY",node_id:"42:42"}}' > "${WORKSPACE}/component-meta.json"
+  export FAKE_CURL_COMPONENT_BODY="${WORKSPACE}/component-meta.json"
+
+  # That other file's own node fetch: the real component definition.
+  jq -n '{nodes:{"42:42":{document:{id:"42:42",name:"Button",type:"COMPONENT"}}}}' > "${WORKSPACE}/ds-node.json"
+  export FAKE_CURL_DS_NODES_BODY="${WORKSPACE}/ds-node.json"
+
+  run "$SCRIPT" --file abc123 --node 1:1
+  [ "$status" -eq 0 ]
+
+  local snap="${WORKSPACE}/.figma/cache/context-snapshot.json"
+  run jq -r '.sources.nodes["9:9"].document.name' "$snap"
+  [ "$output" = "Button" ]
+  run jq -r '.sources.externalFiles["9:9"]' "$snap"
+  [ "$output" = "DSFILEKEY" ]
+  run grep -c '/components/PUBLISHEDKEY' "${FAKE_CURL_LOG}"
+  [ "$output" -ge 1 ]
+}
+
+@test "degrades gracefully when a cross-file component cannot be resolved" {
+  install_url_routed_curl
+  export FIGMA_PAT="figd_dummy"
+
+  # The published key has no entry in the component registry (e.g. the PAT
+  # cannot read it, or Figma reports 404) — component-meta.json stays empty.
+  jq -n '{name:"f", lastModified:"2026-01-01T00:00:00Z", version:"1",
+    document:{children:[]},
+    components:{"9:9":{key:"PUBLISHEDKEY","name":"Button (library)"}},
+    styles:{}}' > "${WORKSPACE}/file.json"
+  export FAKE_CURL_FILE_BODY="${WORKSPACE}/file.json"
+
+  jq -n '{nodes:{"1:1":{document:{id:"1:1",type:"FRAME",
+    children:[{id:"1:2",type:"INSTANCE",componentId:"9:9"}]}}}}' > "${WORKSPACE}/node.json"
+  export FAKE_CURL_NODES_BODY="${WORKSPACE}/node.json"
+
+  jq -n '{nodes:{"9:9":null}}' > "${WORKSPACE}/sources-empty.json"
+  export FAKE_CURL_SOURCES_BODY="${WORKSPACE}/sources-empty.json"
+
+  jq -n '{meta:{}}' > "${WORKSPACE}/component-meta.json"
+  export FAKE_CURL_COMPONENT_BODY="${WORKSPACE}/component-meta.json"
+
+  run "$SCRIPT" --file abc123 --node 1:1
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"has no resolvable owning file"* ]]
+
+  local snap="${WORKSPACE}/.figma/cache/context-snapshot.json"
+  run jq -r '.sources.nodes["9:9"] // "absent"' "$snap"
+  [ "$output" = "absent" ]
+}

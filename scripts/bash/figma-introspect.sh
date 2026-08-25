@@ -178,22 +178,91 @@ if [[ -n "$FILE_KEY" ]]; then
     # This is the "right-click > show source" step, automated: collect the
     # componentId of every INSTANCE in the fetched subtrees and deep-fetch those
     # definitions too, into a separate `sources` slot so the agent can tell a
-    # definition from a rendering. Components living in another library file are
-    # recorded with their key but not fetched: that would need the library's file
-    # key, which this run does not have.
-    COMPONENT_IDS="$(jq -r '
+    # definition from a rendering.
+    COMPONENT_IDS_FILE="$WORK/component-ids.txt"
+    jq -r '
       def collect: [ .. | objects | select(.type? == "INSTANCE") | .componentId? | select(. != null) ];
       [ (.nodes // {}) | .[] | .document | collect ] | flatten | unique | .[]
-    ' "$NODES_FILE" 2>/dev/null | head -n 50 || true)"
-    if [[ -n "$COMPONENT_IDS" ]]; then
-      SRC_IDS="$(printf '%s' "$COMPONENT_IDS" | tr '\n' ',' | sed 's/,$//')"
+    ' "$NODES_FILE" 2>/dev/null | head -n 50 > "$COMPONENT_IDS_FILE" || true
+
+    if [[ -s "$COMPONENT_IDS_FILE" ]]; then
+      SRC_IDS="$(paste -sd, "$COMPONENT_IDS_FILE")"
       SRC_IDS="${SRC_IDS//;/%3B}"
-      echo "INFO: resolving $(printf '%s\n' "$COMPONENT_IDS" | grep -c .) source component(s) behind the linked instance(s)..." >&2
+      echo "INFO: resolving $(wc -l < "$COMPONENT_IDS_FILE" | tr -d ' ') source component(s) behind the linked instance(s)..." >&2
       # Non-fatal on purpose: a missing source degrades the context, it does not
       # invalidate it, and the linked nodes are already in hand.
       if ! figma_api "/files/${FILE_KEY}/nodes?ids=${SRC_IDS}" > "$SOURCES_FILE" 2>/dev/null; then
         echo "WARN: could not resolve the source components; the snapshot keeps the instances only." >&2
         printf 'null' > "$SOURCES_FILE"
+      fi
+
+      # -----------------------------------------------------------------------
+      # Cross-file resolution. A componentId still missing from the response
+      # above is almost always a component published from ANOTHER file — a
+      # Design System library, another project, another team. Node ids are
+      # file-scoped, so the same-file lookup can never find it. Figma's own
+      # component registry can, regardless of where that file actually is:
+      # every component this file references carries a published `key`
+      # (already captured in `$f.components`), and `GET /v1/components/{key}`
+      # answers with the file that owns it — no config has to name that file
+      # up front, and the same lookup works whether the source is the Design
+      # System or anything else.
+      MISSING_IDS_FILE="$WORK/missing-component-ids.txt"
+      jq -r --rawfile ids "$COMPONENT_IDS_FILE" '
+        ($ids | rtrimstr("\n") | split("\n") | map(select(length > 0))) as $all
+        | ((.nodes // {}) | with_entries(select(.value != null)) | keys) as $found
+        | ($all - $found)[]
+      ' "$SOURCES_FILE" > "$MISSING_IDS_FILE" 2>/dev/null || true
+
+      if [[ -s "$MISSING_IDS_FILE" ]]; then
+        echo "INFO: $(wc -l < "$MISSING_IDS_FILE" | tr -d ' ') source component(s) not in this file; checking the Figma component registry for their owning file..." >&2
+        : > "$WORK/external-sources.ndjson"
+        while IFS= read -r CID; do
+          [[ -n "$CID" ]] || continue
+          KEY="$(jq -r --arg id "$CID" '(.components[$id].key // empty)' "$FILE_FILE" 2>/dev/null)"
+          if [[ -z "$KEY" ]]; then
+            echo "WARN: no published key for component ${CID}; cannot locate its owning file." >&2
+            continue
+          fi
+          META_FILE="$WORK/component-meta.json"
+          if ! figma_api "/components/${KEY}" > "$META_FILE" 2>/dev/null; then
+            echo "WARN: could not resolve the owning file of component ${CID} (key ${KEY})." >&2
+            continue
+          fi
+          EXT_FILE_KEY="$(jq -r '.meta.file_key // empty' "$META_FILE" 2>/dev/null)"
+          EXT_NODE_ID="$(jq -r '.meta.node_id // empty' "$META_FILE" 2>/dev/null)"
+          if [[ -z "$EXT_FILE_KEY" || -z "$EXT_NODE_ID" ]]; then
+            echo "WARN: component ${CID} (key ${KEY}) has no resolvable owning file." >&2
+            continue
+          fi
+          EXT_NODE_ID_ENC="${EXT_NODE_ID//;/%3B}"
+          EXT_NODE_FILE="$WORK/external-node.json"
+          if ! figma_api "/files/${EXT_FILE_KEY}/nodes?ids=${EXT_NODE_ID_ENC}" > "$EXT_NODE_FILE" 2>/dev/null; then
+            echo "WARN: could not fetch component ${CID} from its owning file ${EXT_FILE_KEY}." >&2
+            continue
+          fi
+          jq -c --arg cid "$CID" --arg file "$EXT_FILE_KEY" --arg node "$EXT_NODE_ID" '
+            (.nodes[$node] // null) as $doc
+            | if $doc == null then empty else { id: $cid, fileKey: $file, node: $doc } end
+          ' "$EXT_NODE_FILE" >> "$WORK/external-sources.ndjson" 2>/dev/null || true
+        done < "$MISSING_IDS_FILE"
+
+        # Merge the cross-file finds into SOURCES_FILE's .nodes, keyed by the
+        # ORIGINAL componentId — so figma-extract-values.sh keeps matching
+        # instance.componentId -> sources.nodes[componentId] unchanged — and
+        # record which file each came from in a sibling `externalFiles` map.
+        if [[ -s "$WORK/external-sources.ndjson" ]]; then
+          jq -s '.' "$WORK/external-sources.ndjson" > "$WORK/external-sources.json"
+          jq -s '
+            (.[0] // {}) as $base
+            | (.[1]) as $extra
+            | $base + {
+                nodes: ( ($base.nodes // {}) + ( $extra | map({(.id): .node}) | add // {} ) ),
+                externalFiles: ( ($base.externalFiles // {}) + ( $extra | map({(.id): .fileKey}) | add // {} ) )
+              }
+          ' "$SOURCES_FILE" "$WORK/external-sources.json" > "$WORK/sources-merged.json"
+          mv "$WORK/sources-merged.json" "$SOURCES_FILE"
+        fi
       fi
     fi
   fi

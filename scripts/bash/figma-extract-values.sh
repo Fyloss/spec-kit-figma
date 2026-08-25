@@ -139,9 +139,11 @@ DIGEST="$(jq -c \
       lastModified: (.lastModified // null),
       totalNodes: ($all | length),
       rowCount: ($rows | length),
-      sourceComponents: [ (.sources.nodes // {}) | to_entries[]
+      sourceComponents: [ (.sources.externalFiles // {}) as $external
+                        | (.sources.nodes // {}) | to_entries[]
                           | { id: .key, name: (.value.document.name // null),
-                              type: (.value.document.type // null) } ],
+                              type: (.value.document.type // null),
+                              fileKey: ($external[.key] // null) } ],
       truncated: (($rows | length) > $maxRows),
       nodes: ($rows[:$maxRows])
     }' "$SNAPSHOT")"
@@ -166,9 +168,9 @@ printf '%s' "$DIGEST" | jq -r '
       ( if ($sources | length) == 0 then ""
         else
           "**Source components behind the linked instances**\n\n"
-          + "| Component | Node id |\n|-----------|---------|\n"
-          + ( [ $sources[] | "| \(.name | cell) | `\(.id)` |" ] | join("\n") )
-          + "\n\n> Implement against the **source component**, not the instance: an instance is that component with its overrides applied and its variant fixed. Rows tagged `source` below come from the definition.\n\n"
+          + "| Component | Node id | File |\n|-----------|---------|------|\n"
+          + ( [ $sources[] | "| \(.name | cell) | `\(.id)` | \(if .fileKey then "`\(.fileKey)` (external)" else "same file" end) |" ] | join("\n") )
+          + "\n\n> Implement against the **source component**, not the instance: an instance is that component with its overrides applied and its variant fixed. Rows tagged `source` below come from the definition. A component flagged **external** was resolved from another Figma file (e.g. a Design System library) via its published component key, not from the linked file.\n\n"
         end )
       + "**Layout values (auto-filled, absolute CSS px at 1x)**\n\n"
       + ( if ($layout | length) == 0 then "_No layout value extracted — the snapshot holds no deep-fetched node._"

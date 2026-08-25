@@ -2,9 +2,21 @@
 ## Figma design context (SpecKit extension)
 
 This workspace uses [spec-kit-figma]({{REPOSITORY_URL}}) v{{EXTENSION_VERSION}}
-({{MODE}} layout): `/speckit.specify`, `/speckit.plan` and `/speckit.tasks`
-automatically ground the generated documents in the Figma mockups declared in
+({{MODE}} layout): `/speckit.specify`, `/speckit.plan`, `/speckit.tasks` and
+`/speckit.converge` automatically ground the generated documents in the Figma
+mockups declared in
 [`figma.projects.config.json`](figma.projects.config.json).
+
+`/speckit.analyze` and `/speckit.implement` are covered too, differently: they
+generate no document, so what they receive is the design **context** — the
+effective ruleset and a current snapshot. `implement` is the phase that actually
+writes the code, so it is where those rules bind. After `/speckit.analyze`,
+`/speckit.figma.drift` reports whether the mockup changed since the spec was
+written.
+
+Need a picture of a frame, a logo as `.svg`, or a mock as `.png`? Run
+`/speckit.figma.export` — it is the one Figma command that is not automatic,
+because it writes files into this repository.
 
 ### One-time setup per developer — toolchain
 

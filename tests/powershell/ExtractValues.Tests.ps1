@@ -154,4 +154,36 @@ Describe 'figma-extract-values.ps1 (source components)' {
         $md | Should -Match 'DsCard'
         $md | Should -Match '\| Origin \|'
     }
+
+    It 'flags a same-file source component as "same file", not external' {
+        $d = (Invoke-FigmaScript 'figma-extract-values.ps1' @() -Workspace $ws).Stdout | ConvertFrom-Json
+        $d.sourceComponents[0].fileKey | Should -BeNullOrEmpty
+        $md = (Invoke-FigmaScript 'figma-extract-values.ps1' @('--format', 'markdown') -Workspace $ws).Stdout
+        $md | Should -Match '\| DsCard \| `90:1` \| same file \|'
+    }
+}
+
+Describe 'figma-extract-values.ps1 (cross-file source components)' {
+    BeforeEach {
+        Reset-FigmaEnvironment
+        $script:ws = New-TempWorkspace
+        $script:snap = Join-Path $ws '.figma/cache/context-snapshot.json'
+        New-Item -ItemType Directory -Force -Path (Split-Path $snap) | Out-Null
+        $json = @'
+{"fileId":"AbC123","pages":[],
+ "nodes":{"nodes":{"12:345":{"document":{"id":"12:345","name":"Card instance","type":"INSTANCE",
+  "componentId":"90:1","paddingLeft":70}}}},
+ "sources":{"nodes":{"90:1":{"document":{"id":"90:1","name":"DsCard","type":"COMPONENT","paddingLeft":16}}},
+  "externalFiles":{"90:1":"DSFILEKEY"}}}
+'@
+        Set-Content -LiteralPath $snap -Value $json -Encoding utf8
+    }
+
+    It 'flags a cross-file source component as external, with its owning file key' {
+        $d = (Invoke-FigmaScript 'figma-extract-values.ps1' @() -Workspace $ws).Stdout | ConvertFrom-Json
+        $d.sourceComponents[0].fileKey | Should -Be 'DSFILEKEY'
+        $md = (Invoke-FigmaScript 'figma-extract-values.ps1' @('--format', 'markdown') -Workspace $ws).Stdout
+        $md | Should -Match '\| DsCard \| `90:1` \| `DSFILEKEY` \(external\) \|'
+        $md | Should -Match 'resolved from another Figma file'
+    }
 }
