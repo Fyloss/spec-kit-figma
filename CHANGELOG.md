@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-08-25
+
 ### Added
 
 - **Cross-file source-component resolution.** `figma-introspect` used to resolve
@@ -29,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   presents that single match for confirmation, instead of the raw list of
   top-level children. Documentation-only change (`/speckit.figma.ensure` section
   3b, `/speckit.figma.introspect` section 3) — no new script.
+
+### Fixed
+
+- A component whose source could not be resolved at all (neither in the linked
+  file nor in another one) no longer shows up as a blank, misleading row in the
+  "Source components" table — it is dropped instead of looking like a resolved
+  component with no name.
 
 ## [3.0.0] - 2026-08-24
 
