@@ -49,6 +49,37 @@ Describe 'Get-FigmaApiBase' {
     }
 }
 
+Describe 'Test-FigmaMcpUrlAllowed' {
+    It 'refuses <url>' -ForEach @(
+        @{ url = '-K/tmp/attacker.curlrc' }
+        @{ url = 'file:///etc/passwd' }
+        @{ url = '' }
+    ) {
+        Test-FigmaMcpUrlAllowed $url | Should -BeFalse
+    }
+
+    # The guard screens the scheme only: a self-hosted MCP server behind a
+    # devcontainer, a tunnel or an alternate port must keep working.
+    It 'accepts <url>' -ForEach @(
+        @{ url = 'http://127.0.0.1:3845/mcp' }
+        @{ url = 'https://mcp.figma.com/mcp' }
+        @{ url = 'http://mcp.internal.example:8080/mcp' }
+    ) {
+        Test-FigmaMcpUrlAllowed $url | Should -BeTrue
+    }
+}
+
+Describe 'Test-FigmaMcpAvailable' {
+    BeforeEach { Reset-FigmaEnvironment }
+
+    It 'refuses a non-http(s) mcp.url from the committed config' {
+        $ws = New-TempWorkspace
+        $cfg = Join-Path $ws 'config.json'
+        Set-Content $cfg '{"figma":{"contextSource":"mcp","mcp":{"url":"file:///etc/passwd"}}}'
+        Test-FigmaMcpAvailable $cfg | Should -BeFalse
+    }
+}
+
 Describe 'Get-FigmaStatusClass' {
     It 'classifies <code> as <class>' -ForEach @(
         @{ code = '200'; class = 'OK' }

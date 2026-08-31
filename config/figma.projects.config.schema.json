@@ -47,7 +47,8 @@
             "url": {
               "type": "string",
               "default": "http://127.0.0.1:3845/mcp",
-              "description": "HTTP(S) endpoint of the Figma MCP server (e.g. the local Figma Dev Mode MCP server)."
+              "pattern": "^https?://\\S+$",
+              "description": "HTTP(S) endpoint of the Figma MCP server (e.g. the local Figma Dev Mode MCP server). Must carry an http(s) scheme: this file is committed/shared, and the value becomes a command-line argument to the probe, so anything curl would read as an option (a leading '-') is refused. The host is unrestricted — no credential travels with the probe — so a devcontainer, a tunnel or an alternate port all remain valid."
             },
             "serverName": {
               "type": "string",

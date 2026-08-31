@@ -144,5 +144,14 @@ if ($ctx -notin @('rest', 'mcp')) {
     exit 1
 }
 
+# The MCP endpoint ends up as a request target, so it is screened here exactly
+# as it is at the probe: a non-HTTP scheme is a misconfiguration worth reporting
+# up front rather than a silent fallback to REST.
+$mcpUrl = [string](Get-FigmaMcpUrl $config)
+if (-not (Test-FigmaMcpUrlAllowed $mcpUrl)) {
+    Write-FigmaStderr "ERROR: figma.mcp.url must be an http(s):// URL (got '$mcpUrl')"
+    exit 1
+}
+
 Write-Output "OK: $config is valid (mode=$mode, credentials.source=$src, contextSource=$ctx)."
 exit 0

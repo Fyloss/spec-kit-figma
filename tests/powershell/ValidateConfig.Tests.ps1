@@ -44,4 +44,25 @@ Describe 'figma-validate-config.ps1' {
         $r.ExitCode | Should -Be 2
         $r.Stderr | Should -Match 'REPLACE_WITH_'
     }
+
+    It 'rejects a non-http(s) mcp.url' {
+        $ws = New-TempWorkspace
+        $cfg = Join-Path $ws 'bad-mcp-url.json'
+        $json = Get-Content (Join-Path $Fixtures 'singlerepo-valid.json') -Raw | ConvertFrom-Json
+        $json.figma | Add-Member -NotePropertyName 'mcp' -NotePropertyValue ([PSCustomObject]@{ url = 'file:///etc/passwd' }) -Force
+        Set-Content $cfg ($json | ConvertTo-Json -Depth 20)
+        $r = Invoke-FigmaScript 'figma-validate-config.ps1' @($cfg)
+        $r.ExitCode | Should -Be 1
+        $r.Stderr | Should -Match 'figma.mcp.url'
+    }
+
+    It 'accepts a self-hosted mcp.url on any host and port' {
+        $ws = New-TempWorkspace
+        $cfg = Join-Path $ws 'self-hosted-mcp.json'
+        $json = Get-Content (Join-Path $Fixtures 'singlerepo-valid.json') -Raw | ConvertFrom-Json
+        $json.figma | Add-Member -NotePropertyName 'mcp' -NotePropertyValue ([PSCustomObject]@{ url = 'http://mcp.internal.example:8080/mcp' }) -Force
+        Set-Content $cfg ($json | ConvertTo-Json -Depth 20)
+        $r = Invoke-FigmaScript 'figma-validate-config.ps1' @($cfg)
+        $r.ExitCode | Should -Be 0
+    }
 }

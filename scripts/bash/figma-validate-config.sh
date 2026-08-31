@@ -93,4 +93,12 @@ CTX="$(figma_context_source "$CONFIG")"
 [[ "$CTX" == "rest" || "$CTX" == "mcp" ]] \
   || { echo "ERROR: figma.contextSource must be 'rest' or 'mcp'" >&2; exit 1; }
 
+# The MCP endpoint ends up as a curl argument, so it is screened here exactly as
+# it is at the probe: a value curl would read as an OPTION (leading '-') or a
+# non-HTTP scheme is a misconfiguration worth reporting up front rather than a
+# silent fallback to REST.
+MCP_URL="$(figma_mcp_url "$CONFIG")"
+figma_mcp_url_allowed "$MCP_URL" \
+  || { echo "ERROR: figma.mcp.url must be an http(s):// URL (got '${MCP_URL}')" >&2; exit 1; }
+
 echo "OK: ${CONFIG} is valid (mode=${MODE}, credentials.source=${SRC}, contextSource=${CTX})."
