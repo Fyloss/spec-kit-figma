@@ -433,6 +433,18 @@ function Get-FigmaMcpUrl {
     Get-FigmaConfigValue @('figma', 'mcp', 'url') 'http://127.0.0.1:3845/mcp' $Config
 }
 
+# Guard for the one place mcp.url becomes a request target. The config is a
+# committed, shared artifact (see Get-FigmaApiBase): -Uri is a named parameter,
+# so there is no argument-injection twin of the bash port here, but the scheme
+# is still screened so a committed file cannot point the probe at file:// or an
+# arbitrary non-HTTP scheme. The HOST is deliberately unrestricted: no
+# credential travels with the probe, and a self-hosted MCP server
+# (devcontainer, tunnel, alternate port) is a legitimate setup.
+function Test-FigmaMcpUrlAllowed {
+    param([string]$Url)
+    return ($Url -match '^https?://\S+$')
+}
+
 # Whether an unreachable MCP server should silently fall back to REST (default: yes).
 # The tristate (absent/true/false) maps explicitly so a false value cannot be
 # swallowed by a truthiness default.
@@ -447,6 +459,10 @@ function Test-FigmaMcpFallbackEnabled {
 function Test-FigmaMcpAvailable {
     param([string]$Config = (Get-FigmaDefaultConfig))
     $url = Get-FigmaMcpUrl $Config
+    if (-not (Test-FigmaMcpUrlAllowed $url)) {
+        Write-FigmaStderr "ERROR: refusing mcp.url '$url' from the config: it must be an http(s):// URL."
+        return $false
+    }
     $timeout = 3
     if ($env:FIGMA_MCP_PROBE_TIMEOUT) { $timeout = [int]$env:FIGMA_MCP_PROBE_TIMEOUT }
     try {

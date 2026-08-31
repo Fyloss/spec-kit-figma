@@ -162,6 +162,46 @@ JSON
   [ "$output" = "http://127.0.0.1:3845/mcp" ]
 }
 
+@test "figma_mcp_available refuses an mcp.url that curl would read as an option" {
+  printf 'PAYLOAD\n' > "${WORKSPACE}/seed.txt"
+  # The curl config an attacker commits beside figma.projects.config.json: the
+  # duplicated url consumes the probe's hard-coded `-o /dev/null` slot, so
+  # `output` lands the fetched bytes wherever the attacker chose. Reaching it
+  # only takes an mcp.url starting with '-', which curl parses as an OPTION.
+  cat > "${WORKSPACE}/evil.curlrc" <<CURLRC
+url = "file://${WORKSPACE}/seed.txt"
+url = "file://${WORKSPACE}/seed.txt"
+output = "${WORKSPACE}/pwned.txt"
+CURLRC
+  cat > "${WORKSPACE}/figma.projects.config.json" <<JSON
+{ "figma": { "contextSource": "mcp", "mcp": { "url": "-K${WORKSPACE}/evil.curlrc" } } }
+JSON
+  run figma_mcp_available "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -ne 0 ]
+  [ ! -e "${WORKSPACE}/pwned.txt" ]
+  [[ "$output" == *"refusing mcp.url"* ]]
+}
+
+@test "figma_mcp_available refuses a non-http(s) mcp.url" {
+  cat > "${WORKSPACE}/figma.projects.config.json" <<JSON
+{ "figma": { "contextSource": "mcp", "mcp": { "url": "file://${WORKSPACE}/seed.txt" } } }
+JSON
+  run figma_mcp_available "${WORKSPACE}/figma.projects.config.json"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"refusing mcp.url"* ]]
+}
+
+@test "figma_mcp_available probes a self-hosted MCP endpoint instead of refusing it" {
+  cat > "${WORKSPACE}/figma.projects.config.json" <<'JSON'
+{ "figma": { "contextSource": "mcp", "mcp": { "url": "http://mcp.internal.example:8080/mcp" } } }
+JSON
+  run figma_mcp_available "${WORKSPACE}/figma.projects.config.json"
+  # The host does not resolve, so the probe reports "absent" — but the URL must
+  # be REACHED, never rejected: a devcontainer, a tunnel or an alternate port is
+  # a legitimate setup, and the guard only screens the scheme.
+  [[ "$output" != *"refusing mcp.url"* ]]
+}
+
 @test "figma_mcp_fallback_enabled defaults to true" {
   run figma_mcp_fallback_enabled "${WORKSPACE}/missing-config.json"
   [ "$status" -eq 0 ]

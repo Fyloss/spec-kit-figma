@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`figma.mcp.url` is now screened before it reaches the MCP probe.** The value
+  was read from the committed `figma.projects.config.json` without validation
+  and handed to `curl` in URL position, so a value starting with `-` was parsed
+  as an OPTION instead: `-K<path>` loads an arbitrary curl config file, which an
+  attacker could commit beside it to obtain `output` (arbitrary file write with
+  attacker-chosen content, i.e. code execution on the next run) or
+  `upload-file`. The probe path is automatic — the mandatory `before_specify` /
+  `before_plan` hooks reach it through `figma-ensure-context` → `figma-introspect`
+  → `figma_resolve_context_source` — so a hostile config in a cloned or
+  PR-modified repository needed no user action beyond an ordinary SpecKit run.
+  `mcp.url` must now carry an `http(s)://` scheme (new `figma_mcp_url_allowed` /
+  `Test-FigmaMcpUrlAllowed` guard, enforced at the probe and by
+  `figma-validate-config`, plus a `pattern` in the JSON schema), and the probe
+  passes it after a `--` separator. This closes the same class of hole
+  `apiBaseUrl` was already protected against.
+
+  The **host stays unrestricted**, unlike `apiBaseUrl`: no credential travels
+  with the probe, so a self-hosted MCP server (devcontainer, tunnel, alternate
+  port) keeps working. Figma links pasted into a prompt are unaffected — they
+  are parsed for their file/node ids and never used as a request target.
+
 ## [3.1.0] - 2026-08-25
 
 ### Added

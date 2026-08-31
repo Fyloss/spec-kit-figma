@@ -123,3 +123,19 @@ setup() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"is valid"* ]]
 }
+
+@test "rejects an mcp.url that curl would read as an option" {
+  cfg="${BATS_TEST_TMPDIR:-$BATS_TMPDIR}/bad-mcp-url.json"
+  jq '.figma.mcp.url = "-K/tmp/attacker.curlrc"' "${FIXTURES_DIR}/singlerepo-valid.json" > "$cfg"
+  run "$SCRIPT" "$cfg"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"figma.mcp.url"* ]]
+}
+
+@test "accepts a self-hosted mcp.url on any host and port" {
+  cfg="${BATS_TEST_TMPDIR:-$BATS_TMPDIR}/self-hosted-mcp.json"
+  jq '.figma.mcp.url = "http://mcp.internal.example:8080/mcp"' "${FIXTURES_DIR}/singlerepo-valid.json" > "$cfg"
+  run "$SCRIPT" "$cfg"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"is valid"* ]]
+}

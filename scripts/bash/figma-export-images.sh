@@ -201,7 +201,9 @@ for NODE in "${NODES[@]}"; do
   TMP="${WORK}/$(safe_name "$NODE").${FORMAT}"
   # The rendered URL is a plain signed URL on Figma's CDN and must NOT carry the
   # PAT: figma_curl_get would attach it, so this is a bare download.
-  if ! curl -fsSL --max-time "${FIGMA_IMAGE_TIMEOUT:-60}" -o "$TMP" "$IMG_URL" 2>/dev/null; then
+  # `--` ends option parsing: $IMG_URL comes from the /images response, so it is
+  # never read as a curl option even if that response is ever untrustworthy.
+  if ! curl -fsSL --max-time "${FIGMA_IMAGE_TIMEOUT:-60}" -o "$TMP" -- "$IMG_URL" 2>/dev/null; then
     FAILED="$(jq -c --arg n "$NODE" --arg r "download-failed" '. + [{nodeId:$n, reason:$r}]' <<< "$FAILED")"
     continue
   fi

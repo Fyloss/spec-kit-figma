@@ -405,6 +405,19 @@ figma_mcp_url() {
   figma_config_get '.figma.mcp.url' 'http://127.0.0.1:3845/mcp' "${1:-}"
 }
 
+# Guard for the one place mcp.url becomes a command-line argument. The config is
+# a committed, shared artifact (see figma_api_base), so a value curl would parse
+# as an OPTION rather than a URL — anything starting with '-', e.g.
+# '-K/path/to/attacker.curlrc', which hands curl an arbitrary config file and
+# with it `output`/`upload-file` — must never reach the probe. Requiring an
+# http(s) scheme also rules out file:// and friends.
+# The HOST is deliberately unrestricted: unlike apiBaseUrl no credential travels
+# with the probe, and a self-hosted MCP server (devcontainer, tunnel, alternate
+# port) is a legitimate setup that an allowlist would break.
+figma_mcp_url_allowed() {
+  [[ "${1:-}" =~ ^https?://[^[:space:]]+$ ]]
+}
+
 # Whether an unreachable MCP server should silently fall back to REST (default: yes).
 # The jq expression maps the tristate (absent/true/false) to a string so the
 # `//`-treats-false-as-empty pitfall cannot reintroduce a wrong default.
@@ -419,8 +432,14 @@ figma_mcp_fallback_enabled() {
 figma_mcp_available() {
   command -v curl >/dev/null 2>&1 || return 1
   local url; url="$(figma_mcp_url "${1:-}")"
+  if ! figma_mcp_url_allowed "$url"; then
+    echo "ERROR: refusing mcp.url '${url}' from the config: it must be an http(s):// URL." >&2
+    return 1
+  fi
   local code
-  if code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time "${FIGMA_MCP_PROBE_TIMEOUT:-3}" "$url" 2>/dev/null)"; then
+  # `--` ends option parsing: should the guard above ever regress, the value can
+  # still only be read as a URL, never as a curl option.
+  if code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time "${FIGMA_MCP_PROBE_TIMEOUT:-3}" -- "$url" 2>/dev/null)"; then
     [[ -n "$code" && "$code" != "000" ]]
   else
     return 1
