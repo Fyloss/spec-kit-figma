@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-08-31
+
 ### Security
 
 - **`figma.mcp.url` is now screened before it reaches the MCP probe.** The value
@@ -29,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the probe, so a self-hosted MCP server (devcontainer, tunnel, alternate
   port) keeps working. Figma links pasted into a prompt are unaffected — they
   are parsed for their file/node ids and never used as a request target.
+
+  The one legitimate config this can reject is a **scheme-less** `mcp.url`
+  (e.g. `127.0.0.1:3845/mcp`), which curl used to accept by assuming `http`.
+  Prefix it with `http://` and it works as before.
 
 ## [3.1.0] - 2026-08-25
 
@@ -646,6 +652,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   purely presentational Design System.
 - bats test suite and shellcheck lint, run in CI.
 
+[3.1.1]: https://github.com/Fyloss/spec-kit-figma/compare/v3.1.0...v3.1.1
+[3.1.0]: https://github.com/Fyloss/spec-kit-figma/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/Fyloss/spec-kit-figma/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/Fyloss/spec-kit-figma/compare/v1.7.0...v2.0.0
 [1.7.0]: https://github.com/Fyloss/spec-kit-figma/compare/v1.6.0...v1.7.0
